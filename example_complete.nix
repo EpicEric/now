@@ -35,9 +35,6 @@ in
             runner = "aarch64-linux";
           }
           {
-            runner = "x86_64-darwin";
-          }
-          {
             runner = "aarch64-darwin";
           }
           # {
@@ -94,7 +91,7 @@ in
             CODECOV_TOKEN = ci.secrets.CODECOV_TOKEN;
           };
           run = ''
-            codecovcli do-upload -f ./codecov.json
+            codecovcli do-upload -f ./codecov.json --token "$CODECOV_TOKEN"
           '';
           packages = [
             pkgs.codecov-cli
@@ -103,7 +100,7 @@ in
       ];
     };
 
-    build-docker = lib.mkIf (ci.github.ref == "refs/heads/main") {
+    build-docker = lib.mkIf (ci.git.ref == "refs/heads/main") {
       name = "Build Docker";
       permissions = {
         contents = "read";
