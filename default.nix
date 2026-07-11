@@ -16,4 +16,4 @@
     pkgs
     craneLib
     ;
-}).shell
+}).cix
