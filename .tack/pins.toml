@@ -25,10 +25,6 @@
 #   unpack          fixed-only tarball or file
 [inputs]
 
-[inputs.adios]
-url = "github:llakala/lladios"
-type = "fetch"
-
 [inputs.crane]
 url = "github:ipetkov/crane/master"
 type = "fetch"

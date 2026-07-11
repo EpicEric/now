@@ -1,7 +1,7 @@
 {
   system ? builtins.currentSystem,
   inputs ? import ../.tack,
-  pkgs ? import <nixpkgs> {
+  pkgs ? import inputs.nixpkgs {
     inherit system;
     overlays = [ (import inputs.rust-overlay) ];
   },
@@ -16,9 +16,6 @@ let
     root = ../.;
     fileset = lib.fileset.unions [
       (craneLib.fileset.commonCargoSources ../.)
-      ../README.md
-      ../.config/nextest.toml
-      ../tests/data
     ];
   };
 

@@ -5,9 +5,9 @@
   ...
 }:
 let
-  rust-overlay = import (
-    builtins.fetchTarball "https://github.com/oxalica/rust-overlay/archive/master.tar.gz"
-  );
+  rust-overlay =
+    import (builtins.fetchTarball "https://github.com/oxalica/rust-overlay/archive/master.tar.gz") pkgs
+      { };
 in
 {
   jobs = {
@@ -15,62 +15,52 @@ in
       name = "Check rustfmt formatting on MSRV";
       runs-on = "x86_64-linux";
       steps = [
-        (ci.steps.checkout.override { persist-credentials = false; })
+        (ci.steps.checkout { persist-credentials = false; })
         {
           name = "Run rustfmt";
           run = ''
             cargo fmt --check --all
           '';
-          packages = [
+          path = [
             rust-overlay.rust-bin.stable."1.88.0".default
           ];
         }
       ];
     };
 
-    tests-nightly =
-      ci.matrix
-        [
+    tests-nightly = (
+      let
+        runner = "x86_64-linux";
+      in
+      {
+        name = "Run tests on nightly (${runner})";
+        # strategy.fail-fast = false;
+        runs-on = runner;
+        steps = [
+          (ci.steps.checkout { persist-credentials = false; })
           {
-            runner = "aarch64-linux";
+            name = "Test";
+            env = {
+              RUSTFLAGS = "-A dead_code -A unused_variables";
+            };
+            run = ''
+              cargo nextest run --no-fail-fast --verbose --locked
+            '';
+            path = [
+              (rust-overlay.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default))
+              pkgs.cargo-nextest
+            ]
+            ++ lib.optionals (runner == "x86_64-darwin" || runner == "aarch64-darwin") [ pkgs.lld ];
           }
-          {
-            runner = "aarch64-darwin";
-          }
-          # {
-          #   runner = "x86_64-windows";
-          # }
-        ]
-        (
-          { runner, ... }: {
-            name = "Run tests on nightly (${runner}})";
-            strategy.fail-fast = false;
-            runs-on = runner;
-            steps = [
-              (ci.steps.checkout.override { persist-credentials = false; })
-              {
-                name = "Test";
-                env = {
-                  RUSTFLAGS = "-A dead_code -A unused_variables";
-                };
-                run = ''
-                  cargo nextest run --no-fail-fast --verbose --locked
-                '';
-                packages = [
-                  (rust-overlay.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default))
-                  pkgs.cargo-nextest
-                ]
-                ++ lib.optionals (runner == "x86_64-darwin" || runner == "aarch64-darwin") [ pkgs.lld ];
-              }
-            ];
-          }
-        );
+        ];
+      }
+    );
 
     coverage-nightly = {
       name = "Test coverage on nightly (ubuntu-24.04)";
       runs-on = "x86_64-linux";
       steps = [
-        (ci.steps.checkout.override { persist-credentials = false; })
+        (ci.steps.checkout { persist-credentials = false; })
         {
           name = "Test with coverage";
           env = {
@@ -79,7 +69,7 @@ in
           run = ''
             cargo llvm-cov nextest --no-fail-fast --verbose --codecov --locked --output-path codecov.json
           '';
-          packages = [
+          path = [
             (rust-overlay.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default))
             pkgs.cargo-llvm-cov
             pkgs.cargo-nextest
@@ -93,7 +83,7 @@ in
           run = ''
             codecovcli do-upload -f ./codecov.json --token "$CODECOV_TOKEN"
           '';
-          packages = [
+          path = [
             pkgs.codecov-cli
           ];
         }
@@ -102,20 +92,20 @@ in
 
     build-docker = {
       name = "Build Docker";
-      permissions = {
-        contents = "read";
-        packages = "write";
-      };
+      # permissions = {
+      #   contents = "read";
+      #   packages = "write";
+      # };
       needs = [
         "rustfmt-msrv"
         "tests-nightly"
         "coverage-nightly"
       ];
-      run = ./build.nix;
-      secrets = {
-        dockerhub-push-token = ci.secrets.DOCKERHUB_PUSH_TOKEN;
-        ghcr-push-token = ci.secrets.GITHUB_TOKEN;
-      };
+      # run = ./build.nix;
+      # secrets = {
+      #   dockerhub-push-token = ci.secrets.DOCKERHUB_PUSH_TOKEN;
+      #   ghcr-push-token = ci.secrets.GITHUB_TOKEN;
+      # };
     };
   };
 }
