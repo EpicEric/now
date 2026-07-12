@@ -4,13 +4,11 @@
   ...
 }:
 let
-  inputs = import ../.tack;
-
   rust-overlay = import (
     fetchTarball "https://github.com/oxalica/rust-overlay/archive/master.tar.gz"
   );
 
-  cix = pkgs: import ../. { inherit pkgs; };
+  mkCix = pkgs: import ../. { inherit pkgs; };
 in
 {
   jobs = {
@@ -19,21 +17,21 @@ in
         [
           {
             name = "Linux AMD64";
-            pkgs = import inputs.nixpkgs { system = "x86_64-linux"; };
+            pkgs = import <nixpkgs> { system = "x86_64-linux"; };
           }
           {
             name = "Linux ARM64";
-            pkgs = import inputs.nixpkgs { system = "aarch64-linux"; };
+            pkgs = import <nixpkgs> { system = "aarch64-linux"; };
           }
           {
             name = "macOS";
-            pkgs = import inputs.nixpkgs { system = "aarch64-darwin"; };
+            pkgs = import <nixpkgs> { system = "aarch64-darwin"; };
           }
         ]
         (
           { pkgs, name, ... }: {
             name = "Build on ${name}";
-            steps = [ (ci.steps.build "cix" (cix pkgs)) ];
+            steps = [ (ci.steps.build "cix" (mkCix pkgs)) ];
           }
         );
 
@@ -57,14 +55,14 @@ in
         [
           {
             name = "Linux ARM64";
-            pkgs = import inputs.nixpkgs {
+            pkgs = import <nixpkgs> {
               system = "aarch64-linux";
               overlays = [ rust-overlay ];
             };
           }
           {
             name = "macOS";
-            pkgs = import inputs.nixpkgs {
+            pkgs = import <nixpkgs> {
               system = "aarch64-darwin";
               overlays = [ rust-overlay ];
             };
@@ -98,7 +96,7 @@ in
       ci.matrix
         [
           {
-            pkgs = import inputs.nixpkgs {
+            pkgs = import <nixpkgs> {
               system = "x86_64-linux";
               overlays = [ rust-overlay ];
             };
@@ -142,13 +140,16 @@ in
       ci.matrix
         [
           {
-            pkgs = import inputs.nixpkgs { system = "x86_64-linux"; };
+            pkgs = import <nixpkgs> { system = "x86_64-linux"; };
+            system-features = [ "docker" ];
           }
           {
-            pkgs = import inputs.nixpkgs { system = "aarch64-linux"; };
+            pkgs = import <nixpkgs> { system = "aarch64-linux"; };
+            system-features = [ "docker" ];
           }
           {
-            pkgs = import inputs.nixpkgs { system = "aarch64-darwin"; };
+            pkgs = import <nixpkgs> { system = "aarch64-darwin"; };
+            system-features = [ "docker" ];
           }
         ]
         (
@@ -166,7 +167,7 @@ in
                   pkgs.dockerTools.buildImage {
                     name = "cix";
                     tag = "latest";
-                    config.Entrypoint = [ (lib.getExe (cix pkgs)) ];
+                    config.Entrypoint = [ (lib.getExe (mkCix pkgs)) ];
                   }
                 )
               ))
@@ -174,74 +175,83 @@ in
           }
         );
 
-    push-docker = { pkgs, ... }: {
-      name = "Build Docker";
-      needs = [
-        "build-docker"
-      ];
-      steps = [
-        {
-          name = "Login to DockerHub";
-          env.DOCKERHUB_PUSH_TOKEN = ci.secrets.DOCKERHUB_PUSH_TOKEN;
-          run = ''
-            echo $DOCKERHUB_PUSH_TOKEN | docker login --password-stdin --username ${ci.vars.DOCKERHUB_USERNAME} docker.io
-          '';
-          teardown = ''
-            docker logout docker.io
-          '';
-          path = [
-            pkgs.docker
-          ];
-        }
-        {
-          name = "Login to GHCR";
-          env = {
-            GITHUB_TOKEN = ci.secrets.GITHUB_TOKEN;
-          };
-          run = ''
-            echo $GITHUB_TOKEN | docker login --pasword-stdin --username ${ci.vars.GITHUB_USERNAME} ghcr.io
-          '';
-          teardown = ''
-            docker logout ghcr.io
-          '';
-          path = [
-            pkgs.docker
-          ];
-        }
-        {
-          name = "Push images";
-          env = {
-            TAGS = builtins.concatStringsSep " " (
-              map ({ image, tag }: "${image}:${tag}") (
-                lib.cartesianProduct {
-                  image = [
-                    "${ci.vars.DOCKERHUB_USERNAME}/cix"
-                    "ghcr.io/${ci.vars.GITHUB_USERNAME}/cix"
-                  ];
-                  tag = [
-                    "latest"
-                    "main"
-                  ];
-                }
-              )
-            );
-          };
-          run = ''
-            amd_image=$(cix download --name docker-x86_64-linux)
-            arm_image=$(cix download --name docker-aarch64-linux)
+    push-docker =
+      ci.matrix
+        [
+          {
+            system-features = [ "docker" ];
+          }
+        ]
+        (
+          { pkgs, ... }: {
+            name = "Build Docker";
+            needs = [
+              "build-docker"
+            ];
+            steps = [
+              {
+                name = "Login to DockerHub";
+                env.DOCKERHUB_PUSH_TOKEN = ci.secrets.DOCKERHUB_PUSH_TOKEN;
+                run = ''
+                  echo $DOCKERHUB_PUSH_TOKEN | docker login --password-stdin --username ${ci.vars.DOCKERHUB_USERNAME} docker.io
+                '';
+                teardown = ''
+                  docker logout docker.io
+                '';
+                path = [
+                  pkgs.docker
+                ];
+              }
+              {
+                name = "Login to GHCR";
+                env = {
+                  GITHUB_TOKEN = ci.secrets.GITHUB_TOKEN;
+                };
+                run = ''
+                  echo $GITHUB_TOKEN | docker login --pasword-stdin --username ${ci.vars.GITHUB_USERNAME} ghcr.io
+                '';
+                teardown = ''
+                  docker logout ghcr.io
+                '';
+                path = [
+                  pkgs.docker
+                ];
+              }
+              {
+                name = "Push images";
+                env = {
+                  TAGS = builtins.concatStringsSep " " (
+                    map ({ image, tag }: "${image}:${tag}") (
+                      lib.cartesianProduct {
+                        image = [
+                          "${ci.vars.DOCKERHUB_USERNAME}/cix"
+                          "ghcr.io/${ci.vars.GITHUB_USERNAME}/cix"
+                        ];
+                        tag = [
+                          "latest"
+                          "main"
+                        ];
+                      }
+                    )
+                  );
+                };
+                run = ''
+                  amd_image=$(cix download --name docker-x86_64-linux)
+                  arm_image=$(cix download --name docker-aarch64-linux)
 
-            for TAG in $TAGS; do
-              skopeo copy docker-archive:$amd_image "docker://$TAG-amd64"
-              skopeo copy docker-archive:$arm_image "docker://$TAG-arm64"
-              docker buildx imagetools create --tag "$TAG" "$TAG-amd64" "$TAG-arm64"
-            done
-          '';
-          path = [
-            pkgs.docker-buildx
-            pkgs.skopeo
-          ];
-        }
-      ];
-    };
+                  for TAG in $TAGS; do
+                    skopeo copy docker-archive:$amd_image "docker://$TAG-amd64"
+                    skopeo copy docker-archive:$arm_image "docker://$TAG-arm64"
+                    docker buildx imagetools create --tag "$TAG" "$TAG-amd64" "$TAG-arm64"
+                  done
+                '';
+                path = [
+                  pkgs.docker-buildx
+                  pkgs.skopeo
+                ];
+              }
+            ];
+          }
+        );
   };
 }

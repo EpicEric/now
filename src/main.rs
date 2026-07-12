@@ -16,28 +16,48 @@
 
 use std::path::PathBuf;
 
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, Parser, ValueEnum};
 
-use crate::{environment::CixEnvironment, run::cix_run};
+use crate::environment::CixEnvironment;
 
 mod environment;
 mod job;
-mod run;
+mod project;
 mod secret;
 mod step;
+mod workflow;
+
+#[doc(hidden)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+enum CheckoutStrategy {
+    Git,
+}
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 enum Command {
     Run {
         workflow: PathBuf,
+        #[arg(long)]
+        dry_run: bool,
+        #[arg(long)]
+        show_trace: bool,
+        #[arg(
+            long,
+            value_enum,
+            default_value_t = CheckoutStrategy::Git,
+            value_name = "STRATEGY",
+        )]
+        checkout: CheckoutStrategy,
     },
     Completions {
         shell: clap_complete::Shell,
     },
     Step {
         #[arg(long)]
-        script: PathBuf,
+        derivation: PathBuf,
+        #[arg(long)]
+        env: String,
         #[arg(long)]
         name: Option<String>,
         #[arg(long)]
@@ -61,9 +81,14 @@ enum Command {
 
 fn main() -> color_eyre::Result<()> {
     match Command::parse() {
-        Command::Run { workflow } => {
-            let environment = CixEnvironment::get()?;
-            cix_run(workflow, &environment)?;
+        Command::Run {
+            workflow,
+            dry_run,
+            show_trace,
+            checkout,
+        } => {
+            let mut environment = CixEnvironment::get()?;
+            environment.run_workflow(workflow, dry_run, show_trace)?;
         }
         Command::Completions { shell } => {
             clap_complete::generate(
@@ -74,13 +99,21 @@ fn main() -> color_eyre::Result<()> {
             );
         }
         Command::Step {
-            script,
+            derivation,
+            env,
             teardown,
             name,
-        } => todo!(),
+        } => {
+            let environment = CixEnvironment::get()?;
+            environment.run_step(derivation, teardown, &serde_json::from_str(&env)?)?;
+        }
         Command::Build { derivation } => todo!(),
-        Command::Upload { name, derivation } => todo!(),
-        Command::Download { name } => todo!(),
+        Command::Upload { name, derivation } => {
+            todo!()
+        }
+        Command::Download { name } => {
+            todo!()
+        }
     }
     Ok(())
 }

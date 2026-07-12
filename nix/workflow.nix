@@ -16,12 +16,10 @@
 
 {
   system ? builtins.currentSystem,
-  inputs ? import ../.tack,
-  pkgs ? import inputs.nixpkgs { inherit system; },
+  pkgs ? import <nixpkgs> { inherit system; },
+  mkCix ? pkgs: (import ./. { inherit pkgs; }).cix,
 }:
 let
-  mkCix = pkgs: (import ./. { inherit pkgs; }).cix;
-
   inherit (pkgs) lib;
   inherit (import ./types.nix { inherit lib; }) job;
 
@@ -41,7 +39,8 @@ let
         e:
         fn {
           job = normalizeJob e.job;
-          pkgs' = e.pkgs';
+          pkgs' = e.pkgs' or pkgs;
+          system-features = e.system-features or [ ];
         }
       ) jobVal
     else
@@ -51,6 +50,7 @@ let
           inherit (pkgs) lib;
         });
         pkgs' = pkgs;
+        system-features = [ ];
       };
 
   cixConfig =
@@ -61,11 +61,16 @@ let
         jobs = builtins.mapAttrs (
           _: job':
           mapMaybeList (
-            { job, pkgs' }:
+            {
+              job,
+              pkgs',
+              system-features,
+            }:
             job
             // {
               buildSystem = pkgs'.stdenv.buildPlatform.system;
               hostSystem = pkgs'.stdenv.hostPlatform.system;
+              inherit system-features;
               steps = map (
                 step:
                 let
@@ -91,9 +96,10 @@ let
                     name = "cix-step";
                     runtimeInputs = [ (mkCix pkgs') ] ++ step.path;
                     text = ''
-                      cix step --script ${script step.run} ${
-                        lib.optionalString (step.name != null) "--name ${lib.strings.escapeShellArg step.name}"
-                      }
+                      cix step \
+                        --script ${script step.run} \
+                        --env ${lib.strings.escapeShellArg (builtins.toJSON step.env)} \
+                        ${lib.optionalString (step.name != null) "--name ${lib.strings.escapeShellArg step.name}"}
                     '';
                   };
                   teardown =
@@ -104,11 +110,14 @@ let
                         name = "cix-step-teardown";
                         runtimeInputs = [ (mkCix pkgs') ] ++ step.path;
                         text = ''
-                          cix step --teardown --script ${script step.teardown} ${
-                            lib.optionalString (step.name != null) "--name ${lib.strings.escapeShellArg step.name}"
-                          }
+                          cix step \
+                            --teardown \
+                            --script ${script step.teardown} \
+                            --env ${lib.strings.escapeShellArg (builtins.toJSON step.env)} \
+                            ${lib.optionalString (step.name != null) "--name ${lib.strings.escapeShellArg step.name}"}
                         '';
                       };
+                  env = step.env;
                 }
               ) job.steps;
             }
@@ -144,6 +153,7 @@ cixConfig (
               // v
             );
             pkgs' = v.pkgs or pkgs;
+            system-features = v.system-features or [ ];
           }) variants;
 
         steps = {

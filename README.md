@@ -1,3 +1,3 @@
 # cix
 
-Nix-based CI helper.
+Nix-based CI helper. Pronounced "six".

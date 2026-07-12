@@ -14,13 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
-pub(crate) struct SecretString(String);
+pub(crate) struct SecretString(Zeroizing<String>);
 
 impl SecretString {
     pub(crate) fn new(secret: String) -> Self {
-        Self(secret)
+        Self(Zeroizing::new(secret))
     }
 
     pub(crate) fn get_secret_value(&self) -> &str {
@@ -34,11 +35,103 @@ impl std::fmt::Debug for SecretString {
     }
 }
 
+impl Serialize for SecretString {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
 impl<'de> Deserialize<'de> for SecretString {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
-        Ok(Self(String::deserialize(deserializer)?))
+        Ok(Self(Zeroizing::new(String::deserialize(deserializer)?)))
+    }
+}
+
+pub(crate) struct SecretStringCollection(Zeroizing<Vec<String>>);
+
+impl SecretStringCollection {
+    pub(crate) fn new() -> Self {
+        Self(Zeroizing::new(Vec::new()))
+    }
+
+    pub(crate) fn push(&mut self, secret: String) {
+        if secret.is_empty() {
+            return;
+        }
+        let index = match self
+            .0
+            .binary_search_by(|probe| secret.len().cmp(&probe.len()))
+        {
+            Ok(index) => index,
+            Err(index) => index,
+        };
+        self.0.insert(index, secret);
+    }
+
+    // TODO: Check if this is susceptible to timing attacks
+    pub(crate) fn anonymize(&self, input: &str) -> String {
+        let mut output = input.to_string();
+        for secret in self.0.iter() {
+            output = output.replace(secret, "***");
+        }
+        output
+    }
+}
+
+impl std::fmt::Debug for SecretStringCollection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list()
+            .entries(self.0.iter().map(|_| "***"))
+            .finish()
+    }
+}
+
+#[cfg(test)]
+mod test_secret_string_collection {
+    use super::SecretStringCollection;
+
+    #[test]
+    fn test_ordered_by_len_descending() {
+        let mut collection = SecretStringCollection::new();
+
+        collection.push("aaaa".into());
+        collection.push("bb".into());
+        collection.push("ccc".into());
+        collection.push("d".into());
+
+        assert_eq!(collection.0.as_ref(), ["aaaa", "ccc", "bb", "d"]);
+    }
+
+    #[test]
+    fn test_ignore_empty_secrets() {
+        let mut collection = SecretStringCollection::new();
+
+        collection.push("SECRET".into());
+        collection.push("".into());
+
+        assert_eq!(collection.0.as_ref(), ["SECRET"]);
+    }
+
+    #[test]
+    fn test_anonymize() {
+        let mut collection = SecretStringCollection::new();
+
+        collection.push("SECRET".into());
+        collection.push("ANOTHER_ONE".into());
+        collection.push("MORE_SECRET".into());
+        collection.push("SECRET".into());
+
+        assert_eq!(collection.anonymize("input"), "input");
+        assert_eq!(collection.anonymize("SECRET"), "***");
+        assert_eq!(
+            collection.anonymize("123ANOTHER_ONE456MORE_SECRET789"),
+            "123***456***789"
+        );
     }
 }

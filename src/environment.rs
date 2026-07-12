@@ -14,20 +14,41 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    os::unix::ffi::OsStrExt,
+    path::{Path, PathBuf},
+};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::secret::SecretString;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct CixEnvironment {
     pub(crate) secrets: HashMap<String, SecretString>,
     pub(crate) vars: HashMap<String, String>,
+    #[serde(default)]
+    pub(crate) uploads: HashMap<String, PathBuf>,
 }
 
 impl CixEnvironment {
     pub(crate) fn get() -> color_eyre::Result<CixEnvironment> {
-        todo!()
+        match std::env::vars_os().find(|(key, _)| key == "CIX_ENVIRONMENT") {
+            Some((_, value)) => Ok(serde_json::from_slice(value.as_bytes())?),
+            None => Err(color_eyre::eyre::eyre!("Missing CIX_ENVIRONMENT envvar")),
+        }
+    }
+
+    pub(crate) fn upload(&mut self, name: String, derivation: PathBuf) -> color_eyre::Result<()> {
+        if self.uploads.insert(name, derivation).is_some() {
+            Err(color_eyre::eyre::eyre!("Upload key already used"))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn download(&self, name: &str) -> Option<&Path> {
+        self.uploads.get(name).map(|path| path.as_ref())
     }
 }

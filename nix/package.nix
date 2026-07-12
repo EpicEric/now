@@ -25,10 +25,10 @@
 }:
 rustPlatform.buildRustPackage {
   pname = "cix";
-  version = (fromTOML (builtins.readFile (src + "/Cargo.toml"))).package.version;
+  version = (lib.importTOML ../Cargo.toml).package.version;
 
   inherit src;
-  cargoLock.lockFile = src + "/Cargo.lock";
+  cargoLock.lockFile = ../Cargo.lock;
 
   strictDeps = true;
   __structuredAttrs = true;
