@@ -14,9 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
+use std::{
+    io::{Write, stdout},
+    os::unix::ffi::OsStrExt,
+    path::PathBuf,
+};
 
 use clap::{CommandFactory, Parser, ValueEnum};
+use color_eyre::eyre::eyre;
 
 use crate::environment::UnevenEnvironment;
 
@@ -38,7 +43,7 @@ enum Command {
     Run {
         workflow: PathBuf,
         #[arg(long)]
-        dry_run: bool,
+        eval: bool,
         #[arg(
             long,
             value_enum,
@@ -56,17 +61,9 @@ enum Command {
         #[arg(long)]
         env: String,
         #[arg(long)]
-        name: Option<String>,
-        #[arg(long)]
         teardown: bool,
     },
     Build {
-        #[arg(long)]
-        derivation: PathBuf,
-    },
-    Upload {
-        #[arg(long)]
-        name: String,
         #[arg(long)]
         derivation: PathBuf,
     },
@@ -80,11 +77,11 @@ fn main() -> color_eyre::Result<()> {
     match Command::parse() {
         Command::Run {
             workflow,
-            dry_run,
+            eval,
             checkout,
         } => {
             let mut environment = UnevenEnvironment::get()?;
-            environment.run_workflow(workflow, dry_run, checkout)?;
+            environment.run_workflow(workflow, eval, checkout)?;
         }
         Command::Completions { shell } => {
             clap_complete::generate(
@@ -98,17 +95,25 @@ fn main() -> color_eyre::Result<()> {
             derivation,
             env,
             teardown,
-            name,
         } => {
             let environment = UnevenEnvironment::get()?;
             environment.run_step(derivation, teardown, &serde_json::from_str(&env)?)?;
         }
-        Command::Build { derivation } => todo!(),
-        Command::Upload { name, derivation } => {
-            todo!()
+        Command::Build { derivation } => {
+            if derivation.exists() {
+                let mut stdout = stdout();
+                stdout.write_all(derivation.as_os_str().as_bytes())?;
+                stdout.flush()?;
+            } else {
+                return Err(eyre!("Failed to build {}", derivation.to_string_lossy()));
+            }
         }
         Command::Download { name } => {
-            todo!()
+            let environment = UnevenEnvironment::get()?;
+            let path = environment.download(&name)?;
+            let mut stdout = stdout();
+            stdout.write_all(path.as_os_str().as_bytes())?;
+            stdout.flush()?;
         }
     }
     Ok(())

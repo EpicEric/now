@@ -23,6 +23,7 @@ use crate::{CheckoutStrategy, environment::UnevenEnvironment, project::create_pr
 #[derive(Debug, Deserialize)]
 pub(crate) struct UnevenWorkflow {
     pub(crate) name: Option<String>,
+    pub(crate) system: String,
     pub(crate) jobs: HashMap<String, UnevenJobContainer>,
 }
 
@@ -58,6 +59,8 @@ pub(crate) struct UnevenStep {
     pub(crate) runDrv: PathBuf,
     pub(crate) teardownDrv: Option<PathBuf>,
     pub(crate) env: HashMap<String, UnevenStepEnvVar>,
+    #[serde(rename = "__unevenUploadKey", default)]
+    pub(crate) uploadKey: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -76,10 +79,21 @@ pub(crate) struct UnevenStepSecret {
 impl UnevenEnvironment {
     pub(crate) fn run_workflow(
         &mut self,
-        workflow: PathBuf,
-        dry_run: bool,
+        workflow_path: PathBuf,
+        eval: bool,
         checkout: CheckoutStrategy,
     ) -> color_eyre::Result<()> {
+        let workflow = self.evaluate_workflow(workflow_path)?;
+
+        if eval {
+            println!("{:?}", &workflow);
+            return Ok(());
+        }
+
+        Ok(())
+    }
+
+    fn evaluate_workflow(&self, workflow: PathBuf) -> color_eyre::Result<UnevenWorkflow> {
         let workflow_canonical = std::fs::canonicalize(&workflow)?;
         let workflow_str = workflow_canonical
             .to_str()
@@ -124,15 +138,6 @@ impl UnevenEnvironment {
             ));
         }
 
-        println!("{}", String::from_utf8_lossy(&output.stdout));
-
-        let workflow: UnevenWorkflow = serde_json::from_slice(&output.stdout)?;
-
-        if dry_run {
-            println!("{:?}", &workflow);
-            return Ok(());
-        }
-
-        Ok(())
+        Ok(serde_json::from_slice(&output.stdout)?)
     }
 }

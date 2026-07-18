@@ -39,13 +39,17 @@ impl UnevenEnvironment {
             step_env.insert(key.into(), value);
         }
 
-        let mut child = Command::new(&derivation)
+        let mut command = Command::new(&derivation);
+        command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .env_clear()
-            .envs(&step_env)
-            .spawn()?;
+            .env_clear();
+        if let Some((_, path)) = std::env::vars_os().find(|(name, _)| name == "PATH") {
+            command.env("PATH", path);
+        }
+        command.envs(&step_env);
+        let mut child = command.spawn()?;
 
         let stdout = child.stdout.take().expect("stdout is piped");
         let stderr = child.stderr.take().expect("stderr is piped");

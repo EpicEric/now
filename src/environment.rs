@@ -21,12 +21,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use color_eyre::eyre::OptionExt;
 use serde::{Deserialize, Serialize};
 
 use crate::secret::SecretString;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct UnevenEnvironment {
     pub(crate) secrets: HashMap<String, SecretString>,
     pub(crate) vars: HashMap<String, String>,
@@ -37,8 +36,12 @@ impl UnevenEnvironment {
     pub(crate) fn get() -> color_eyre::Result<UnevenEnvironment> {
         #[derive(Debug, Deserialize)]
         struct UnevenEnvironmentInit {
+            #[serde(default)]
             pub(crate) secrets: Vec<String>,
+            #[serde(default)]
             pub(crate) vars: HashMap<String, String>,
+            #[serde(default)]
+            pub(crate) uploads: HashMap<String, PathBuf>,
         }
 
         let mut env_vars: HashMap<OsString, OsString> = std::env::vars_os().collect();
@@ -46,7 +49,7 @@ impl UnevenEnvironment {
         let env: UnevenEnvironmentInit =
             match env_vars.remove(OsStr::from_bytes("UNEVEN_ENVIRONMENT".as_bytes())) {
                 Some(value) => serde_json::from_slice(value.as_bytes())?,
-                None => return Err(color_eyre::eyre::eyre!("Missing UNEVEN_ENVIRONMENT envvar")),
+                None => return Ok(Default::default()),
             };
 
         let secrets: color_eyre::Result<HashMap<String, SecretString>> = env
@@ -68,22 +71,14 @@ impl UnevenEnvironment {
         Ok(Self {
             secrets: secrets?,
             vars: env.vars,
-            uploads: HashMap::new(),
+            uploads: env.uploads,
         })
-    }
-
-    pub(crate) fn upload(&mut self, name: String, derivation: PathBuf) -> color_eyre::Result<()> {
-        if self.uploads.insert(name, derivation).is_some() {
-            Err(color_eyre::eyre::eyre!("Upload key already used"))
-        } else {
-            Ok(())
-        }
     }
 
     pub(crate) fn download(&self, name: &str) -> color_eyre::Result<&Path> {
         self.uploads
             .get(name)
             .map(|path| path.as_ref())
-            .ok_or_eyre("Missing upload key")
+            .ok_or_else(|| color_eyre::eyre::eyre!("Missing upload key '{name}'"))
     }
 }

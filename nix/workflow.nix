@@ -87,8 +87,7 @@ let
       text = ''
         uneven step \
           --derivation ${script step.run} \
-          --env ${lib.strings.escapeShellArg (builtins.toJSON step.env)} \
-          ${lib.optionalString (step.name != null) "--name ${lib.strings.escapeShellArg step.name}"}
+          --env ${lib.strings.escapeShellArg (builtins.toJSON step.env)}
       '';
     }).drvPath;
 
@@ -103,18 +102,20 @@ let
             uneven step \
               --teardown \
               --derivation ${script step.teardown} \
-              --env ${lib.strings.escapeShellArg (builtins.toJSON step.env)} \
-              ${lib.optionalString (step.name != null) "--name ${lib.strings.escapeShellArg step.name}"}
+              --env ${lib.strings.escapeShellArg (builtins.toJSON step.env)}
           '';
         }).drvPath;
 
     env = step.env;
+
+    __unevenUploadKey = step.__unevenUploadKey or null;
   };
 
   unevenConfig =
     module:
     module.config
     // {
+      inherit system;
       jobs = builtins.mapAttrs (
         _: job':
         mapMaybeList (
@@ -205,8 +206,9 @@ unevenConfig (
             {
               name = "uneven: Upload ${name}";
               run = ''
-                uneven upload --name ${lib.escapeShellArg name} --derivation ${deriv}
+                uneven build --derivation ${deriv}
               '';
+              __unevenUploadKey = name;
             };
         };
       };

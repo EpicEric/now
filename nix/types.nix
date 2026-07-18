@@ -63,6 +63,10 @@ let
         default = { };
         description = "Environment values to make available to the script.";
       };
+      __unevenUploadKey = lib.mkOption {
+        type = types.nullOr types.str;
+        default = null;
+      };
     };
   };
 
