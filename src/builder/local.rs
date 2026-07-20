@@ -12,10 +12,13 @@ use owo_colors::Style;
 use crate::{
     CheckoutStrategy,
     builder::{NixConfig, UnevenBuilder, remote::RemoteBuilder},
+    environment::UnevenEnvironment,
     workflow::UnevenJob,
 };
 
 pub(crate) struct LocalBuilder {
+    pub(crate) env: HashMap<OsString, OsString>,
+    pub(crate) strategy: CheckoutStrategy,
     pub(crate) hostname: String,
     pub(crate) system: String,
     pub(crate) system_features: HashSet<String>,
@@ -23,7 +26,10 @@ pub(crate) struct LocalBuilder {
 }
 
 impl LocalBuilder {
-    pub(crate) fn new() -> color_eyre::Result<Self> {
+    pub(crate) fn new(
+        environment: &UnevenEnvironment,
+        strategy: CheckoutStrategy,
+    ) -> color_eyre::Result<Self> {
         let output = Command::new("nix")
             .args([
                 "--extra-experimental-features",
@@ -43,9 +49,11 @@ impl LocalBuilder {
 
         let config: NixConfig = serde_json::from_slice(&output.stdout)?;
 
-        let remote_builders = RemoteBuilder::get_remote_builders(&config)?;
+        let remote_builders = RemoteBuilder::get_remote_builders(&config, strategy)?;
 
         Ok(Self {
+            env: environment.local_env.clone(),
+            strategy,
             hostname: sys_info::hostname()?,
             system: config.system.value,
             system_features: config.system_features.value.into_iter().collect(),
@@ -89,8 +97,8 @@ impl UnevenBuilder for LocalBuilder {
         Style::new().blue()
     }
 
-    fn checkout(&self, strategy: CheckoutStrategy) -> color_eyre::Result<PathBuf> {
-        match strategy {
+    fn checkout(&self) -> color_eyre::Result<PathBuf> {
+        match self.strategy {
             CheckoutStrategy::Default => Ok(std::env::current_dir()?),
         }
     }
@@ -137,6 +145,8 @@ impl UnevenBuilder for LocalBuilder {
             .stdin(Stdio::null())
             .stdout(writer.try_clone()?)
             .stderr(writer)
+            .env_clear()
+            .envs(&self.env)
             .envs(envs);
         Ok((command.spawn()?, reader))
     }
@@ -145,8 +155,8 @@ impl UnevenBuilder for LocalBuilder {
         Ok(())
     }
 
-    fn uncheckout(&self, strategy: CheckoutStrategy, _path: &Path) -> color_eyre::Result<()> {
-        match strategy {
+    fn uncheckout(&self, _path: &Path) -> color_eyre::Result<()> {
+        match self.strategy {
             CheckoutStrategy::Default => Ok(()),
         }
     }

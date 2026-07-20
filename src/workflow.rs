@@ -22,7 +22,9 @@ use std::{
 };
 
 use owo_colors::OwoColorize;
-use petgraph::{acyclic::Acyclic, algo::Cycle, graph::DiGraph, matrix_graph::NodeIndex};
+use petgraph::{
+    acyclic::Acyclic, algo::Cycle, matrix_graph::NodeIndex, stable_graph::StableDiGraph,
+};
 use serde::Deserialize;
 
 use crate::{
@@ -104,7 +106,7 @@ impl UnevenEnvironment {
         eval: bool,
         strategy: CheckoutStrategy,
     ) -> color_eyre::Result<()> {
-        let builder = LocalBuilder::new()?;
+        let builder = LocalBuilder::new(self, strategy)?;
         let style = builder.get_style();
 
         eprintln!(
@@ -152,10 +154,10 @@ impl UnevenEnvironment {
                         break 'tree;
                     }
                     UnevenJobNode::Single(job) => {
-                        self.run_job_local(&builder, job, strategy)?;
+                        self.run_job_single(&builder, job)?;
                     }
                     UnevenJobNode::Multiple(job_vec) => {
-                        self.run_jobs_remote(&builder, job_vec, strategy)?;
+                        self.run_jobs_multiple(&builder, job_vec)?;
                     }
                 }
             }
@@ -213,6 +215,7 @@ impl UnevenEnvironment {
     }
 }
 
+#[derive(Debug)]
 enum UnevenJobNode {
     Root,
     Single(UnevenJob),
@@ -220,8 +223,8 @@ enum UnevenJobNode {
 }
 
 impl UnevenWorkflow {
-    fn build_graph(self) -> color_eyre::Result<Acyclic<DiGraph<UnevenJobNode, ()>>> {
-        let mut graph = DiGraph::new();
+    fn build_graph(self) -> color_eyre::Result<Acyclic<StableDiGraph<UnevenJobNode, ()>>> {
+        let mut graph = StableDiGraph::new();
         let root = graph.add_node(UnevenJobNode::Root);
 
         let mut nodes: HashMap<String, NodeIndex<u32>> = HashMap::new();

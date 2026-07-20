@@ -24,7 +24,7 @@ use std::{
 
 use serde::Deserialize;
 
-use crate::{CheckoutStrategy, workflow::UnevenJob};
+use crate::workflow::UnevenJob;
 
 pub(crate) mod local;
 pub(crate) mod remote;
@@ -34,7 +34,7 @@ pub(crate) trait UnevenBuilder {
 
     fn get_style(&self) -> owo_colors::Style;
 
-    fn checkout(&self, strategy: CheckoutStrategy) -> color_eyre::Result<PathBuf>;
+    fn checkout(&self) -> color_eyre::Result<PathBuf>;
 
     fn copy_derivations(&self, job: &UnevenJob) -> color_eyre::Result<()>;
 
@@ -51,7 +51,7 @@ pub(crate) trait UnevenBuilder {
 
     fn fetch_derivation(&self, derivation: &Path) -> color_eyre::Result<()>;
 
-    fn uncheckout(&self, strategy: CheckoutStrategy, path: &Path) -> color_eyre::Result<()>;
+    fn uncheckout(&self, path: &Path) -> color_eyre::Result<()>;
 }
 
 #[derive(Deserialize, Debug)]

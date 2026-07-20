@@ -31,13 +31,14 @@ use crate::{secret::SecretString, workflow::UnevenStepEnvVar};
 pub(crate) struct UnevenEnvironment {
     pub(crate) secrets: HashMap<String, SecretString>,
     pub(crate) vars: HashMap<String, String>,
+    pub(crate) local_env: HashMap<OsString, OsString>,
     pub(crate) uploads: HashMap<String, PathBuf>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct UnevenEnvironmentInit {
     #[serde(default)]
-    pub(crate) secrets: Vec<String>,
+    pub(crate) secrets: HashMap<String, String>,
     #[serde(default)]
     pub(crate) vars: HashMap<String, String>,
     #[serde(default)]
@@ -103,6 +104,7 @@ impl UnevenEnvironment {
         Ok(Self {
             secrets: secrets?,
             vars: vars?,
+            local_env: env_vars,
             uploads: Default::default(),
         })
     }
@@ -156,7 +158,7 @@ impl UnevenEnvironment {
             .secrets
             .into_iter()
             .map(
-                |secret| match env_vars.remove(OsStr::from_bytes(secret.as_bytes())) {
+                |(env_var, secret)| match env_vars.remove(OsStr::from_bytes(env_var.as_bytes())) {
                     Some(value) => {
                         let value = SecretString::new(value.into_string().map_err(|_| {
                             color_eyre::eyre::eyre!("Invalid value for {secret} envvar")
@@ -171,11 +173,12 @@ impl UnevenEnvironment {
         Ok(Self {
             secrets: secrets?,
             vars: env.vars,
+            local_env: HashMap::new(),
             uploads: env.uploads,
         })
     }
 
-    pub(crate) fn env_vars_for_step(
+    pub(crate) fn generate_env_vars_for_step(
         &self,
         step_env: &HashMap<String, UnevenStepEnvVar>,
     ) -> color_eyre::Result<HashMap<OsString, OsString>> {
@@ -202,7 +205,9 @@ impl UnevenEnvironment {
                             .get_secret_value()
                             .into(),
                     );
-                    env_init.secrets.push(secret.secret_name.clone());
+                    env_init
+                        .secrets
+                        .insert(key.clone(), secret.secret_name.clone());
                 }
                 UnevenStepEnvVar::Download(download) => {
                     let download_path =

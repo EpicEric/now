@@ -19,6 +19,7 @@ use crate::{
 };
 
 pub(crate) struct RemoteBuilder {
+    pub(crate) strategy: CheckoutStrategy,
     pub(crate) ssh_uri: String,
     pub(crate) ssh_identity: Option<String>,
     pub(crate) systems: HashSet<String>,
@@ -26,7 +27,7 @@ pub(crate) struct RemoteBuilder {
 }
 
 impl RemoteBuilder {
-    pub(crate) fn get_remote_builders(config: &NixConfig) -> color_eyre::Result<Vec<Self>> {
+    pub(crate) fn get_remote_builders(config: &NixConfig, strategy: CheckoutStrategy) -> color_eyre::Result<Vec<Self>> {
         let builders = if let Some(file) = config.builders.value.strip_prefix('@') {
             if !std::fs::exists(file)? {
                 return Ok(vec![]);
@@ -75,6 +76,7 @@ impl RemoteBuilder {
                 HashSet::new()
             };
             vec.push(RemoteBuilder {
+                strategy,
                 ssh_uri: ssh_uri.to_string(),
                 ssh_identity,
                 systems,
@@ -106,8 +108,8 @@ impl UnevenBuilder for RemoteBuilder {
         .expect("not empty")
     }
 
-    fn checkout(&self, strategy: CheckoutStrategy) -> color_eyre::Result<PathBuf> {
-        match strategy {
+    fn checkout(&self) -> color_eyre::Result<PathBuf> {
+        match self.strategy {
             CheckoutStrategy::Default => {
                 let tmpdir = format!("uneven-{}", uuid::Uuid::new_v4());
 
@@ -298,8 +300,8 @@ impl UnevenBuilder for RemoteBuilder {
         Ok(())
     }
 
-    fn uncheckout(&self, strategy: CheckoutStrategy, path: &Path) -> color_eyre::Result<()> {
-        match strategy {
+    fn uncheckout(&self, path: &Path) -> color_eyre::Result<()> {
+        match self.strategy {
             CheckoutStrategy::Default => {
                 let mut rm_command: OsString = "rm -rf ".into();
                 rm_command.push(path);

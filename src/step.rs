@@ -63,6 +63,12 @@ impl UnevenEnvironment {
         for (key, value) in std::env::vars_os() {
             command.env(key, value);
         }
+        for (key, value) in &self.vars {
+            command.env(key, value);
+        }
+        for (key, value) in &self.uploads {
+            command.env(key, value);
+        }
         command.env("CI", "1");
         command.env("NO_COLOR", "1");
         command.cwd(std::env::current_dir()?);
@@ -80,7 +86,7 @@ impl UnevenEnvironment {
                 .expect("writer has not been taken"),
         );
 
-        let jh = spawn(move || {
+        spawn(move || {
             for line in BufReader::new(reader).lines() {
                 if let Ok(line) = line {
                     eprintln!("{}", secrets.anonymize(&line));
@@ -91,7 +97,6 @@ impl UnevenEnvironment {
         });
 
         let status = child.wait()?;
-        jh.join().expect("no panic");
         if status.success() {
             Ok(())
         } else {

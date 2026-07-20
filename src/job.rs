@@ -24,7 +24,6 @@ use std::{
 use owo_colors::{OwoColorize, Style};
 
 use crate::{
-    CheckoutStrategy,
     builder::{UnevenBuilder, local::LocalBuilder},
     environment::UnevenEnvironment,
     workflow::{UnevenJob, UnevenStepEnvVar},
@@ -37,7 +36,6 @@ impl UnevenEnvironment {
         style: Style,
         runner: String,
         job: UnevenJob,
-        strategy: CheckoutStrategy,
     ) -> color_eyre::Result<()> {
         eprintln!(
             "{} Running job '{}'...",
@@ -45,7 +43,7 @@ impl UnevenEnvironment {
             &job.name
         );
 
-        let cwdir = builder.checkout(strategy)?;
+        let cwdir = builder.checkout()?;
         builder.copy_derivations(&job)?;
         let mut teardown_stack = Vec::new();
 
@@ -71,8 +69,11 @@ impl UnevenEnvironment {
                     }
                 }
                 builder.download(&downloads)?;
-                let (mut child, mut reader) =
-                    builder.run_derivation(&cwdir, run, self.env_vars_for_step(&step.env)?)?;
+                let (mut child, mut reader) = builder.run_derivation(
+                    &cwdir,
+                    run,
+                    self.generate_env_vars_for_step(&step.env)?,
+                )?;
                 if let Some(upload_key) = step.upload_key.as_ref() {
                     let mut buf = Vec::new();
                     reader.read_to_end(&mut buf)?;
@@ -117,8 +118,11 @@ impl UnevenEnvironment {
         }
 
         for (step_name, teardown, step_env) in teardown_stack.into_iter().rev() {
-            let (mut child, reader) =
-                builder.run_derivation(&cwdir, teardown, self.env_vars_for_step(step_env)?)?;
+            let (mut child, reader) = builder.run_derivation(
+                &cwdir,
+                teardown,
+                self.generate_env_vars_for_step(step_env)?,
+            )?;
             for line in BufReader::new(reader).lines() {
                 if let Ok(line) = line {
                     eprintln!(
@@ -145,31 +149,28 @@ impl UnevenEnvironment {
             }
         }
 
-        builder.uncheckout(strategy, &cwdir)?;
+        builder.uncheckout(&cwdir)?;
 
         result
     }
 
-    pub(crate) fn run_job_local(
+    pub(crate) fn run_job_single(
         &mut self,
         local_builder: &LocalBuilder,
         job: UnevenJob,
-        strategy: CheckoutStrategy,
     ) -> color_eyre::Result<()> {
         self.run_job(
             local_builder,
             local_builder.get_style(),
             local_builder.get_name(),
             job,
-            strategy,
         )
     }
 
-    pub(crate) fn run_jobs_remote(
+    pub(crate) fn run_jobs_multiple(
         &mut self,
         local_builder: &LocalBuilder,
         jobs: Vec<UnevenJob>,
-        strategy: CheckoutStrategy,
     ) -> color_eyre::Result<()> {
         let mut result = Ok(());
         for job in jobs {
@@ -179,13 +180,8 @@ impl UnevenEnvironment {
                 .is_none_or(|strategy| strategy.fail_fast);
 
             let builder = local_builder.get_builder(&job)?;
-            if let Err(error) = self.run_job(
-                builder,
-                builder.get_style(),
-                builder.get_name(),
-                job,
-                strategy,
-            ) {
+            if let Err(error) = self.run_job(builder, builder.get_style(), builder.get_name(), job)
+            {
                 if fail_fast {
                     return Err(error);
                 } else {
