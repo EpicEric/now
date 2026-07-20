@@ -58,7 +58,7 @@ impl UnevenEnvironment {
                 }
                 let run = builder.realize_derivation(&step.run_drv)?;
                 let mut downloads: Vec<&Path> = Vec::new();
-                for (_, env) in &step.env {
+                for env in step.env.values() {
                     if let UnevenStepEnvVar::Download(download) = env {
                         if let Some(path) = self.uploads.get(&download.download_name) {
                             downloads.push(path);
@@ -94,6 +94,8 @@ impl UnevenEnvironment {
                                     .style(style),
                                 line,
                             );
+                        } else {
+                            break;
                         }
                     }
                 }
@@ -124,6 +126,8 @@ impl UnevenEnvironment {
                         format!("| Runner '{}' | Teardown '{}' |", runner, step_name).style(style),
                         line
                     );
+                } else {
+                    break;
                 }
             }
             let exit_status = child.wait()?;
@@ -140,6 +144,8 @@ impl UnevenEnvironment {
                 ));
             }
         }
+
+        builder.uncheckout(strategy, &cwdir)?;
 
         result
     }

@@ -35,7 +35,7 @@ impl UnevenEnvironment {
     ) -> color_eyre::Result<()> {
         let mut secrets: SecretStringCollection = SecretStringCollection::new();
 
-        for (_, value) in env {
+        for value in env.values() {
             let UnevenStepEnvVar::Secret(secret) = value else {
                 continue;
             };
@@ -80,15 +80,18 @@ impl UnevenEnvironment {
                 .expect("writer has not been taken"),
         );
 
-        spawn(move || {
+        let jh = spawn(move || {
             for line in BufReader::new(reader).lines() {
                 if let Ok(line) = line {
                     eprintln!("{}", secrets.anonymize(line));
+                } else {
+                    break;
                 }
             }
         });
 
         let status = child.wait()?;
+        jh.join().expect("no panic");
         if status.success() {
             Ok(())
         } else {

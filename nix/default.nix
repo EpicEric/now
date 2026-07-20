@@ -39,6 +39,7 @@ in
   shell = pkgs.mkShell {
     packages = [
       pkgs.cargo
+      pkgs.clippy
       pkgs.pkg-config
       pkgs.rustc
     ];

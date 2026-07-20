@@ -147,4 +147,10 @@ impl UnevenBuilder for LocalBuilder {
     fn fetch_derivation(&self, _derivation: &Path) -> color_eyre::Result<()> {
         Ok(())
     }
+
+    fn uncheckout(&self, strategy: CheckoutStrategy, _path: &Path) -> color_eyre::Result<()> {
+        match strategy {
+            CheckoutStrategy::Default => Ok(()),
+        }
+    }
 }

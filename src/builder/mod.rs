@@ -50,6 +50,8 @@ pub(crate) trait UnevenBuilder {
     ) -> color_eyre::Result<(Child, PipeReader)>;
 
     fn fetch_derivation(&self, derivation: &Path) -> color_eyre::Result<()>;
+
+    fn uncheckout(&self, strategy: CheckoutStrategy, path: &Path) -> color_eyre::Result<()>;
 }
 
 #[derive(Deserialize, Debug)]

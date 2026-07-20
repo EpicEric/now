@@ -5,7 +5,7 @@ use std::{
     io::{PipeReader, Write},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
-    process::{Child, Command},
+    process::{Child, Command, Stdio},
 };
 
 use owo_colors::Style;
@@ -108,6 +108,8 @@ impl UnevenBuilder for RemoteBuilder {
     fn checkout(&self, strategy: CheckoutStrategy) -> color_eyre::Result<PathBuf> {
         match strategy {
             CheckoutStrategy::Default => {
+                let tmpdir = format!("uneven-{}", uuid::Uuid::new_v4());
+
                 let files_to_copy: Vec<PathBuf> = ignore::Walk::new(std::env::current_dir()?)
                     .filter_map(|dir_entry| {
                         dir_entry.ok().and_then(|dir_entry| {
@@ -120,7 +122,30 @@ impl UnevenBuilder for RemoteBuilder {
                         })
                     })
                     .collect();
-                todo!()
+
+                let mut command = Command::new("rsync");
+                command.arg("-az");
+                for file in files_to_copy {
+                    command.arg("--include").arg(file);
+                }
+                command.args(["--exclude='*'", "."]).arg(format!(
+                    "{}:{}",
+                    self.ssh_uri.strip_prefix("ssh://").unwrap_or(&self.ssh_uri),
+                    tmpdir
+                ));
+
+                let output = command.output()?;
+                if !output.status.success() {
+                    let mut stderr = std::io::stderr();
+                    stderr.write_all(&output.stderr)?;
+                    stderr.flush()?;
+                    return Err(color_eyre::eyre::eyre!(
+                        "Failed to checkout current directory to {}",
+                        self.ssh_uri
+                    ));
+                }
+
+                Ok(PathBuf::from(tmpdir))
             }
         }
     }
@@ -167,8 +192,12 @@ impl UnevenBuilder for RemoteBuilder {
 
     fn realize_derivation(&self, derivation: &Path) -> color_eyre::Result<PathBuf> {
         let mut command = Command::new("ssh");
-        command.args([&self.ssh_uri, "nix-store", "--realise"]);
-        command.arg(derivation);
+        if let Some(ssh_identity) = self.ssh_identity.as_ref() {
+            command.arg("-i").arg(ssh_identity);
+        }
+        command
+            .args([&self.ssh_uri, "nix-store", "--realise"])
+            .arg(derivation);
 
         let output = command.output()?;
         if !output.status.success() {
@@ -195,8 +224,7 @@ impl UnevenBuilder for RemoteBuilder {
             "copy",
             "--to",
         ]);
-        command.arg(&self.ssh_uri);
-        command.args(downloads);
+        command.arg(&self.ssh_uri).args(downloads);
 
         let output = command.output()?;
         if !output.status.success() {
@@ -221,7 +249,33 @@ impl UnevenBuilder for RemoteBuilder {
         derivation.push("bin");
         derivation.push("uneven-step");
 
-        todo!("run derivation on remote")
+        let escaped_env: String = envs
+            .iter()
+            .map(|(key, value)| {
+                format!(
+                    "{}={} ",
+                    key.to_string_lossy(),
+                    shell_escape::unix::escape(value.to_string_lossy())
+                )
+            })
+            .collect();
+
+        let mut command = Command::new("ssh");
+        if let Some(ssh_identity) = self.ssh_identity.as_ref() {
+            command.arg("-i").arg(ssh_identity);
+        }
+        command.arg(&self.ssh_uri).arg(format!(
+            "cd {} ; {}{}",
+            cwdir.to_string_lossy(),
+            escaped_env,
+            derivation.to_string_lossy()
+        ));
+        let (reader, writer) = std::io::pipe()?;
+        command
+            .stdin(Stdio::null())
+            .stdout(writer.try_clone()?)
+            .stderr(writer);
+        Ok((command.spawn()?, reader))
     }
 
     fn fetch_derivation(&self, derivation: &Path) -> color_eyre::Result<()> {
@@ -232,8 +286,7 @@ impl UnevenBuilder for RemoteBuilder {
             "copy",
             "--from",
         ]);
-        command.arg(&self.ssh_uri);
-        command.arg(derivation);
+        command.arg(&self.ssh_uri).arg(derivation);
 
         let output = command.output()?;
         if !output.status.success() {
@@ -248,5 +301,32 @@ impl UnevenBuilder for RemoteBuilder {
         }
 
         Ok(())
+    }
+
+    fn uncheckout(&self, strategy: CheckoutStrategy, path: &Path) -> color_eyre::Result<()> {
+        match strategy {
+            CheckoutStrategy::Default => {
+                let mut command = Command::new("ssh");
+                if let Some(ssh_identity) = self.ssh_identity.as_ref() {
+                    command.arg("-i").arg(ssh_identity);
+                }
+                command
+                    .arg(&self.ssh_uri)
+                    .arg(format!("rm -rf {}", path.to_string_lossy()));
+
+                let output = command.output()?;
+                if !output.status.success() {
+                    let mut stderr = std::io::stderr();
+                    stderr.write_all(&output.stderr)?;
+                    stderr.flush()?;
+                    return Err(color_eyre::eyre::eyre!(
+                        "Failed to remove checked out directory in {}",
+                        self.ssh_uri
+                    ));
+                }
+
+                Ok(())
+            }
+        }
     }
 }

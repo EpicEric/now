@@ -15,12 +15,14 @@
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
 {
-  src,
-  lib,
-  rustPlatform,
   installShellFiles,
+  lib,
   makeWrapper,
   nix,
+  openssh,
+  rsync,
+  rustPlatform,
+  src,
   stdenv,
 }:
 rustPlatform.buildRustPackage {
@@ -42,7 +44,13 @@ rustPlatform.buildRustPackage {
 
   postInstall = ''
     wrapProgram $out/bin/uneven \
-      --suffix PATH : ${lib.makeBinPath [ nix ]}
+      --suffix PATH : ${
+        lib.makeBinPath [
+          nix
+          rsync
+          openssh
+        ]
+      }
   ''
   + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
     installShellCompletion --cmd uneven \

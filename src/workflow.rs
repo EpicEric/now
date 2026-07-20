@@ -51,7 +51,7 @@ pub(crate) struct UnevenJob {
     #[serde(rename = "buildSystem")]
     pub(crate) build_system: String,
     #[serde(rename = "hostSystem")]
-    pub(crate) host_system: String,
+    pub(crate) _host_system: String,
     #[serde(rename = "system-features")]
     pub(crate) system_features: Vec<String>,
     pub(crate) strategy: Option<UnevenStrategy>,
@@ -165,7 +165,7 @@ impl UnevenEnvironment {
     }
 
     fn evaluate_workflow(&self, workflow: &Path) -> color_eyre::Result<UnevenWorkflow> {
-        let workflow_canonical = std::fs::canonicalize(&workflow)?;
+        let workflow_canonical = std::fs::canonicalize(workflow)?;
         let workflow_str = workflow_canonical
             .to_str()
             .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
@@ -268,7 +268,7 @@ impl UnevenWorkflow {
             }
         }
 
-        Ok(graph.try_into().map_err(|cycle: Cycle<_>| {
+        graph.try_into().map_err(|cycle: Cycle<_>| {
             color_eyre::eyre::eyre!(
                 "Cycle detected on '{}'",
                 nodes
@@ -277,6 +277,6 @@ impl UnevenWorkflow {
                     .map(|(key, _)| key.clone())
                     .unwrap_or("unknown".into())
             )
-        })?)
+        })
     }
 }
