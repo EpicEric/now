@@ -25,7 +25,7 @@ use owo_colors::{OwoColorize, Style};
 
 use crate::{
     CheckoutStrategy,
-    builder::{LocalBuilder, RemoteBuilder, UnevenBuilder, get_builder},
+    builder::{UnevenBuilder, local::LocalBuilder},
     environment::UnevenEnvironment,
     workflow::{UnevenJob, UnevenStepEnvVar},
 };
@@ -33,7 +33,7 @@ use crate::{
 impl UnevenEnvironment {
     fn run_job(
         &mut self,
-        builder: impl UnevenBuilder,
+        builder: &dyn UnevenBuilder,
         style: Style,
         runner: String,
         job: UnevenJob,
@@ -146,34 +146,40 @@ impl UnevenEnvironment {
 
     pub(crate) fn run_job_local(
         &mut self,
+        local_builder: &LocalBuilder,
         job: UnevenJob,
         strategy: CheckoutStrategy,
     ) -> color_eyre::Result<()> {
-        let builder = LocalBuilder;
-        let builder_name = builder.name();
-        self.run_job(builder, Style::new().blue(), builder_name, job, strategy)
+        self.run_job(
+            local_builder,
+            local_builder.get_style(),
+            local_builder.get_name(),
+            job,
+            strategy,
+        )
     }
 
     pub(crate) fn run_jobs_remote(
         &mut self,
+        local_builder: &LocalBuilder,
         jobs: Vec<UnevenJob>,
         strategy: CheckoutStrategy,
     ) -> color_eyre::Result<()> {
-        let styles = [
-            Style::new().yellow(),
-            Style::new().magenta(),
-            Style::new().green(),
-            Style::new().cyan(),
-            Style::new().purple(),
-            Style::new().red(),
-        ];
         let mut result = Ok(());
-        for (job, style) in jobs.into_iter().zip(styles.iter().cycle()) {
-            let fail_fast = job.strategy.is_none_or(|strategy| strategy.fail_fast);
+        for job in jobs {
+            let fail_fast = job
+                .strategy
+                .as_ref()
+                .is_none_or(|strategy| strategy.fail_fast);
 
-            let builder = get_builder(&job)?;
-            let builder_name = builder.name();
-            if let Err(error) = self.run_job(builder, *style, builder_name, job, strategy) {
+            let builder = local_builder.get_builder(&job)?;
+            if let Err(error) = self.run_job(
+                builder,
+                builder.get_style(),
+                builder.get_name(),
+                job,
+                strategy,
+            ) {
                 if fail_fast {
                     return Err(error);
                 } else {

@@ -80,10 +80,10 @@ impl UnevenEnvironment {
                 .expect("writer has not been taken"),
         );
 
-        spawn(|| {
+        spawn(move || {
             for line in BufReader::new(reader).lines() {
                 if let Ok(line) = line {
-                    eprintln!("{line}");
+                    eprintln!("{}", secrets.anonymize(line));
                 }
             }
         });

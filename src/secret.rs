@@ -74,8 +74,8 @@ impl SecretStringCollection {
         self.0.insert(index, secret);
     }
 
-    pub(crate) fn anonymize(&self, input: &str) -> String {
-        let mut output = input.to_string();
+    pub(crate) fn anonymize(&self, input: String) -> String {
+        let mut output = input;
         for secret in self.0.iter() {
             output = output.replace(secret, "***");
         }
@@ -126,10 +126,10 @@ mod test_secret_string_collection {
         collection.push("MORE_SECRET".into());
         collection.push("SECRET".into());
 
-        assert_eq!(collection.anonymize("input"), "input");
-        assert_eq!(collection.anonymize("SECRET"), "***");
+        assert_eq!(collection.anonymize("input".into()), "input");
+        assert_eq!(collection.anonymize("SECRET".into()), "***");
         assert_eq!(
-            collection.anonymize("123ANOTHER_ONE456MORE_SECRET789"),
+            collection.anonymize("123ANOTHER_ONE456MORE_SECRET789".into()),
             "123***456***789"
         );
     }

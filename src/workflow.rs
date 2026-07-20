@@ -25,7 +25,12 @@ use owo_colors::OwoColorize;
 use petgraph::{acyclic::Acyclic, algo::Cycle, graph::DiGraph, matrix_graph::NodeIndex};
 use serde::Deserialize;
 
-use crate::{CheckoutStrategy, environment::UnevenEnvironment, project::create_project_source};
+use crate::{
+    CheckoutStrategy,
+    builder::{UnevenBuilder, local::LocalBuilder},
+    environment::UnevenEnvironment,
+    project::create_project_source,
+};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct UnevenWorkflow {
@@ -99,9 +104,12 @@ impl UnevenEnvironment {
         eval: bool,
         strategy: CheckoutStrategy,
     ) -> color_eyre::Result<()> {
+        let builder = LocalBuilder::new()?;
+        let style = builder.get_style();
+
         eprintln!(
             "{} Evaluating workflow...",
-            format!("| Eval '{}' |", workflow_path.to_string_lossy()).blue()
+            format!("| Eval '{}' |", workflow_path.to_string_lossy()).style(style)
         );
         let workflow = self.evaluate_workflow(&workflow_path)?;
         if eval {
@@ -112,13 +120,13 @@ impl UnevenEnvironment {
         if let Some(name) = workflow.name.as_ref() {
             eprintln!(
                 "{} Building tree for '{}'...",
-                format!("| Eval '{}' |", workflow_path.to_string_lossy()).blue(),
+                format!("| Eval '{}' |", workflow_path.to_string_lossy()).style(style),
                 name
             );
         } else {
             eprintln!(
                 "{} Building tree...",
-                format!("| Eval '{}' |", workflow_path.to_string_lossy()).blue()
+                format!("| Eval '{}' |", workflow_path.to_string_lossy()).style(style)
             );
         }
         let mut tree = workflow.build_graph()?;
@@ -144,10 +152,10 @@ impl UnevenEnvironment {
                         break 'tree;
                     }
                     UnevenJobNode::Single(job) => {
-                        self.run_job_local(job, strategy)?;
+                        self.run_job_local(&builder, job, strategy)?;
                     }
                     UnevenJobNode::Multiple(job_vec) => {
-                        self.run_jobs_remote(job_vec, strategy)?;
+                        self.run_jobs_remote(&builder, job_vec, strategy)?;
                     }
                 }
             }
