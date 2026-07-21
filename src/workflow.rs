@@ -28,7 +28,7 @@ use petgraph::{
     acyclic::Acyclic, algo::Cycle, matrix_graph::NodeIndex, stable_graph::StableDiGraph,
 };
 use serde::Deserialize;
-use smol::{Task, stream::StreamExt};
+use smol::{channel, stream::StreamExt};
 
 use crate::{
     CheckoutStrategy,
@@ -139,50 +139,68 @@ impl UnevenEnvironment {
 
         let executor = smol::LocalExecutor::new();
 
-        'tree: loop {
-            let mut current_nodes: HashSet<NodeIndex<u32>> = HashSet::new();
-            for node in tree.nodes_iter() {
-                if tree
-                    .edges_directed(node, petgraph::Direction::Incoming)
-                    .next()
-                    .is_none()
-                {
-                    current_nodes.insert(node);
-                }
+        let (sender, ctrl_c) = channel::bounded(1);
+        ctrlc::set_handler(move || {
+            let _ = sender.try_send(());
+        })?;
+        let builder_ref = &builder;
+        let ctrl_c_task = executor.spawn(async move {
+            if ctrl_c.recv().await.is_ok() {
+                builder_ref.cancel_builders();
             }
+            smol::future::pending::<color_eyre::Result<()>>().await
+        });
 
-            debug_assert!(!current_nodes.is_empty());
-            let futures =
-                FuturesUnordered::<Pin<Box<dyn Future<Output = color_eyre::Result<()>>>>>::new();
-            for node in current_nodes {
-                let node = tree.remove_node(node).expect("node exists");
-                match node {
-                    UnevenJobNode::Root => {
-                        debug_assert!(tree.node_count() == 0);
-                        break 'tree;
-                    }
-                    UnevenJobNode::Single(job) => {
-                        futures.push(self.run_job_single(&builder, job));
-                    }
-                    UnevenJobNode::Multiple(job_vec) => {
-                        let (fail_fast, no_fail_fast) =
-                            self.run_jobs_multiple(&builder, job_vec)?;
-                        futures.push(fail_fast);
-                        futures.push(no_fail_fast);
+        let workflow_task = executor.spawn(async {
+            'tree: loop {
+                let mut current_nodes: HashSet<NodeIndex<u32>> = HashSet::new();
+                for node in tree.nodes_iter() {
+                    if tree
+                        .edges_directed(node, petgraph::Direction::Incoming)
+                        .next()
+                        .is_none()
+                    {
+                        current_nodes.insert(node);
                     }
                 }
-            }
-            let task: Task<color_eyre::Result<()>> = executor.spawn(async {
+
+                debug_assert!(!current_nodes.is_empty());
+
+                let futures = FuturesUnordered::<
+                    Pin<Box<dyn Future<Output = color_eyre::Result<()>>>>,
+                >::new();
+
+                for node in current_nodes {
+                    let node = tree.remove_node(node).expect("node exists");
+                    match node {
+                        UnevenJobNode::Root => {
+                            debug_assert!(tree.node_count() == 0);
+                            break 'tree;
+                        }
+                        UnevenJobNode::Single(job) => {
+                            futures.push(self.run_job_single(&builder, job));
+                        }
+                        UnevenJobNode::Multiple(job_vec) => {
+                            let (fail_fast, no_fail_fast) =
+                                self.run_jobs_multiple(&builder, job_vec)?;
+                            futures.push(fail_fast);
+                            futures.push(no_fail_fast);
+                        }
+                    }
+                }
+
+                let mut result = Ok(());
                 let mut stream = futures.into_stream();
                 while let Some(future) = stream.next().await {
-                    future?;
+                    result = result.and(future);
                 }
-                Ok(())
-            });
-            smol::future::block_on(executor.run(task))?;
-        }
+                result?;
+            }
 
-        Ok(())
+            Ok(())
+        });
+
+        smol::future::block_on(executor.run(smol::future::or(workflow_task, ctrl_c_task)))
     }
 
     fn evaluate_workflow(&self, workflow: &Path) -> color_eyre::Result<UnevenWorkflow> {

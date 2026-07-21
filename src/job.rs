@@ -29,12 +29,15 @@ use smol::stream::StreamExt;
 use crate::{
     builder::{UnevenBuilder, local::LocalBuilder},
     environment::UnevenEnvironment,
+    utils::pipe_outputs_to_stderr,
     workflow::{UnevenJob, UnevenStepEnvVar},
 };
 
+type JobResult<'a> = Pin<Box<dyn Future<Output = color_eyre::Result<()>> + 'a>>;
+
 impl UnevenEnvironment {
     async fn run_job(&self, builder: &dyn UnevenBuilder, job: UnevenJob) -> color_eyre::Result<()> {
-        let _guard = builder.acquire().await;
+        let guard = builder.acquire().await;
         let style = builder.get_style();
         let runner = builder.get_name();
         eprintln!(
@@ -43,88 +46,92 @@ impl UnevenEnvironment {
             &job.name
         );
 
-        let cwdir = builder.checkout().await?;
-        builder.copy_derivations(&job).await?;
+        let (mut checkout_child, cwdir) = builder.checkout()?;
+
         let mut teardown_stack = Vec::new();
 
-        let mut result = Ok(());
-        for step in job.steps.iter() {
-            let step_call: Box<
-                dyn FnOnce() -> Pin<Box<dyn Future<Output = color_eyre::Result<()>>>>,
-            > = Box::new(|| {
-                Box::pin(async {
-                    if let Some(teardown_drv) = step.teardown_drv.as_ref() {
-                        let teardown = builder.realize_derivation(teardown_drv).await?;
-                        teardown_stack.push((&step.name, teardown, &step.env));
-                    }
-                    let run = builder.realize_derivation(&step.run_drv).await?;
-                    let mut downloads: Vec<PathBuf> = Vec::new();
-                    {
-                        let uploads = self.uploads.lock().expect("not poisoned");
-                        for env in step.env.values() {
-                            if let UnevenStepEnvVar::Download(download) = env {
-                                if let Some(path) = uploads.get(&download.download_name) {
-                                    downloads.push(path.clone());
-                                } else {
-                                    return Err(color_eyre::eyre::eyre!(
-                                        "No upload named '{}'",
-                                        &download.download_name,
-                                    ));
-                                }
-                            }
-                        }
-                    }
-                    builder.download(&downloads).await?;
-                    let (mut child, mut reader) = builder.run_derivation(
-                        &cwdir,
-                        run,
-                        self.generate_env_vars_for_step(&step.env)?,
-                    )?;
-                    if let Some(upload_key) = step.upload_key.as_ref() {
-                        let mut buf = Vec::new();
-                        reader.read_to_end(&mut buf)?;
-                        let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
-                        builder.fetch_derivation(&upload_path).await?;
-                        eprintln!(
-                            "{} Uploaded {} ({})",
-                            format!("{} step[{}]>", runner, step.name).style(style),
-                            upload_key,
-                            upload_path.to_string_lossy(),
-                        );
-                        self.uploads
-                            .lock()
-                            .expect("not poisoned")
-                            .insert(upload_key.clone(), upload_path);
-                    } else {
-                        for line in BufReader::new(reader).lines() {
-                            if let Ok(line) = line {
-                                eprintln!(
-                                    "{} {}",
-                                    format!("{} step[{}]>", runner, step.name).style(style),
-                                    line,
-                                );
-                            } else {
-                                break;
-                            }
-                        }
-                    }
-                    let exit_status = child.status().await?;
-                    if exit_status.success() {
-                        Ok(())
-                    } else {
-                        Err(color_eyre::eyre::eyre!(
-                            "Step '{}' failed ({})",
-                            &step.name,
-                            exit_status
-                        ))
-                    }
-                })
-            });
-            if let Err(error) = (step_call)().await {
-                result = Err(error);
-                break;
+        let mut result = async {
+            if let Some(checkout_child) = checkout_child.as_mut() {
+                let status = checkout_child.status().await?;
+                if !status.success() {
+                    pipe_outputs_to_stderr(checkout_child).await?;
+                    return Err(color_eyre::eyre::eyre!(
+                        "Failed to checkout current directory to {}",
+                        runner
+                    ));
+                }
             }
+
+            builder.copy_derivations(&job, &guard).await?;
+
+            for step in job.steps.iter() {
+                if let Some(teardown_drv) = step.teardown_drv.as_ref() {
+                    let teardown = builder.realize_derivation(teardown_drv, &guard).await?;
+                    teardown_stack.push((&step.name, teardown, &step.env));
+                }
+                let run = builder.realize_derivation(&step.run_drv, &guard).await?;
+                let mut downloads: Vec<PathBuf> = Vec::new();
+                {
+                    let uploads = self.uploads.lock().expect("not poisoned");
+                    for env in step.env.values() {
+                        if let UnevenStepEnvVar::Download(download) = env {
+                            if let Some(path) = uploads.get(&download.download_name) {
+                                downloads.push(path.clone());
+                            } else {
+                                return Err(color_eyre::eyre::eyre!(
+                                    "No upload named '{}'",
+                                    &download.download_name,
+                                ));
+                            }
+                        }
+                    }
+                }
+                builder.download(&downloads, &guard).await?;
+                let (mut child, mut reader) = builder.run_derivation(
+                    &cwdir,
+                    run,
+                    self.generate_env_vars_for_step(&step.env)?,
+                )?;
+                if let Some(upload_key) = step.upload_key.as_ref() {
+                    let mut buf = Vec::new();
+                    reader.read_to_end(&mut buf)?;
+                    let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
+                    builder.fetch_derivation(&upload_path, &guard).await?;
+                    eprintln!(
+                        "{} Uploaded {} ({})",
+                        format!("{} step[{}]>", runner, step.name).style(style),
+                        upload_key,
+                        upload_path.to_string_lossy(),
+                    );
+                    self.uploads
+                        .lock()
+                        .expect("not poisoned")
+                        .insert(upload_key.clone(), upload_path);
+                } else {
+                    for line in BufReader::new(reader).lines() {
+                        if let Ok(line) = line {
+                            eprintln!(
+                                "{} {}",
+                                format!("{} step[{}]>", runner, step.name).style(style),
+                                line,
+                            );
+                        } else {
+                            break;
+                        }
+                    }
+                }
+                let exit_status = child.status().await?;
+                if !exit_status.success() {
+                    return Err(color_eyre::eyre::eyre!(
+                        "Step '{}' failed ({})",
+                        &step.name,
+                        exit_status
+                    ));
+                }
+            }
+            Ok(())
         }
+        .await;
 
         for (step_name, teardown, step_env) in teardown_stack.into_iter().rev() {
             let (mut child, reader) = builder.run_derivation(
@@ -150,14 +157,17 @@ impl UnevenEnvironment {
                     format!("{} step[{}]>", runner, step_name).style(style),
                     exit_status
                 );
-                result = Err(color_eyre::eyre::eyre!(
+                result = result.and(Err(color_eyre::eyre::eyre!(
                     "Teardown for step '{}' failed ({})",
                     step_name,
                     exit_status
-                ));
+                )));
             }
         }
 
+        if let Some(checkout_child) = checkout_child.as_mut() {
+            let _ = checkout_child.kill();
+        }
         builder.undo_checkout(&cwdir).await?;
 
         result
@@ -175,10 +185,7 @@ impl UnevenEnvironment {
         &'a self,
         local_builder: &'a LocalBuilder,
         jobs: Vec<UnevenJob>,
-    ) -> color_eyre::Result<(
-        Pin<Box<dyn Future<Output = color_eyre::Result<()>> + 'a>>,
-        Pin<Box<dyn Future<Output = color_eyre::Result<()>> + 'a>>,
-    )> {
+    ) -> color_eyre::Result<(JobResult<'a>, JobResult<'a>)> {
         let fail_fast = FuturesUnordered::new();
         let no_fail_fast = FuturesUnordered::new();
 
@@ -197,11 +204,15 @@ impl UnevenEnvironment {
 
         Ok((
             Box::pin(async {
+                let mut result = Ok(());
                 let mut stream = fail_fast.into_stream();
                 while let Some(future) = stream.next().await {
-                    future?;
+                    if future.is_err() && result.is_ok() {
+                        local_builder.cancel_builders();
+                        result = future;
+                    }
                 }
-                Ok(())
+                result
             }),
             Box::pin(async {
                 let mut result = Ok(());

@@ -25,7 +25,9 @@ use std::{
 use async_trait::async_trait;
 use owo_colors::Style;
 use smol::{
-    lock::Semaphore,
+    channel,
+    io::AsyncReadExt,
+    lock::{Mutex, futures::Lock},
     process::{Child, Command, Stdio},
 };
 
@@ -33,13 +35,15 @@ use crate::{
     CheckoutStrategy,
     builder::{NixConfig, UnevenBuilder, remote::RemoteBuilder},
     environment::UnevenEnvironment,
+    utils::pipe_outputs_to_stderr,
     workflow::UnevenJob,
 };
 
 pub(crate) struct LocalBuilder {
+    pub(crate) cancellation: channel::Sender<()>,
+    pub(crate) cancellation_rx: Mutex<channel::Receiver<()>>,
     pub(crate) env: HashMap<OsString, OsString>,
     pub(crate) strategy: CheckoutStrategy,
-    pub(crate) semaphore: Semaphore,
     pub(crate) hostname: String,
     pub(crate) system: String,
     pub(crate) system_features: HashSet<String>,
@@ -72,15 +76,25 @@ impl LocalBuilder {
 
         let remote_builders = RemoteBuilder::get_remote_builders(&config, strategy)?;
 
+        let (cancellation, cancellation_rx) = channel::bounded(1);
+
         Ok(Self {
+            cancellation,
+            cancellation_rx: Mutex::new(cancellation_rx),
             env: environment.local_env.clone(),
             strategy,
-            semaphore: Semaphore::new(1),
             hostname: sys_info::hostname()?,
             system: config.system.value,
             system_features: config.system_features.value.into_iter().collect(),
             remote_builders,
         })
+    }
+
+    pub(crate) fn cancel_builders(&self) {
+        let _ = self.cancellation.try_send(());
+        for remote in &self.remote_builders {
+            let _ = remote.cancellation.try_send(());
+        }
     }
 
     pub(crate) fn get_builder(&self, job: &UnevenJob) -> color_eyre::Result<&dyn UnevenBuilder> {
@@ -118,8 +132,8 @@ impl LocalBuilder {
 
 #[async_trait(?Send)]
 impl UnevenBuilder for LocalBuilder {
-    fn acquire(&self) -> smol::lock::futures::Acquire<'_> {
-        self.semaphore.acquire()
+    fn acquire(&self) -> Lock<'_, channel::Receiver<()>> {
+        self.cancellation_rx.lock()
     }
 
     fn get_name(&self) -> String {
@@ -130,38 +144,66 @@ impl UnevenBuilder for LocalBuilder {
         Style::new().blue()
     }
 
-    async fn checkout(&self) -> color_eyre::Result<PathBuf> {
+    fn checkout(&self) -> color_eyre::Result<(Option<Child>, PathBuf)> {
         match self.strategy {
-            CheckoutStrategy::Default => Ok(std::env::current_dir()?),
+            CheckoutStrategy::Default => Ok((None, std::env::current_dir()?)),
         }
     }
 
-    async fn copy_derivations(&self, _job: &UnevenJob) -> color_eyre::Result<()> {
+    async fn copy_derivations(
+        &self,
+        _job: &UnevenJob,
+        _cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<()> {
         Ok(())
     }
 
-    async fn realize_derivation(&self, derivation: &Path) -> color_eyre::Result<PathBuf> {
+    async fn realize_derivation(
+        &self,
+        derivation: &Path,
+        cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<PathBuf> {
         let mut command = Command::new("nix-store");
-        command.arg("--realise");
-        command.arg(derivation);
+        command
+            .arg("--realise")
+            .arg(derivation)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-        let output = command.output().await?;
-        if !output.status.success() {
-            let mut stderr = std::io::stderr();
-            stderr.write_all(&output.stderr)?;
-            stderr.flush()?;
-            return Err(color_eyre::eyre::eyre!(
-                "Failed to realize derivation '{}'",
-                derivation.to_string_lossy()
-            ));
-        }
-
-        Ok(PathBuf::from(OsStr::from_bytes(
-            output.stdout.as_slice().trim_ascii(),
-        )))
+        let mut child = command.spawn()?;
+        let result = smol::future::race(
+            async {
+                if cancellation.recv().await.is_ok() {
+                    return Err(color_eyre::eyre::eyre!("Runner aborted"));
+                }
+                smol::future::pending::<color_eyre::Result<PathBuf>>().await
+            },
+            async {
+                if child.status().await?.success() {
+                    let mut stdout = child.stdout.take().ok_or(color_eyre::eyre::eyre!(""))?;
+                    let mut buf = Vec::new();
+                    stdout.read_to_end(&mut buf).await?;
+                    Ok(PathBuf::from(OsStr::from_bytes(buf.trim_ascii())))
+                } else {
+                    pipe_outputs_to_stderr(&mut child).await?;
+                    Err(color_eyre::eyre::eyre!(
+                        "Failed to realize derivation '{}' locally",
+                        derivation.to_string_lossy(),
+                    ))
+                }
+            },
+        )
+        .await;
+        let _ = child.kill();
+        result
     }
 
-    async fn download(&self, _downloads: &[PathBuf]) -> color_eyre::Result<()> {
+    async fn download(
+        &self,
+        _downloads: &[PathBuf],
+        _cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<()> {
         Ok(())
     }
 
@@ -184,7 +226,11 @@ impl UnevenBuilder for LocalBuilder {
         Ok((command.spawn()?, reader))
     }
 
-    async fn fetch_derivation(&self, _derivation: &Path) -> color_eyre::Result<()> {
+    async fn fetch_derivation(
+        &self,
+        _derivation: &Path,
+        _cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<()> {
         Ok(())
     }
 

@@ -16,8 +16,11 @@
 
 use std::{
     ffi::OsString,
+    io::Write,
     os::unix::ffi::{OsStrExt, OsStringExt},
 };
+
+use smol::{io::AsyncReadExt, process::Child};
 
 pub(crate) fn escape_os_string(string: OsString) -> OsString {
     if !string.is_empty()
@@ -52,4 +55,19 @@ pub(crate) fn escape_os_string(string: OsString) -> OsString {
     escaped.push(b'\'');
 
     OsString::from_vec(escaped)
+}
+
+pub(crate) async fn pipe_outputs_to_stderr(child: &mut Child) -> color_eyre::Result<()> {
+    let mut stderr = std::io::stderr();
+    if let Some(mut pipe) = child.stdout.take() {
+        let mut buf = Vec::new();
+        pipe.read_to_end(&mut buf).await?;
+        stderr.write_all(&buf)?;
+    }
+    if let Some(mut pipe) = child.stderr.take() {
+        let mut buf = Vec::new();
+        pipe.read_to_end(&mut buf).await?;
+        stderr.write_all(&buf)?;
+    }
+    Ok(stderr.flush()?)
 }

@@ -21,7 +21,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use smol::process::Child;
+use smol::{channel, lock::futures::Lock, process::Child};
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -33,19 +33,31 @@ pub(crate) mod remote;
 
 #[async_trait(?Send)]
 pub(crate) trait UnevenBuilder {
-    fn acquire(&self) -> smol::lock::futures::Acquire<'_>;
+    fn acquire(&self) -> Lock<'_, channel::Receiver<()>>;
 
     fn get_name(&self) -> String;
 
     fn get_style(&self) -> owo_colors::Style;
 
-    async fn checkout(&self) -> color_eyre::Result<PathBuf>;
+    fn checkout(&self) -> color_eyre::Result<(Option<Child>, PathBuf)>;
 
-    async fn copy_derivations(&self, job: &UnevenJob) -> color_eyre::Result<()>;
+    async fn copy_derivations(
+        &self,
+        job: &UnevenJob,
+        cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<()>;
 
-    async fn realize_derivation(&self, derivation: &Path) -> color_eyre::Result<PathBuf>;
+    async fn realize_derivation(
+        &self,
+        derivation: &Path,
+        cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<PathBuf>;
 
-    async fn download(&self, downloads: &[PathBuf]) -> color_eyre::Result<()>;
+    async fn download(
+        &self,
+        downloads: &[PathBuf],
+        cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<()>;
 
     fn run_derivation(
         &self,
@@ -54,7 +66,11 @@ pub(crate) trait UnevenBuilder {
         envs: HashMap<OsString, OsString>,
     ) -> color_eyre::Result<(Child, PipeReader)>;
 
-    async fn fetch_derivation(&self, derivation: &Path) -> color_eyre::Result<()>;
+    async fn fetch_derivation(
+        &self,
+        derivation: &Path,
+        cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<()>;
 
     async fn undo_checkout(&self, path: &Path) -> color_eyre::Result<()>;
 }
