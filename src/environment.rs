@@ -24,12 +24,10 @@ use std::{
     sync::Mutex,
 };
 
+use now_secret::SecretString;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    secret::SecretString,
-    workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow},
-};
+use crate::workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow};
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub(crate) struct NowEnvironment {
@@ -39,25 +37,13 @@ pub(crate) struct NowEnvironment {
     pub(crate) uploads: Mutex<HashMap<String, PathBuf>>,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
-struct NowEnvironmentInit {
-    #[serde(default)]
-    pub(crate) secrets: HashMap<String, String>,
-    #[serde(default)]
-    pub(crate) vars: HashMap<String, String>,
-    #[serde(default)]
-    pub(crate) uploads: HashMap<String, PathBuf>,
-}
-
-static NOW_ENVIRONMENT_KEY: &str = "NOW_ENVIRONMENT";
-
 struct ParsedWorkflow {
     vars: HashSet<String>,
     secrets: HashSet<String>,
 }
 
 impl NowEnvironment {
-    pub(crate) fn get_for_workflow(
+    pub(crate) fn get(
         workflow: &Path,
         env_file: Option<&PathBuf>,
     ) -> color_eyre::Result<NowEnvironment> {
@@ -200,60 +186,18 @@ impl NowEnvironment {
         Ok(ParsedWorkflow { vars, secrets })
     }
 
-    pub(crate) fn get_for_step() -> color_eyre::Result<NowEnvironment> {
-        let mut env_vars: HashMap<OsString, OsString> = std::env::vars_os().collect();
-
-        let env: NowEnvironmentInit =
-            match env_vars.remove(OsStr::from_bytes(NOW_ENVIRONMENT_KEY.as_bytes())) {
-                Some(value) => serde_json::from_slice(value.as_bytes())?,
-                None => {
-                    return Err(color_eyre::eyre::eyre!(
-                        "Missing {NOW_ENVIRONMENT_KEY} envvar"
-                    ));
-                }
-            };
-
-        let secrets: color_eyre::Result<HashMap<String, SecretString>> = env
-            .secrets
-            .into_iter()
-            .map(
-                |(env_var, secret)| match env_vars.remove(OsStr::from_bytes(env_var.as_bytes())) {
-                    Some(value) => {
-                        let value = SecretString::new(value.into_string().map_err(|_| {
-                            color_eyre::eyre::eyre!("Invalid value for {secret} envvar")
-                        })?);
-                        Ok((secret, value))
-                    }
-                    None => Err(color_eyre::eyre::eyre!("Missing {secret} envvar")),
-                },
-            )
-            .collect();
-
-        Ok(Self {
-            secrets: secrets?,
-            vars: env.vars,
-            local_env: HashMap::new(),
-            uploads: Mutex::new(env.uploads),
-        })
-    }
-
     pub(crate) fn generate_env_vars_for_step(
         &self,
         step_env: &HashMap<String, NowStepEnvVar>,
     ) -> color_eyre::Result<HashMap<OsString, OsString>> {
-        let mut env_init = NowEnvironmentInit {
-            uploads: self.uploads.lock().expect("not poisoned").clone(),
-            ..Default::default()
-        };
-
-        let mut map: HashMap<OsString, OsString> = HashMap::with_capacity(step_env.len() + 1);
+        let mut map: HashMap<OsString, OsString> = HashMap::with_capacity(step_env.len());
 
         {
             let uploads = self.uploads.lock().expect("not poisoned");
             for (key, value) in step_env {
                 match value {
                     NowStepEnvVar::Plain(value) => {
-                        env_init.vars.insert(key.clone(), value.clone());
+                        map.insert(key.into(), value.into());
                     }
                     NowStepEnvVar::Secret(secret) => {
                         map.insert(
@@ -269,9 +213,6 @@ impl NowEnvironment {
                                 .get_secret_value()
                                 .into(),
                         );
-                        env_init
-                            .secrets
-                            .insert(key.clone(), secret.secret_name.clone());
                     }
                     NowStepEnvVar::Download(download) => {
                         let download_path =
@@ -282,27 +223,10 @@ impl NowEnvironment {
                                 )
                             })?;
                         map.insert(key.into(), download_path.into());
-                        env_init.vars.insert(
-                            key.into(),
-                            download_path
-                                .to_str()
-                                .ok_or_else(|| {
-                                    color_eyre::eyre::eyre!(
-                                        "Invalid UTF-8 for download path of {}",
-                                        &download.download_name
-                                    )
-                                })?
-                                .into(),
-                        );
                     }
                 }
             }
         }
-
-        map.insert(
-            NOW_ENVIRONMENT_KEY.into(),
-            serde_json::to_string(&env_init)?.into(),
-        );
 
         Ok(map)
     }

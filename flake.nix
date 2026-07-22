@@ -11,6 +11,7 @@
       systems = [
         "x86_64-linux"
         "aarch64-linux"
+        "x86_64-darwin"
         "aarch64-darwin"
       ];
 
@@ -34,12 +35,12 @@
       system:
       let
         pkgs = import nixpkgs { inherit system; };
-        inherit (import ./nix { inherit system pkgs; }) now shell;
+        inherit (import ./nix { inherit system pkgs; }) now now-step shell;
       in
       {
         packages.${system} = {
           default = self.packages.${system}.now;
-          inherit now;
+          inherit now now-step;
         };
 
         apps.${system}.default = {

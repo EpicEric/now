@@ -17,7 +17,7 @@
 {
   system ? builtins.currentSystem,
   pkgs ? import <nixpkgs> { inherit system; },
-  mkNow ? pkgs': (import ./. { pkgs = pkgs'; }).now,
+  mkNowStep ? pkgs': (import ./. { pkgs = pkgs'; }).now-step,
 }:
 
 let
@@ -87,11 +87,21 @@ let
       runDrv =
         (writeShellApplication {
           name = "now-step";
-          runtimeInputs = step.path ++ [ (mkNow pkgs') ];
+          runtimeInputs = step.path ++ [ (mkNowStep pkgs') ];
           text = ''
-            now step \
+            now-step \
               --derivation ${script step.run} \
-              --env ${lib.strings.escapeShellArg (builtins.toJSON env')}
+              --secrets ${
+                lib.strings.escapeShellArg (
+                  builtins.toJSON (
+                    builtins.attrNames (
+                      builtins.mapAttrs (_: value: value.__nowSecret) (
+                        lib.filterAttrs (_: value: value ? __nowSecret) env'
+                      )
+                    )
+                  )
+                )
+              }
           '';
         }).drvPath;
 
@@ -101,11 +111,21 @@ let
         else
           (writeShellApplication {
             name = "now-step";
-            runtimeInputs = step.path ++ [ (mkNow pkgs') ];
+            runtimeInputs = step.path ++ [ (mkNowStep pkgs') ];
             text = ''
-              now step \
+              now-step \
                 --derivation ${script step.teardown} \
-                --env ${lib.strings.escapeShellArg (builtins.toJSON env')}
+                --secrets ${
+                  lib.strings.escapeShellArg (
+                    builtins.toJSON (
+                      builtins.attrNames (
+                        builtins.mapAttrs (_: value: value.__nowSecret) (
+                          lib.filterAttrs (_: value: value ? __nowSecret) env'
+                        )
+                      )
+                    )
+                  )
+                }
             '';
           }).drvPath;
 
@@ -200,7 +220,7 @@ nowConfig (
             {
               name = "build ${if name == "" then deriv else name}";
               run = ''
-                now build --derivation ${deriv}
+                printf ${deriv}
               '';
             };
 
@@ -212,7 +232,7 @@ nowConfig (
             {
               name = "upload ${name}";
               run = ''
-                now build --derivation ${deriv}
+                printf ${deriv}
               '';
               __nowUploadKey = name;
             };

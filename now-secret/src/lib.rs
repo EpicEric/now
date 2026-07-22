@@ -19,14 +19,19 @@ use std::borrow::Cow;
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
-pub(crate) struct SecretString(Zeroizing<String>);
+/// A secret containing a string.
+///
+/// On drop, the value is zeroized in memory.
+pub struct SecretString(Zeroizing<String>);
 
 impl SecretString {
-    pub(crate) fn new(secret: String) -> Self {
+    /// Create a new secret.
+    pub fn new(secret: String) -> Self {
         Self(Zeroizing::new(secret))
     }
 
-    pub(crate) fn get_secret_value(&self) -> &str {
+    /// Get a borrow to the secret value.
+    pub fn get_secret_value(&self) -> &str {
         self.0.as_ref()
     }
 }
@@ -55,14 +60,19 @@ impl<'de> Deserialize<'de> for SecretString {
     }
 }
 
-pub(crate) struct SecretStringCollection(Zeroizing<Vec<String>>);
+/// A collection of secrets, ordered from longest to shortest.
+///
+/// On drop, the value are zeroized in memory.
+pub struct SecretStringCollection(Zeroizing<Vec<String>>);
 
 impl SecretStringCollection {
-    pub(crate) fn new() -> Self {
+    /// Create a new secret collection.
+    pub fn new() -> Self {
         Self(Zeroizing::new(Vec::new()))
     }
 
-    pub(crate) fn push(&mut self, secret: String) {
+    /// Add a secret to the collection, keeping longer strings before smaller strings.
+    pub fn push(&mut self, secret: String) {
         if secret.is_empty() {
             return;
         }
@@ -76,7 +86,8 @@ impl SecretStringCollection {
         self.0.insert(index, secret);
     }
 
-    pub(crate) fn anonymize<'a>(&self, string: &'a str) -> Cow<'a, str> {
+    /// Replaces all instances of secrets in this collection with "***".
+    pub fn anonymize<'a>(&self, string: &'a str) -> Cow<'a, str> {
         let mut string = Cow::Borrowed(string);
         for secret in self.0.iter() {
             let mut output: Option<String> = None;

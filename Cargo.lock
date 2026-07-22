@@ -879,9 +879,9 @@ dependencies = [
  "futures",
  "ignore",
  "include_dir",
+ "now-secret",
  "owo-colors",
  "petgraph",
- "portable-pty",
  "rand",
  "regex",
  "serde",
@@ -890,6 +890,26 @@ dependencies = [
  "sys-info",
  "uuid",
  "zeroize",
+]
+
+[[package]]
+name = "now-secret"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "zeroize",
+]
+
+[[package]]
+name = "now-step"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "color-eyre",
+ "now-secret",
+ "portable-pty",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

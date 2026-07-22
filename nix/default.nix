@@ -25,16 +25,19 @@ let
     root = ../.;
     fileset = lib.fileset.unions [
       ../nix
+      ../now-secret
+      ../now-step
       ../src
       ../Cargo.toml
       ../Cargo.lock
     ];
   };
 
-  now = pkgs.callPackage ./package.nix { inherit src; };
+  now = pkgs.callPackage ./packages/now.nix { inherit src; };
+  now-step = pkgs.callPackage ./packages/now-step.nix { inherit src; };
 in
 {
-  inherit now;
+  inherit now now-step;
 
   shell = pkgs.mkShell {
     packages = [

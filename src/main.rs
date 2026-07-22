@@ -14,11 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    io::{Write, stdout},
-    os::unix::ffi::OsStrExt,
-    path::PathBuf,
-};
+use std::path::PathBuf;
 
 use clap::{CommandFactory, Parser, ValueEnum};
 
@@ -28,8 +24,6 @@ mod builder;
 mod environment;
 mod job;
 mod project;
-mod secret;
-mod step;
 mod utils;
 mod workflow;
 
@@ -78,21 +72,6 @@ enum Command {
         /// Which shell to generate completions for.
         shell: clap_complete::Shell,
     },
-    /// INTERNAL: Command used to run a job step.
-    Step {
-        /// Which derivation to run.
-        #[arg(long)]
-        derivation: PathBuf,
-        /// JSON-serialized environment for the step.
-        #[arg(long)]
-        env: String,
-    },
-    /// INTERNAL: Command used to build a derivation.
-    Build {
-        /// Which derivation to build.
-        #[arg(long)]
-        derivation: PathBuf,
-    },
 }
 
 fn main() -> color_eyre::Result<()> {
@@ -137,7 +116,7 @@ fn main() -> color_eyre::Result<()> {
                     workflow.to_string_lossy()
                 ));
             }
-            let mut environment = NowEnvironment::get_for_workflow(&workflow, env_file.as_ref())?;
+            let mut environment = NowEnvironment::get(&workflow, env_file.as_ref())?;
             environment.run_workflow(workflow, jobs, eval, checkout)?;
         }
         Command::Completions { shell } => {
@@ -147,22 +126,6 @@ fn main() -> color_eyre::Result<()> {
                 env!("CARGO_BIN_NAME"),
                 &mut std::io::stdout(),
             );
-        }
-        Command::Step { derivation, env } => {
-            let environment = NowEnvironment::get_for_step()?;
-            environment.run_step(derivation, &serde_json::from_str(&env)?)?;
-        }
-        Command::Build { derivation } => {
-            if derivation.exists() {
-                let mut stdout = stdout();
-                stdout.write_all(derivation.as_os_str().as_bytes())?;
-                stdout.flush()?;
-            } else {
-                return Err(color_eyre::eyre::eyre!(
-                    "Failed to build {}",
-                    derivation.to_string_lossy()
-                ));
-            }
         }
     }
     Ok(())

@@ -15,56 +15,30 @@
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
 {
-  installShellFiles,
   lib,
-  makeWrapper,
-  nix,
-  openssh,
-  rsync,
   rustPlatform,
   src,
-  stdenv,
 }:
 rustPlatform.buildRustPackage {
-  pname = "now";
-  version = (lib.importTOML ../Cargo.toml).package.version;
+  pname = "now-step";
+  version = (lib.importTOML ../../now-step/Cargo.toml).package.version;
 
   inherit src;
-  cargoLock.lockFile = ../Cargo.lock;
+  cargoLock.lockFile = ../../Cargo.lock;
+
+  buildAndTestSubdir = "now-step";
 
   strictDeps = true;
   __structuredAttrs = true;
 
-  nativeBuildInputs = [
-    installShellFiles
-    makeWrapper
-  ];
-
   doCheck = false;
 
-  postInstall = ''
-    wrapProgram $out/bin/now \
-      --suffix PATH : ${
-        lib.makeBinPath [
-          nix
-          openssh
-          rsync
-        ]
-      }
-  ''
-  + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
-    installShellCompletion --cmd now \
-      --bash <($out/bin/now completions bash) \
-      --fish <($out/bin/now completions fish) \
-      --zsh <($out/bin/now completions zsh)
-  '';
-
   meta = {
-    name = "now";
+    name = "now-step";
     description = "Nix-based distributed command runner";
     homepage = "https://github.com/EpicEric/now";
     license = lib.licenses.agpl3Plus;
-    mainProgram = "now";
+    mainProgram = "now-step";
     platforms = lib.platforms.all;
   };
 }
