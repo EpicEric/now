@@ -193,7 +193,6 @@ impl NowEnvironment {
                 let mut result = Ok(());
                 let mut stream = futures.into_stream();
                 while let Some(future) = stream.next().await {
-                    // TODO: Notify all pending jobs of the failure
                     result = result.and(future);
                 }
                 result?;

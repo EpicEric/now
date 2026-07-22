@@ -92,9 +92,9 @@ impl LocalBuilder {
     }
 
     pub(crate) fn cancel_builders(&self) {
-        let _ = self.cancellation.try_send(());
+        self.cancellation.close();
         for remote in &self.remote_builders {
-            let _ = remote.cancellation.try_send(());
+            remote.cancellation.close();
         }
     }
 
@@ -194,10 +194,8 @@ impl NowBuilder for LocalBuilder {
         let mut child = command.spawn()?;
         let result = smol::future::race(
             async {
-                if cancellation.recv().await.is_ok() {
-                    return Err(color_eyre::eyre::eyre!("Runner aborted"));
-                }
-                smol::future::pending::<color_eyre::Result<PathBuf>>().await
+                let _ = cancellation.recv().await;
+                Err(color_eyre::eyre::eyre!("Runner aborted"))
             },
             async {
                 if child.status().await?.success() {

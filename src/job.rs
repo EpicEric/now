@@ -24,7 +24,7 @@ use std::{
 
 use futures::{TryStreamExt, stream::FuturesUnordered};
 use owo_colors::OwoColorize;
-use smol::stream::StreamExt;
+use smol::{channel::TryRecvError, stream::StreamExt};
 
 use crate::{
     builder::{NowBuilder, local::LocalBuilder},
@@ -39,6 +39,10 @@ impl NowEnvironment {
         let guard = builder.acquire().await;
         let style = builder.get_style();
         let runner = builder.get_name();
+        match guard.try_recv() {
+            Ok(()) | Err(TryRecvError::Closed) => return Ok(()),
+            Err(TryRecvError::Empty) => (),
+        }
         eprintln!(
             "{} Running job '{}'...",
             format!("{}>", runner).style(style),
@@ -51,7 +55,14 @@ impl NowEnvironment {
 
         let mut result = async {
             if let Some(checkout_child) = checkout_child.as_mut() {
-                checkout_child.run().await?;
+                smol::future::race(
+                    async {
+                        let _ = guard.recv().await;
+                        Err(color_eyre::eyre::eyre!("Runner aborted"))
+                    },
+                    checkout_child.run(),
+                )
+                .await?;
             }
 
             builder.copy_derivations(&job, &guard).await?;
@@ -158,9 +169,7 @@ impl NowEnvironment {
         }
 
         drop(checkout_child.take());
-        builder.undo_checkout(&cwdir).await?;
-
-        result
+        result.and(builder.undo_checkout(&cwdir).await)
     }
 
     pub(crate) fn run_job_single<'a>(

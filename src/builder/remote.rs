@@ -310,10 +310,8 @@ impl NowBuilder for RemoteBuilder {
         let mut child = command.spawn()?;
         let result = smol::future::race(
             async {
-                if cancellation.recv().await.is_ok() {
-                    return Err(color_eyre::eyre::eyre!("Runner aborted"));
-                }
-                smol::future::pending::<color_eyre::Result<()>>().await
+                let _ = cancellation.recv().await;
+                Err(color_eyre::eyre::eyre!("Runner aborted"))
             },
             async {
                 if child.status().await?.success() {
@@ -351,10 +349,8 @@ impl NowBuilder for RemoteBuilder {
         let mut child = command.spawn()?;
         let result = smol::future::race(
             async {
-                if cancellation.recv().await.is_ok() {
-                    return Err(color_eyre::eyre::eyre!("Runner aborted"));
-                }
-                smol::future::pending::<color_eyre::Result<PathBuf>>().await
+                let _ = cancellation.recv().await;
+                Err(color_eyre::eyre::eyre!("Runner aborted"))
             },
             async {
                 if child.status().await?.success() {
@@ -399,10 +395,8 @@ impl NowBuilder for RemoteBuilder {
         let mut child = command.spawn()?;
         let result = smol::future::race(
             async {
-                if cancellation.recv().await.is_ok() {
-                    return Err(color_eyre::eyre::eyre!("Runner aborted"));
-                }
-                smol::future::pending::<color_eyre::Result<()>>().await
+                let _ = cancellation.recv().await;
+                Err(color_eyre::eyre::eyre!("Runner aborted"))
             },
             async {
                 if child.status().await?.success() {
@@ -470,10 +464,8 @@ impl NowBuilder for RemoteBuilder {
         let mut child = command.spawn()?;
         let result = smol::future::race(
             async {
-                if cancellation.recv().await.is_ok() {
-                    return Err(color_eyre::eyre::eyre!("Runner aborted"));
-                }
-                smol::future::pending::<color_eyre::Result<()>>().await
+                let _ = cancellation.recv().await;
+                Err(color_eyre::eyre::eyre!("Runner aborted"))
             },
             async {
                 if child.status().await?.success() {
