@@ -15,27 +15,38 @@
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
 {
+  callPackage,
   lib,
-  rustPlatform,
-  src,
+  zig_0_16,
+  stdenv,
 }:
-rustPlatform.buildRustPackage {
-  pname = "now-step";
-  version = (lib.importTOML ../../now-step/Cargo.toml).package.version;
+stdenv.mkDerivation {
+  name = "now-step";
 
-  inherit src;
-  cargoLock.lockFile = ../../Cargo.lock;
-
-  buildAndTestSubdir = "now-step";
+  src = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.unions [
+      ./src
+      ./build.zig
+      ./build.zig.zon
+    ];
+  };
 
   strictDeps = true;
   __structuredAttrs = true;
 
-  doCheck = false;
+  nativeBuildInputs = [ zig_0_16 ];
+
+  zigBuildFlags = [
+    "--system"
+    "${callPackage ./deps.nix { }}"
+  ];
+
+  dontUseZigCheck = true;
 
   meta = {
     name = "now-step";
-    description = "Nix-based distributed command runner";
+    description = "Step runner for now";
     homepage = "https://github.com/EpicEric/now";
     license = lib.licenses.agpl3Plus;
     mainProgram = "now-step";

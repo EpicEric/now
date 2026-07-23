@@ -13,31 +13,4 @@
 //
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
-
-use std::path::PathBuf;
-
-use clap::Parser;
-
-use crate::run::run;
-
-mod run;
-mod secrets;
-
-#[derive(Parser)]
-#[command(version, about, long_about = None)]
-struct StepCommand {
-    /// Which derivation to run.
-    #[arg(long)]
-    derivation: PathBuf,
-    /// JSON-serialized list of envvars containing secrets.
-    #[arg(long)]
-    secrets: String,
-}
-
-fn main() -> color_eyre::Result<()> {
-    let StepCommand {
-        derivation,
-        secrets,
-    } = StepCommand::parse();
-    run(derivation, &serde_json::from_str(&secrets)?)
-}
+pub const SecretCollection = @import("secret_collection.zig");

@@ -17,12 +17,13 @@
 {
   system ? builtins.currentSystem,
   pkgs ? import <nixpkgs> { inherit system; },
-  mkNowStep ? pkgs': (import ./. { pkgs = pkgs'; }).now-step,
 }:
 
 let
   inherit (pkgs) lib;
   inherit (import ./types.nix { inherit lib; }) job;
+
+  mkNowStep = pkgs: (import ./. { inherit pkgs; }).now-step;
 
   normalizeJob =
     j:

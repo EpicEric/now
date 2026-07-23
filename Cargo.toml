@@ -9,9 +9,6 @@ license = "AGPL-3.0-or-later"
 name = "now"
 path = "src/main.rs"
 
-[workspace]
-members = [ "now-step" ]
-
 [dependencies]
 async-trait = "0.1.91"
 clap = { version = "4.6.1", features = ["derive"] }

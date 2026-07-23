@@ -24,7 +24,7 @@ static NIX_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/nix");
 static SRC_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/src");
 static NOW_STEP_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/now-step");
 
-pub(crate) fn create_now_step_source() -> color_eyre::Result<PathBuf> {
+pub(crate) fn create_project_source() -> color_eyre::Result<PathBuf> {
     let tmpdir = temp_dir().join(format!("now-{}", uuid::Uuid::new_v4()));
 
     let nix_dir = tmpdir.join("nix");

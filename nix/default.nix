@@ -32,8 +32,8 @@ let
     ];
   };
 
-  now = pkgs.callPackage ./packages/now.nix { inherit src; };
-  now-step = pkgs.callPackage ./packages/now-step.nix { inherit src; };
+  now = pkgs.callPackage ./package.nix { inherit src; };
+  now-step = pkgs.callPackage ../now-step/default.nix { };
 in
 {
   inherit now now-step;
@@ -44,6 +44,7 @@ in
       pkgs.clippy
       pkgs.rustc
       pkgs.rustfmt
+      pkgs.zig_0_16
     ];
   };
 }

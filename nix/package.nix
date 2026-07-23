@@ -27,10 +27,10 @@
 }:
 rustPlatform.buildRustPackage {
   pname = "now";
-  version = (lib.importTOML ../../Cargo.toml).package.version;
+  version = (lib.importTOML ../Cargo.toml).package.version;
 
   inherit src;
-  cargoLock.lockFile = ../../Cargo.lock;
+  cargoLock.lockFile = ../Cargo.lock;
 
   strictDeps = true;
   __structuredAttrs = true;
