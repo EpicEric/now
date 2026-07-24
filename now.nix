@@ -1,4 +1,3 @@
-{ ... }:
 let
   mkNow = pkgs: import ./. { inherit pkgs; };
 in
