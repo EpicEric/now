@@ -47,10 +47,15 @@ let
       ) jobVal
     else
       fn {
-        job = normalizeJob (jobVal {
-          inherit pkgs;
-          inherit (pkgs) lib;
-        });
+        job = normalizeJob (
+          if lib.isFunction jobVal then
+            jobVal {
+              inherit pkgs;
+              inherit (pkgs) lib;
+            }
+          else
+            jobVal
+        );
         pkgs' = pkgs;
         requiredSystemFeatures = [ ];
       };
@@ -174,6 +179,11 @@ let
           default = null;
           description = "Name of the workflow";
         };
+        default = lib.mkOption {
+          type = types.nullOr (types.listOf types.str);
+          default = null;
+          description = "Default jobs to run for this workflow";
+        };
         jobs = lib.mkOption {
           type = types.attrsOf (types.nullOr types.raw);
           description = "Jobs in the workflow.";
@@ -202,13 +212,17 @@ nowConfig (
         matrix =
           variants: fn:
           map (v: {
-            job = fn (
-              {
-                inherit pkgs;
-                inherit (pkgs) lib;
-              }
-              // v
-            );
+            job =
+              if lib.isFunction fn then
+                fn (
+                  {
+                    inherit pkgs;
+                    inherit (pkgs) lib;
+                  }
+                  // v
+                )
+              else
+                fn;
             pkgs' = v.pkgs or pkgs;
             requiredSystemFeatures = v.requiredSystemFeatures or [ ];
           }) variants;

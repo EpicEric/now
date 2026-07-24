@@ -101,17 +101,18 @@ Still an early work-in-progress. Expect breaking changes and broken functionalit
 }
 ```
 
-It's recommended to keep your workflows in the `.now/` directory, or to keep a `now.nix` file.
+It's recommended to keep your main workflow in a `now.nix` file, and any secondary ones in a `.now/` directory.
 
-Run it with:
+To run `now`:
 
 ```bash
 now run now.nix
+# Alternatively, `now run .`
 
-# Loads envvars from a dotenv file, and runs the now.nix file in the current directory
-now run --env-file .env .
+# Load envvars from a dotenv file
+now run --env-file .env .now/workflow-with-secrets.nix
 
-# Runs one or more jobs (and any dependencies), and specifies remote builders for the run
+# Run a job (and all dependencies), and specify remote builders for the run
 now run \
     --job deploy \
     --builders "ssh://mac aarch64-darwin" \
@@ -122,7 +123,7 @@ For a full list of options, run `now run --help`.
 
 ## Tests
 
-now is tested with itself:
+now is tested with itself. In the root of this repo:
 
 ```bash
 nix run . -- run now.nix

@@ -52,9 +52,11 @@ enum Command {
         /// Path to the workflow.
         workflow: PathBuf,
 
-        /// Jobs to target in this run. If unspecified, all jobs are run.
+        /// Jobs to target in this run.
+        /// If unspecified, the default jobs of the workflow are run.
+        /// If there are no default jobs in the workflow, all jobs are run.
         #[arg(short, long = "job")]
-        jobs: Vec<String>,
+        jobs: Option<Vec<String>>,
 
         /// Optional dotenv file to read environment variables from.
         #[arg(short, long)]

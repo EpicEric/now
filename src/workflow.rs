@@ -41,6 +41,7 @@ use crate::{
 #[derive(Debug, Deserialize)]
 pub(crate) struct NowWorkflow {
     pub(crate) name: Option<String>,
+    pub(crate) default: Option<Vec<String>>,
     pub(crate) jobs: HashMap<String, NowJobContainer>,
 }
 
@@ -105,7 +106,7 @@ pub(crate) struct NowStepDownload {
 
 pub(crate) struct NowWorkflowParams {
     pub(crate) workflow: PathBuf,
-    pub(crate) jobs: Vec<String>,
+    pub(crate) jobs: Option<Vec<String>>,
     pub(crate) eval: bool,
     pub(crate) checkout_strategy: CheckoutStrategy,
     pub(crate) builders: Option<String>,
@@ -277,7 +278,7 @@ struct NowWorkflowGraph {
 }
 
 impl NowWorkflow {
-    fn build_graph(self, jobs: Vec<String>) -> color_eyre::Result<NowWorkflowGraph> {
+    fn build_graph(self, target_jobs: Option<Vec<String>>) -> color_eyre::Result<NowWorkflowGraph> {
         let mut graph = StableDiGraph::new();
         let root = graph.add_node(DagNode::Root);
 
@@ -329,8 +330,9 @@ impl NowWorkflow {
         }
 
         // Prune non-target jobs
-        if !jobs.is_empty() {
-            let job_nodes = jobs
+        let jobs = target_jobs.or_else(|| self.default.clone());
+        if let Some(target_jobs) = jobs {
+            let job_nodes = target_jobs
                 .iter()
                 .map(|job_id| {
                     graph_nodes

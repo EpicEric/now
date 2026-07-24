@@ -1,19 +1,38 @@
-{ ... }:
 let
   mkNow = pkgs: import ./. { inherit pkgs; };
 in
 {
+  default = [ "test" ];
+
   jobs = {
-    test = { ... }: {
+    test = {
       name = "Run tests";
       needs = [
         "test-env"
         "test-error"
         "test-jobs"
+        "test-matrix"
         "test-upload"
         "test-vars"
       ];
       steps = [ { run = "echo Good to go! ^u^"; } ];
+    };
+
+    format = { pkgs, ... }: {
+      name = "Fix formatting";
+      steps = [
+        {
+          run = ''
+            cargo fmt --all
+            treefmt
+          '';
+          path = [
+            pkgs.cargo
+            pkgs.rustfmt
+            pkgs.nixfmt-tree
+          ];
+        }
+      ];
     };
 
     test-env =
@@ -73,6 +92,28 @@ in
             ];
             run = ''
               now run --job b --job x .now/tests/jobs.nix
+            '';
+          }
+        ];
+      };
+
+    test-matrix =
+      { pkgs, ... }:
+      {
+        name = "Test run matrix";
+        steps = [
+          {
+            path = [
+              (mkNow pkgs)
+            ];
+            run = ''
+              if [ -n "$REMOTE_BUILDER" ]; then
+                now run \
+                  --builders "$REMOTE_BUILDER x86_64-linux - 1 1 now now -" \
+                  .now/tests/matrix.nix
+              else
+                echo "REMOTE_BUILDER is unset; skipping."
+              fi
             '';
           }
         ];
