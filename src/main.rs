@@ -38,8 +38,23 @@ pub(crate) enum CheckoutStrategy {
     Default,
 }
 
+static LONG_ABOUT: &str = "now - Nix-based distributed command runner.
+
+\x1b[1;4mExamples:\x1b[0m
+  \x1b[2m# Initialize a basic workflow in ./now.nix\x1b[0m
+  now init
+
+  \x1b[2m# Load envvars from a dotenv file\x1b[0m
+  now run --env-file .env .now/workflow-with-secrets.nix
+
+  \x1b[2m# Run the \"deploy\" job (and all dependencies), and specify a remote builder for the run\x1b[0m
+  now run \\
+    --job deploy \\
+    --builders \"ssh://mac aarch64-darwin\" \\
+    .now/remote.nix";
+
 #[derive(Parser)]
-#[command(version, about, long_about = None)]
+#[command(version, about, long_about = LONG_ABOUT)]
 enum Command {
     /// Initialize a basic workflow.
     Init {

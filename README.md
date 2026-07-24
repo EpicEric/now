@@ -6,7 +6,29 @@ Nix-based distributed command runner.
 
 Still an early work-in-progress. Expect breaking changes and broken functionality.
 
-## Creating workflows
+## Quick start
+
+```bash
+nix run github:EpicEric/now -- init
+```
+
+This creates a `now.nix` file in the current directory. To run it:
+
+```bash
+nix run github:EpicEric/now -- run now.nix
+# --- or ---
+nix run github:EpicEric/now -- run .
+```
+
+For options and examples:
+
+```bash
+nix run github:EpicEric/now -- --help
+```
+
+## Workflows
+
+Here's a full example of `now`'s features:
 
 ```nix
 { runner, lib, ... }:
@@ -48,7 +70,7 @@ Still an early work-in-progress. Expect breaking changes and broken functionalit
               import os
               print(os.environ["FOO"])
             '';
-            # Teardown always gets run even if the next jobs fail
+            # Teardown always gets run even if the next steps fail
             teardown = ''
               # Any printed secrets get anonymized
               print(os.environ["BAZ"])
@@ -101,29 +123,9 @@ Still an early work-in-progress. Expect breaking changes and broken functionalit
 }
 ```
 
-It's recommended to keep your main workflow in a `now.nix` file, and any secondary ones in a `.now/` directory.
-
-To run `now`:
-
-```bash
-now run now.nix
-# Alternatively, `now run .`
-
-# Load envvars from a dotenv file
-now run --env-file .env .now/workflow-with-secrets.nix
-
-# Run a job (and all dependencies), and specify remote builders for the run
-now run \
-    --job deploy \
-    --builders "ssh://mac aarch64-darwin" \
-    .now/remote.nix
-```
-
-For a full list of options, run `now run --help`.
-
 ## Tests
 
-now is tested with itself. In the root of this repo:
+now is tested with itself. At the root of this repo:
 
 ```bash
 nix run . -- run now.nix
