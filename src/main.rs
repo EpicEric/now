@@ -18,9 +18,7 @@ use std::path::PathBuf;
 
 use clap::{CommandFactory, Parser, ValueEnum};
 
-use crate::{
-    environment::NowEnvironment, utils::get_nixpkgs_from_expression, workflow::NowWorkflowParams,
-};
+use crate::{environment::NowEnvironment, workflow::NowWorkflowParams};
 
 mod builder;
 mod environment;
@@ -69,17 +67,12 @@ enum Command {
         /// Path to the workflow.
         workflow: PathBuf,
 
-        /// Nix expression that evaluates to nixpkgs.
-        /// If unspecified, defaults to `<nixpkgs>`.
-        #[arg(short, long)]
-        nixpkgs: Option<String>,
-
         /// Jobs to target in this run.
         /// If unspecified, the default jobs of the workflow are run.
         /// If there are no default jobs in the workflow, all jobs are run.
         ///
         /// Cannot be used together with the `--all-jobs` option.
-        #[arg(short, long = "job")]
+        #[arg(short, long = "job", value_name = "JOB")]
         jobs: Option<Vec<String>>,
 
         /// If set, all jobs are run.
@@ -89,7 +82,7 @@ enum Command {
         all_jobs: bool,
 
         /// Optional dotenv file to read environment variables from.
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "FILE")]
         env_file: Option<PathBuf>,
 
         /// Evaluate but don't run the workflow.
@@ -112,6 +105,15 @@ enum Command {
         /// <https://nix.dev/manual/nix/latest/command-ref/conf-file#conf-builders>
         #[arg(short, long)]
         builders: Option<String>,
+
+        /// Nix expression that evaluates to nixpkgs.
+        #[arg(
+            short,
+            long = "nixpkgs",
+            default_value = "<nixpkgs>",
+            value_name = "EXPRESSION"
+        )]
+        nixpkgs_expr: String,
     },
 
     /// Generate shell completions.
@@ -147,7 +149,7 @@ fn main() -> color_eyre::Result<()> {
         }
         Command::Run {
             mut workflow,
-            nixpkgs,
+            nixpkgs_expr,
             jobs,
             all_jobs,
             env_file,
@@ -176,14 +178,10 @@ fn main() -> color_eyre::Result<()> {
                     workflow.to_string_lossy()
                 ));
             }
-            let nixpkgs = match nixpkgs {
-                Some(nixpkgs) => Some(get_nixpkgs_from_expression(nixpkgs)?),
-                None => None,
-            };
-            let mut environment = NowEnvironment::get(&workflow, env_file.as_ref())?;
+            let mut environment = NowEnvironment::get(&workflow, env_file.as_ref(), &nixpkgs_expr)?;
             environment.run_workflow(NowWorkflowParams {
                 workflow,
-                nixpkgs,
+                nixpkgs_expr,
                 eval,
                 jobs,
                 all_jobs,

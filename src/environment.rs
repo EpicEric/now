@@ -46,6 +46,7 @@ impl NowEnvironment {
     pub(crate) fn get(
         workflow: &Path,
         env_file: Option<&PathBuf>,
+        nixpkgs_expr: &str,
     ) -> color_eyre::Result<NowEnvironment> {
         let mut env_vars: HashMap<OsString, OsString> = HashMap::new();
         if let Some(env_file) = env_file {
@@ -57,7 +58,7 @@ impl NowEnvironment {
         };
         env_vars.extend(std::env::vars_os());
 
-        let parsed_workflow = Self::parse_workflow(workflow, &env_vars)?;
+        let parsed_workflow = Self::parse_workflow(workflow, &env_vars, nixpkgs_expr)?;
 
         let secrets: color_eyre::Result<HashMap<String, SecretString>> = parsed_workflow
             .secrets
@@ -102,6 +103,7 @@ impl NowEnvironment {
     fn parse_workflow(
         workflow: &Path,
         env_vars: &HashMap<OsString, OsString>,
+        nixpkgs_expr: &str,
     ) -> color_eyre::Result<ParsedWorkflow> {
         let workflow_canonical = std::fs::canonicalize(workflow)?;
         let workflow_str = workflow_canonical
@@ -116,8 +118,10 @@ impl NowEnvironment {
                 .collect::<Vec<_>>(),
         )?)?;
 
+        let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
+
         let nix_command = format!(
-            "import ./nix/env.nix {{ }} {workflow_path} (builtins.fromJSON {env_var_json})"
+            "import ./nix/env.nix {workflow_args} {workflow_path} (builtins.fromJSON {env_var_json})"
         );
 
         let mut command = Command::new("nix");

@@ -16,7 +16,8 @@
 
 {
   system ? builtins.currentSystem,
-  pkgs ? import <nixpkgs> { inherit system; },
+  nixpkgs ? <nixpkgs>,
+  pkgs ? import nixpkgs { inherit system; },
 }:
 
 workflow: allVarNames:
@@ -27,4 +28,4 @@ let
     vars = lib.genAttrs allVarNames (name: "@@__nowVar_${name}@@");
   };
 in
-import ./workflow.nix { inherit system pkgs; } workflow env
+import ./workflow.nix { inherit system nixpkgs pkgs; } workflow env

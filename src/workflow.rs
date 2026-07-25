@@ -106,7 +106,7 @@ pub(crate) struct NowStepDownload {
 
 pub(crate) struct NowWorkflowParams {
     pub(crate) workflow: PathBuf,
-    pub(crate) nixpkgs: Option<PathBuf>,
+    pub(crate) nixpkgs_expr: String,
     pub(crate) eval: bool,
     pub(crate) jobs: Option<Vec<String>>,
     pub(crate) all_jobs: bool,
@@ -119,7 +119,7 @@ impl NowEnvironment {
         &mut self,
         NowWorkflowParams {
             workflow: workflow_path,
-            nixpkgs,
+            nixpkgs_expr,
             eval,
             jobs,
             all_jobs,
@@ -135,7 +135,7 @@ impl NowEnvironment {
             format!("{}>", builder.get_name()).style(style),
             workflow_path.to_string_lossy()
         );
-        let workflow = self.evaluate_workflow(&workflow_path, nixpkgs)?;
+        let workflow = self.evaluate_workflow(&workflow_path, nixpkgs_expr)?;
         if eval {
             println!("{:?}", &workflow);
             return Ok(());
@@ -228,7 +228,7 @@ impl NowEnvironment {
     fn evaluate_workflow(
         &self,
         workflow: &Path,
-        nixpkgs: Option<PathBuf>,
+        nixpkgs_expr: String,
     ) -> color_eyre::Result<NowWorkflow> {
         let workflow_canonical = std::fs::canonicalize(workflow)?;
         let workflow_str = workflow_canonical
@@ -248,11 +248,7 @@ impl NowEnvironment {
         )?)?;
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;
 
-        let workflow_args = if let Some(nixpkgs) = nixpkgs {
-            format!("{{ nixpkgs = {}; }}", serde_json::to_string(&nixpkgs)?)
-        } else {
-            "{ }".to_string()
-        };
+        let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
 
         let nix_command = format!(
             "(import {nix_workflow_path} {workflow_args}) {workflow_path} {{ secrets = builtins.fromJSON {secrets_json}; vars = builtins.fromJSON {vars_json}; }}"
@@ -261,7 +257,7 @@ impl NowEnvironment {
         let mut command = Command::new("nix");
         command.args([
             "--extra-experimental-features",
-            "nix-command",
+            "nix-command flakes",
             "eval",
             "--impure",
             "--json",
