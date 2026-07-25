@@ -97,6 +97,8 @@ in
         ];
       };
 
+    # To run this, pass an envvar like:
+    # BUILDERS='ssh://user@host x86_64-linux - 1 1 now now -'
     test-matrix =
       { pkgs, ... }:
       {
@@ -107,12 +109,12 @@ in
               (mkNow pkgs)
             ];
             run = ''
-              if [ -n "$REMOTE_BUILDER" ]; then
+              if [ -n "$BUILDERS" ]; then
                 now run \
-                  --builders "$REMOTE_BUILDER x86_64-linux - 1 1 now now -" \
+                  --builders "$BUILDERS" \
                   .now/tests/matrix.nix
               else
-                echo "REMOTE_BUILDER is unset; skipping."
+                echo "BUILDERS is unset; skipping."
               fi
             '';
           }

@@ -339,13 +339,16 @@ impl NowBuilder for RemoteBuilder {
         derivation: &Path,
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<PathBuf> {
+        let mut full_command: OsString = "nix-store --realise ".into();
+        full_command.push(derivation);
+
         let mut command = Command::new("ssh");
         if let Some(ssh_identity) = self.ssh_identity.as_ref() {
             command.arg("-i").arg(ssh_identity);
         }
         command
-            .args([&self.ssh_uri, "nix-store", "--realise"])
-            .arg(derivation)
+            .arg(&self.ssh_uri)
+            .arg(full_command)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
