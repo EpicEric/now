@@ -18,7 +18,9 @@ use std::path::PathBuf;
 
 use clap::{CommandFactory, Parser, ValueEnum};
 
-use crate::{environment::NowEnvironment, workflow::NowWorkflowParams};
+use crate::{
+    environment::NowEnvironment, utils::get_nixpkgs_from_expression, workflow::NowWorkflowParams,
+};
 
 mod builder;
 mod environment;
@@ -66,6 +68,11 @@ enum Command {
     Run {
         /// Path to the workflow.
         workflow: PathBuf,
+
+        /// Nix expression that evaluates to nixpkgs.
+        /// If unspecified, defaults to `<nixpkgs>`.
+        #[arg(short, long)]
+        nixpkgs: Option<String>,
 
         /// Jobs to target in this run.
         /// If unspecified, the default jobs of the workflow are run.
@@ -140,6 +147,7 @@ fn main() -> color_eyre::Result<()> {
         }
         Command::Run {
             mut workflow,
+            nixpkgs,
             jobs,
             all_jobs,
             env_file,
@@ -168,9 +176,14 @@ fn main() -> color_eyre::Result<()> {
                     workflow.to_string_lossy()
                 ));
             }
+            let nixpkgs = match nixpkgs {
+                Some(nixpkgs) => Some(get_nixpkgs_from_expression(nixpkgs)?),
+                None => None,
+            };
             let mut environment = NowEnvironment::get(&workflow, env_file.as_ref())?;
             environment.run_workflow(NowWorkflowParams {
                 workflow,
+                nixpkgs,
                 eval,
                 jobs,
                 all_jobs,

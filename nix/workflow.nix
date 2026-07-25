@@ -16,7 +16,8 @@
 
 {
   system ? builtins.currentSystem,
-  pkgs ? import <nixpkgs> { inherit system; },
+  nixpkgs ? <nixpkgs>,
+  pkgs ? import nixpkgs { inherit system; },
 }:
 
 let

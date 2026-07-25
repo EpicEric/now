@@ -18,6 +18,8 @@ use std::{
     ffi::OsString,
     io::Write,
     os::unix::ffi::{OsStrExt, OsStringExt},
+    path::PathBuf,
+    process::Command,
 };
 
 use smol::{io::AsyncReadExt, process::Child};
@@ -70,4 +72,38 @@ pub(crate) async fn pipe_outputs_to_stderr(child: &mut Child) -> color_eyre::Res
         stderr.write_all(&buf)?;
     }
     Ok(stderr.flush()?)
+}
+
+pub(crate) fn get_nixpkgs_from_expression(expression: String) -> color_eyre::Result<PathBuf> {
+    let mut command = Command::new("nix-instantiate");
+    command.args([
+        "--extra-experimental-features",
+        "flakes",
+        "--eval",
+        "--impure",
+        "--raw",
+    ]);
+    let output = command
+        .arg("--expr")
+        .arg(format!("builtins.toString ({expression})"))
+        .output()?;
+
+    if !output.status.success() {
+        let mut stderr = std::io::stderr();
+        stderr.write_all(&output.stderr)?;
+        stderr.flush()?;
+        return Err(color_eyre::eyre::eyre!(
+            "Failed to instantiate nixpkgs from expression"
+        ));
+    }
+
+    let path = PathBuf::from(OsString::from_vec(output.stdout.trim_ascii().to_vec()));
+    if path.is_dir() {
+        Ok(path)
+    } else {
+        Err(color_eyre::eyre::eyre!(
+            "Invalid nixpkgs path '{}'",
+            path.to_string_lossy()
+        ))
+    }
 }

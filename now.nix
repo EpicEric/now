@@ -12,6 +12,7 @@ in
         "test-error"
         "test-jobs"
         "test-matrix"
+        "test-nixpkgs"
         "test-upload"
         "test-vars"
       ];
@@ -116,6 +117,26 @@ in
               else
                 echo "BUILDERS is unset; skipping."
               fi
+            '';
+          }
+        ];
+      };
+
+    test-nixpkgs =
+      { pkgs, ... }:
+      {
+        name = "Test nixpkgs";
+        steps = [
+          {
+            path = [
+              (mkNow pkgs)
+            ];
+            run = ''
+              # Your Python3 version
+              now run .now/tests/nixpkgs.nix --nixpkgs '<nixpkgs>'
+
+              # now's Python3 version
+              now run .now/tests/nixpkgs.nix --nixpkgs '(builtins.getFlake "github:EpicEric/now").inputs."nixpkgs"'
             '';
           }
         ];

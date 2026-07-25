@@ -106,6 +106,7 @@ pub(crate) struct NowStepDownload {
 
 pub(crate) struct NowWorkflowParams {
     pub(crate) workflow: PathBuf,
+    pub(crate) nixpkgs: Option<PathBuf>,
     pub(crate) eval: bool,
     pub(crate) jobs: Option<Vec<String>>,
     pub(crate) all_jobs: bool,
@@ -118,6 +119,7 @@ impl NowEnvironment {
         &mut self,
         NowWorkflowParams {
             workflow: workflow_path,
+            nixpkgs,
             eval,
             jobs,
             all_jobs,
@@ -133,7 +135,7 @@ impl NowEnvironment {
             format!("{}>", builder.get_name()).style(style),
             workflow_path.to_string_lossy()
         );
-        let workflow = self.evaluate_workflow(&workflow_path)?;
+        let workflow = self.evaluate_workflow(&workflow_path, nixpkgs)?;
         if eval {
             println!("{:?}", &workflow);
             return Ok(());
@@ -223,7 +225,11 @@ impl NowEnvironment {
         smol::future::block_on(executor.run(smol::future::or(workflow_task, ctrl_c_task)))
     }
 
-    fn evaluate_workflow(&self, workflow: &Path) -> color_eyre::Result<NowWorkflow> {
+    fn evaluate_workflow(
+        &self,
+        workflow: &Path,
+        nixpkgs: Option<PathBuf>,
+    ) -> color_eyre::Result<NowWorkflow> {
         let workflow_canonical = std::fs::canonicalize(workflow)?;
         let workflow_str = workflow_canonical
             .to_str()
@@ -242,8 +248,14 @@ impl NowEnvironment {
         )?)?;
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;
 
+        let workflow_args = if let Some(nixpkgs) = nixpkgs {
+            format!("{{ nixpkgs = {}; }}", serde_json::to_string(&nixpkgs)?)
+        } else {
+            "{ }".to_string()
+        };
+
         let nix_command = format!(
-            "(import {nix_workflow_path} {{ }}) {workflow_path} {{ secrets = builtins.fromJSON {secrets_json}; vars = builtins.fromJSON {vars_json}; }}"
+            "(import {nix_workflow_path} {workflow_args}) {workflow_path} {{ secrets = builtins.fromJSON {secrets_json}; vars = builtins.fromJSON {vars_json}; }}"
         );
 
         let mut command = Command::new("nix");
