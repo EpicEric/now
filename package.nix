@@ -71,7 +71,7 @@ rustPlatform.buildRustPackage {
   meta = {
     name = "now";
     description = "Nix-based distributed command runner";
-    homepage = "https://github.com/EpicEric/now";
+    homepage = "https://now.dev.br";
     license = lib.licenses.agpl3Plus;
     mainProgram = "now";
     platforms = lib.platforms.all;

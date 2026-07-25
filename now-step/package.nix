@@ -15,7 +15,6 @@
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
 {
-  callPackage,
   lib,
   zig_0_16,
   stdenv,
@@ -48,7 +47,7 @@ stdenv.mkDerivation {
   meta = {
     name = "now-step";
     description = "Step runner for now";
-    homepage = "https://github.com/EpicEric/now";
+    homepage = "https://now.dev.br";
     license = lib.licenses.agpl3Plus;
     mainProgram = "now-step";
     platforms = lib.platforms.all;
