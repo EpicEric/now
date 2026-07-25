@@ -29,7 +29,6 @@ in
     packages = [
       pkgs.cargo
       pkgs.clippy
-      pkgs.mdbook
       pkgs.rust-analyzer
       pkgs.rustc
       pkgs.rustfmt

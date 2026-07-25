@@ -106,8 +106,9 @@ pub(crate) struct NowStepDownload {
 
 pub(crate) struct NowWorkflowParams {
     pub(crate) workflow: PathBuf,
-    pub(crate) jobs: Option<Vec<String>>,
     pub(crate) eval: bool,
+    pub(crate) jobs: Option<Vec<String>>,
+    pub(crate) all_jobs: bool,
     pub(crate) checkout_strategy: CheckoutStrategy,
     pub(crate) builders: Option<String>,
 }
@@ -117,8 +118,9 @@ impl NowEnvironment {
         &mut self,
         NowWorkflowParams {
             workflow: workflow_path,
-            jobs,
             eval,
+            jobs,
+            all_jobs,
             checkout_strategy: strategy,
             builders,
         }: NowWorkflowParams,
@@ -152,7 +154,7 @@ impl NowEnvironment {
         let NowWorkflowGraph {
             dag: mut tree,
             mut nodes,
-        } = workflow.build_graph(jobs)?;
+        } = workflow.build_graph(jobs, all_jobs)?;
 
         let executor = smol::LocalExecutor::new();
 
@@ -278,7 +280,11 @@ struct NowWorkflowGraph {
 }
 
 impl NowWorkflow {
-    fn build_graph(self, target_jobs: Option<Vec<String>>) -> color_eyre::Result<NowWorkflowGraph> {
+    fn build_graph(
+        self,
+        target_jobs: Option<Vec<String>>,
+        all_jobs: bool,
+    ) -> color_eyre::Result<NowWorkflowGraph> {
         let mut graph = StableDiGraph::new();
         let root = graph.add_node(DagNode::Root);
 
@@ -330,7 +336,11 @@ impl NowWorkflow {
         }
 
         // Prune non-target jobs
-        let jobs = target_jobs.or_else(|| self.default.clone());
+        let jobs = if all_jobs {
+            None
+        } else {
+            target_jobs.or_else(|| self.default.clone())
+        };
         if let Some(target_jobs) = jobs {
             let job_nodes = target_jobs
                 .iter()

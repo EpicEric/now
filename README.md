@@ -1,3 +1,9 @@
+<p align="center">
+    <img src="./images/logo.png" alt="now logo" /> <br>
+</p>
+
+---
+
 # now
 
 Nix-based distributed command runner.
@@ -34,6 +40,7 @@ Here's a full example of `now`'s features:
 { runner, lib, ... }:
 {
   name = "Optional name for the workflow";
+  # default = [ "job-1" ];  # Specify default jobs to run
   jobs = {
     # Jobs are a sequence of steps run on a single machine, in parallel with other jobs
     job-1 =

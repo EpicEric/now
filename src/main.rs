@@ -70,8 +70,16 @@ enum Command {
         /// Jobs to target in this run.
         /// If unspecified, the default jobs of the workflow are run.
         /// If there are no default jobs in the workflow, all jobs are run.
+        ///
+        /// Cannot be used together with the `--all-jobs` option.
         #[arg(short, long = "job")]
         jobs: Option<Vec<String>>,
+
+        /// If set, all jobs are run.
+        ///
+        /// Cannot be used together with the `--job` option.
+        #[arg(long)]
+        all_jobs: bool,
 
         /// Optional dotenv file to read environment variables from.
         #[arg(short, long)]
@@ -109,7 +117,12 @@ enum Command {
 fn main() -> color_eyre::Result<()> {
     match Command::parse() {
         Command::Init { workflow } => {
-            let path = workflow.unwrap_or(PathBuf::from("now.nix"));
+            let mut path = workflow.unwrap_or(PathBuf::from("."));
+            if path.is_dir()
+                || (!path.exists() && path.extension().is_none_or(|extension| extension != "nix"))
+            {
+                path.push("now.nix");
+            }
             if path.exists() {
                 return Err(color_eyre::eyre::eyre!(
                     "'{}' already exists",
@@ -128,11 +141,17 @@ fn main() -> color_eyre::Result<()> {
         Command::Run {
             mut workflow,
             jobs,
+            all_jobs,
             env_file,
             eval,
             checkout_strategy,
             builders,
         } => {
+            if all_jobs && jobs.is_some() {
+                return Err(color_eyre::eyre::eyre!(
+                    "Conflicting --job and --all-jobs options"
+                ));
+            }
             if workflow.is_dir() {
                 let now = workflow.join("now.nix");
                 if now.exists() && !now.is_dir() {
@@ -152,8 +171,9 @@ fn main() -> color_eyre::Result<()> {
             let mut environment = NowEnvironment::get(&workflow, env_file.as_ref())?;
             environment.run_workflow(NowWorkflowParams {
                 workflow,
-                jobs,
                 eval,
+                jobs,
+                all_jobs,
                 checkout_strategy,
                 builders,
             })?;
