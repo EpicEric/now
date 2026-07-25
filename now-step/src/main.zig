@@ -16,81 +16,121 @@
 
 const std = @import("std");
 const builtin = @import("builtin");
-
 const now_step = @import("now_step");
-const pty = @import("zigpty");
-const zigcli = @import("zigcli");
 
-pub fn main(init: std.process.Init) !void {
-    const allocator: std.mem.Allocator = init.arena.allocator();
+fn kill_child(io: std.Io, child: *std.process.Child) void {
+    child.kill(io);
+    _ = child.wait(io) catch {};
+}
 
-    var opt = try zigcli.structargs.parse(allocator, init.io, init.minimal.args, struct {
-        derivation: []const u8,
-        secrets: []const u8,
-    }, .{});
-    defer opt.deinit();
+fn write_to_stdout(mutex: *std.Io.Mutex, io: std.Io, reader: *std.Io.Reader, writer: *std.Io.Writer, secret_collection: now_step.SecretCollection) void {
+    write_to_stdout_inner(mutex, io, reader, writer, secret_collection) catch |err| {
+        std.log.err("write_to_stdout failed: {t}", .{err});
+    };
+}
 
-    const parsed_secrets = try std.json.parseFromSlice([][]const u8, allocator, opt.options.secrets, .{});
-    defer parsed_secrets.deinit();
-    const secret_names = parsed_secrets.value;
-
-    var secret_collection = try now_step.SecretCollection.init(allocator, init.environ_map, secret_names);
-    defer secret_collection.deinit();
-
-    const file = try std.fmt.allocPrintSentinel(allocator, "{s}", .{opt.options.derivation}, 0);
-    const cwd = try std.Io.Dir.cwd().realPathFileAlloc(init.io, ".", allocator);
-
-    const result = try pty.forkPty(.{
-        .file = file,
-        .argv = &.{null},
-        .envp = init.minimal.environ.block.slice,
-        .cwd = cwd,
-        .cols = 120,
-        .rows = 30,
-    });
-
-    var pty_buffer: [2048]u8 = undefined;
-    var pty_file = std.Io.File{ .handle = result.fd, .flags = .{ .nonblocking = false } };
-    var file_reader = pty_file.reader(init.io, &pty_buffer);
-    const r = &file_reader.interface;
-
-    var stdout_buffer: [2048]u8 = undefined;
-    var stdout_file_writer: std.Io.File.Writer = .init(.stdout(), init.io, &stdout_buffer);
-    const stdout_writer = &stdout_file_writer.interface;
-
+fn write_to_stdout_inner(mutex: *std.Io.Mutex, io: std.Io, reader: *std.Io.Reader, writer: *std.Io.Writer, secret_collection: now_step.SecretCollection) !void {
     while (true) {
-        const line = r.takeDelimiterInclusive('\n') catch |err| switch (err) {
+        const line = reader.takeDelimiterInclusive('\n') catch |err| switch (err) {
             error.EndOfStream => {
-                const rest = r.buffered();
+                const rest = reader.buffered();
                 if (rest.len > 0) {
                     const redacted = try secret_collection.redactLine(rest);
-                    try stdout_writer.writeAll(redacted);
+                    try mutex.lock(io);
+                    defer mutex.unlock(io);
+                    try writer.writeAll(redacted);
                 }
                 break;
             },
             error.ReadFailed => {
-                if (file_reader.err) |e| switch (e) {
-                    error.InputOutput => {
-                        const rest = r.buffered();
-                        if (rest.len > 0) {
-                            const redacted = try secret_collection.redactLine(rest);
-                            try stdout_writer.writeAll(redacted);
-                        }
-                        break;
-                    },
-                    else => return e,
-                };
+                const rest = reader.buffered();
+                if (rest.len > 0) {
+                    const redacted = try secret_collection.redactLine(rest);
+                    try mutex.lock(io);
+                    defer mutex.unlock(io);
+                    try writer.writeAll(redacted);
+                }
                 break;
             },
             else => return err,
         };
 
         const redacted_line = try secret_collection.redactLine(line);
-        try stdout_writer.writeAll(redacted_line);
-        try stdout_writer.flush();
+        try mutex.lock(io);
+        defer mutex.unlock(io);
+        try writer.writeAll(redacted_line);
+        try writer.flush();
     }
-    try stdout_writer.flush();
+    try mutex.lock(io);
+    defer mutex.unlock(io);
+    try writer.flush();
+}
 
-    const exit_info = pty.waitForExit(result.pid);
-    std.process.exit(@intCast(exit_info.exit_code));
+pub fn main(init: std.process.Init) !void {
+    const allocator: std.mem.Allocator = init.arena.allocator();
+
+    var secret_names: std.ArrayList([]const u8) = .empty;
+    defer secret_names.deinit(allocator);
+
+    var arg_iterator = try init.minimal.args.iterateAllocator(allocator);
+    defer arg_iterator.deinit();
+    _ = arg_iterator.next().?;
+    const derivation = arg_iterator.next().?;
+    while (arg_iterator.next()) |secret| {
+        try secret_names.append(allocator, secret);
+    }
+
+    var secret_collection = try now_step.SecretCollection.init(allocator, init.environ_map, secret_names.items);
+    defer secret_collection.deinit();
+
+    var child_env = std.process.Environ.Map.init(allocator);
+    defer child_env.deinit();
+    var env_iterator = init.environ_map.iterator();
+    while (env_iterator.next()) |entry| {
+        if (!std.mem.eql(u8, entry.key_ptr.*, "NO_COLOR") and !std.mem.eql(u8, entry.key_ptr.*, "COLORFGBG")) {
+            try child_env.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+    }
+    try child_env.put("CI", "true");
+    try child_env.put("FORCE_COLOR", "1");
+    try child_env.put("CLICOLOR_FORCE", "1");
+    try child_env.put("TERM", "xterm-256color");
+
+    var io_impl: std.Io.Threaded = .init(allocator, .{});
+    defer io_impl.deinit();
+    const io = io_impl.io();
+
+    var child = try std.process.spawn(io, .{
+        .argv = &.{derivation},
+        .environ_map = &child_env,
+        .stdin = .ignore,
+        .stdout = .pipe,
+        .stderr = .pipe,
+    });
+    errdefer kill_child(io, &child);
+
+    var multi_reader_buffer: std.Io.File.MultiReader.Buffer(2) = undefined;
+    var multi_reader: std.Io.File.MultiReader = undefined;
+    multi_reader.init(allocator, io, multi_reader_buffer.toStreams(), &.{ child.stdout.?, child.stderr.? });
+    defer multi_reader.deinit();
+
+    try multi_reader.fillRemaining(.none);
+
+    const stdout_reader = multi_reader.reader(0);
+    const stderr_reader = multi_reader.reader(1);
+
+    var stdout_buffer: [2048]u8 = undefined;
+    var stdout_file_writer: std.Io.File.Writer = .init(.stdout(), init.io, &stdout_buffer);
+    const stdout_writer = &stdout_file_writer.interface;
+
+    var mutex = std.Io.Mutex.init;
+    var task_group = std.Io.Group.init;
+    try task_group.concurrent(io, write_to_stdout, .{ &mutex, io, stdout_reader, stdout_writer, secret_collection });
+    try task_group.concurrent(io, write_to_stdout, .{ &mutex, io, stderr_reader, stdout_writer, secret_collection });
+    try task_group.await(io);
+
+    try multi_reader.checkAnyError();
+
+    const result = try child.wait(init.io);
+    std.process.exit(result.exited);
 }

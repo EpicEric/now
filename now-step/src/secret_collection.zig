@@ -13,6 +13,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
+
 const SecretCollection = @This();
 
 const std = @import("std");
@@ -29,12 +30,17 @@ pub fn init(allocator: std.mem.Allocator, environ_map: *std.process.Environ.Map,
     errdefer secrets.deinit(allocator);
 
     for (secret_names) |name| {
-        const secret_value = environ_map.get(name).?;
-        var iterator = std.mem.splitScalar(u8, secret_value, '\n');
-        while (iterator.next()) |secret_line| {
-            if (secret_line.len > 0) {
-                try secrets.append(allocator, secret_line);
+        const envvar = environ_map.get(name);
+        if (envvar) |secret_value| {
+            var iterator = std.mem.splitScalar(u8, secret_value, '\n');
+            while (iterator.next()) |secret_line| {
+                if (secret_line.len > 0) {
+                    try secrets.append(allocator, secret_line);
+                }
             }
+        } else {
+            const AllocationError = error{MissingSecret};
+            return AllocationError.MissingSecret;
         }
     }
 

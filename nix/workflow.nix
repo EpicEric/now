@@ -95,19 +95,17 @@ let
           name = "now-step";
           runtimeInputs = step.path ++ [ (mkNowStep pkgs') ];
           text = ''
-            now-step \
-              --derivation ${script step.run} \
-              --secrets ${
-                lib.strings.escapeShellArg (
-                  builtins.toJSON (
-                    builtins.attrNames (
-                      builtins.mapAttrs (_: value: value.__nowSecret) (
-                        lib.filterAttrs (_: value: value ? __nowSecret) env'
-                      )
+            now-step ${script step.run} ${
+              builtins.concatStringsSep " " (
+                map lib.strings.escapeShellArg (
+                  builtins.attrNames (
+                    builtins.mapAttrs (_: value: value.__nowSecret) (
+                      lib.filterAttrs (_: value: value ? __nowSecret) env'
                     )
                   )
                 )
-              }
+              )
+            }
           '';
         }).drvPath;
 
@@ -119,19 +117,17 @@ let
             name = "now-step";
             runtimeInputs = step.path ++ [ (mkNowStep pkgs') ];
             text = ''
-              now-step \
-                --derivation ${script step.teardown} \
-                --secrets ${
-                  lib.strings.escapeShellArg (
-                    builtins.toJSON (
-                      builtins.attrNames (
-                        builtins.mapAttrs (_: value: value.__nowSecret) (
-                          lib.filterAttrs (_: value: value ? __nowSecret) env'
-                        )
+              now-step ${script step.teardown} ${
+                builtins.concatStringsSep " " (
+                  map lib.strings.escapeShellArg (
+                    builtins.attrNames (
+                      builtins.mapAttrs (_: value: value.__nowSecret) (
+                        lib.filterAttrs (_: value: value ? __nowSecret) env'
                       )
                     )
                   )
-                }
+                )
+              }
             '';
           }).drvPath;
 

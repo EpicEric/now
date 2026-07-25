@@ -40,8 +40,6 @@ stdenv.mkDerivation {
   nativeBuildInputs = [ zig_0_16 ];
 
   zigBuildFlags = [
-    "--system"
-    "${callPackage ./deps.nix { }}"
     "-Doptimize=${optimizeLevel}"
   ];
 

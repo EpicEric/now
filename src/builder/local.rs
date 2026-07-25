@@ -207,7 +207,7 @@ impl NowBuilder for LocalBuilder {
                 } else {
                     pipe_outputs_to_stderr(&mut child).await?;
                     Err(color_eyre::eyre::eyre!(
-                        "Failed to realize derivation '{}' locally",
+                        "Failed to realize derivation '{}'",
                         derivation.to_string_lossy(),
                     ))
                 }
