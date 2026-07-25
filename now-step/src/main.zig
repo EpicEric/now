@@ -109,15 +109,15 @@ pub fn main(init: std.process.Init) !void {
     });
     errdefer kill_child(io, &child);
 
-    var multi_reader_buffer: std.Io.File.MultiReader.Buffer(2) = undefined;
-    var multi_reader: std.Io.File.MultiReader = undefined;
-    multi_reader.init(allocator, io, multi_reader_buffer.toStreams(), &.{ child.stdout.?, child.stderr.? });
-    defer multi_reader.deinit();
+    var child_stdout_buffer: [2048]u8 = undefined;
+    var child_stdout_file = std.Io.File{ .handle = child.stdout.?.handle, .flags = .{ .nonblocking = false } };
+    var child_stdout_file_reader = child_stdout_file.reader(init.io, &child_stdout_buffer);
+    const child_stdout_reader = &child_stdout_file_reader.interface;
 
-    try multi_reader.fillRemaining(.none);
-
-    const stdout_reader = multi_reader.reader(0);
-    const stderr_reader = multi_reader.reader(1);
+    var child_stderr_buffer: [2048]u8 = undefined;
+    var child_stderr_file = std.Io.File{ .handle = child.stderr.?.handle, .flags = .{ .nonblocking = false } };
+    var child_stderr_file_reader = child_stderr_file.reader(init.io, &child_stderr_buffer);
+    const child_stderr_reader = &child_stderr_file_reader.interface;
 
     var stdout_buffer: [2048]u8 = undefined;
     var stdout_file_writer: std.Io.File.Writer = .init(.stdout(), init.io, &stdout_buffer);
@@ -125,11 +125,9 @@ pub fn main(init: std.process.Init) !void {
 
     var mutex = std.Io.Mutex.init;
     var task_group = std.Io.Group.init;
-    try task_group.concurrent(io, write_to_stdout, .{ &mutex, io, stdout_reader, stdout_writer, secret_collection });
-    try task_group.concurrent(io, write_to_stdout, .{ &mutex, io, stderr_reader, stdout_writer, secret_collection });
+    try task_group.concurrent(io, write_to_stdout, .{ &mutex, io, child_stdout_reader, stdout_writer, secret_collection });
+    try task_group.concurrent(io, write_to_stdout, .{ &mutex, io, child_stderr_reader, stdout_writer, secret_collection });
     try task_group.await(io);
-
-    try multi_reader.checkAnyError();
 
     const result = try child.wait(init.io);
     std.process.exit(result.exited);
