@@ -76,10 +76,13 @@ Here's a full example of `now`'s features:
             shell = pkgs.python313;
             run = ''
               import os
+
               print(os.environ["FOO"])
             '';
             # Teardown always gets run even if the next steps fail
             teardown = ''
+              import os
+
               # Any printed secrets get anonymized
               print(os.environ["BAZ"])
             '';

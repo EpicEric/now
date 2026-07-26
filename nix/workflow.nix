@@ -36,8 +36,8 @@ let
     }).config.__job;
 
   mapMaybeList =
-    fn: jobVal:
-    if builtins.isList jobVal then
+    fn: job':
+    if builtins.isList job' then
       map (
         e:
         fn {
@@ -45,17 +45,17 @@ let
           pkgs' = e.pkgs' or pkgs;
           requiredSystemFeatures = e.requiredSystemFeatures or [ ];
         }
-      ) jobVal
+      ) job'
     else
       fn {
         job = normalizeJob (
-          if lib.isFunction jobVal then
-            jobVal {
+          if lib.isFunction job' then
+            job' {
               inherit pkgs;
               inherit (pkgs) lib;
             }
           else
-            jobVal
+            job'
         );
         pkgs' = pkgs;
         requiredSystemFeatures = [ ];
@@ -207,11 +207,11 @@ nowConfig (
         inherit vars;
 
         matrix =
-          variants: fn:
+          variants: job':
           map (v: {
             job =
-              if lib.isFunction fn then
-                fn (
+              if lib.isFunction job' then
+                job' (
                   {
                     inherit pkgs;
                     inherit (pkgs) lib;
@@ -219,7 +219,7 @@ nowConfig (
                   // v
                 )
               else
-                fn;
+                job';
             pkgs' = v.pkgs or pkgs;
             requiredSystemFeatures = v.requiredSystemFeatures or [ ];
           }) variants;

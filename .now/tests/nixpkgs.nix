@@ -6,11 +6,11 @@
         steps = [
           {
             run = ''
-              printf "${pkgs.python3}: "
-              python3 --version
+              printf "${pkgs.hello}: "
+              hello --version | head -n1
             '';
             path = [
-              pkgs.python3
+              pkgs.hello
             ];
           }
         ];

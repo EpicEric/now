@@ -16,7 +16,7 @@ in
         {
           env.FILE = runner.download upload_key;
           run = ''
-            printf "$FILE = "
+            printf "$FILE: "
             cat $FILE
           '';
         }

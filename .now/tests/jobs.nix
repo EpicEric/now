@@ -1,20 +1,20 @@
 {
   jobs = {
-    a = { ... }: {
+    a = {
       steps = [ { run = "echo a"; } ];
     };
-    b = { ... }: {
+    b = {
       steps = [ { run = "echo b"; } ];
     };
-    c = { ... }: {
+    c = {
       steps = [ { run = "echo c; exit 1"; } ];
     };
 
-    x = { ... }: {
+    x = {
       needs = [ "a" ];
       steps = [ { run = "echo x"; } ];
     };
-    y = { ... }: {
+    y = {
       needs = [
         "a"
         "x"

@@ -14,7 +14,7 @@
       }
     );
 
-    local = { ... }: {
+    local = {
       steps = [
         {
           run = ''
