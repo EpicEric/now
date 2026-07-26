@@ -22,26 +22,26 @@
 
 let
   inherit (pkgs) lib;
-  inherit (import ./types.nix { inherit lib; }) job step;
+  types = import ./types.nix { inherit lib; };
 
   mkNowStep = pkgs: (import ./. { inherit pkgs; }).now-step;
 
   normalizeJob =
-    j:
+    job: evalId:
     (lib.evalModules {
       modules = [
-        { options.__job = lib.mkOption { type = job; }; }
-        { __job = j; }
+        { options.__job = lib.mkOption { type = types.job evalId; }; }
+        { __job = job; }
       ];
     }).config.__job;
 
   mapMaybeList =
-    fn: job':
+    fn: job': evalId:
     if builtins.isList job' then
       map (
         e:
         fn {
-          job = normalizeJob e.job;
+          job = normalizeJob e.job evalId;
           pkgs' = e.pkgs' or pkgs;
           requiredSystemFeatures = e.requiredSystemFeatures or [ ];
         }
@@ -56,15 +56,21 @@ let
             }
           else
             job'
-        );
+        ) evalId;
         pkgs' = pkgs;
         requiredSystemFeatures = [ ];
       };
 
   stepFnInner =
-    placeholder_name: pkgs': env: step:
+    {
+      placeholder_name,
+      pkgs,
+      jobEnv,
+      step,
+      evalId,
+    }:
     let
-      inherit (pkgs')
+      inherit (pkgs)
         writeShellApplication
         writeTextFile
         ;
@@ -73,7 +79,7 @@ let
         writeTextFile {
           name = "now-step-script";
           text = ''
-            #! ${lib.getExe (if step.shell == null then pkgs'.bash else step.shell)} ${
+            #! ${lib.getExe (if step.shell == null then pkgs.bash else step.shell)} ${
               lib.optionalString (step.shellArgs != null) (lib.escapeShellArgs step.shellArgs)
             }
             ${text}
@@ -81,12 +87,12 @@ let
           executable = true;
         };
 
-      env' = builtins.mapAttrs (
+      env = builtins.mapAttrs (
         name: value:
         assert lib.assertMsg (lib.isValidPosixName name)
           "environment variable '${name}' is not a valid POSIX variable name";
         value
-      ) (env // step.env);
+      ) (jobEnv // step.env);
     in
     {
       name = if (step.name != null && step.name != "") then step.name else placeholder_name;
@@ -94,14 +100,16 @@ let
       runDrv =
         (writeShellApplication {
           name = "now-step";
-          runtimeInputs = step.path ++ [ (mkNowStep pkgs') ];
+          runtimeInputs = step.path ++ [ (mkNowStep pkgs) ];
           text = ''
-            now-step ${if step.__nowUploadKey == null then "" else "--preserve-stdout"} ${script step.run} ${
+            now-step ${
+              if step."__nowUpload_${evalId}" == null then "" else "--preserve-stdout"
+            } ${script step.run} ${
               builtins.concatStringsSep " " (
                 map lib.strings.escapeShellArg (
                   builtins.attrNames (
-                    builtins.mapAttrs (_: value: value.__nowSecret) (
-                      lib.filterAttrs (_: value: value ? __nowSecret) env'
+                    builtins.mapAttrs (_: value: value."__nowSecret_${evalId}") (
+                      lib.filterAttrs (_: value: value ? "__nowSecret_${evalId}") env
                     )
                   )
                 )
@@ -116,14 +124,14 @@ let
         else
           (writeShellApplication {
             name = "now-step";
-            runtimeInputs = step.path ++ [ (mkNowStep pkgs') ];
+            runtimeInputs = step.path ++ [ (mkNowStep pkgs) ];
             text = ''
               now-step ${script step.teardown} ${
                 builtins.concatStringsSep " " (
                   map lib.strings.escapeShellArg (
                     builtins.attrNames (
-                      builtins.mapAttrs (_: value: value.__nowSecret) (
-                        lib.filterAttrs (_: value: value ? __nowSecret) env'
+                      builtins.mapAttrs (_: value: value."__nowSecret_${evalId}") (
+                        lib.filterAttrs (_: value: value ? "__nowSecret_${evalId}") env
                       )
                     )
                   )
@@ -132,41 +140,47 @@ let
             '';
           }).drvPath;
 
-      env = env';
+      inherit env;
 
-      __nowUploadKey = step.__nowUploadKey;
+      ${"__nowUpload_${evalId}"} = step."__nowUpload_${evalId}";
     };
 
   stepFn =
-    placeholder_name: pkgs': env: s:
-    if s == null then
+    {
+      placeholder_name,
+      pkgs,
+      jobEnv,
+      step,
+      evalId,
+    }:
+    if step == null then
       null
     else
       let
-        appliedStep =
-          if lib.isFunction s then
-            s {
-              pkgs = pkgs';
-              inherit lib;
-            }
-          else
-            s;
         step' =
           (lib.evalModules {
             modules = [
-              { options.__step = lib.mkOption { type = step; }; }
-              { __step = appliedStep; }
+              { options.__step = lib.mkOption { type = types.step evalId; }; }
+              { __step = if lib.isFunction step then step { inherit pkgs lib; } else step; }
             ];
           }).config.__step;
       in
-      stepFnInner placeholder_name pkgs' env step';
+      stepFnInner {
+        inherit
+          placeholder_name
+          pkgs
+          jobEnv
+          evalId
+          ;
+        step = step';
+      };
 
   nowConfig =
-    module:
+    evalId: module:
     module.config
     // {
       jobs = builtins.mapAttrs (
-        jobName: job':
+        jobKey: job':
         mapMaybeList (
           {
             job,
@@ -178,13 +192,22 @@ let
           ) requiredSystemFeatures) "requiredSystemFeatures argument must be a list of strings";
           job
           // {
-            name = if (job.name != null && job.name != "") then job.name else jobName;
+            name = if (job.name != null && job.name != "") then job.name else jobKey;
             buildSystem = pkgs'.stdenv.buildPlatform.system;
             hostSystem = pkgs'.stdenv.hostPlatform.system;
             inherit requiredSystemFeatures;
-            steps = lib.imap0 (i: stepFn "${jobName}-${toString i}" pkgs' job.env) job.steps;
+            steps = lib.imap0 (
+              i: step:
+              stepFn {
+                inherit step;
+                placeholder_name = "${jobKey}-${toString i}";
+                pkgs = pkgs';
+                jobEnv = job.env;
+                inherit evalId;
+              }
+            ) job.steps;
           }
-        ) job'
+        ) job' evalId
       ) module.config.jobs;
     };
 
@@ -214,8 +237,12 @@ let
 in
 
 workflow:
-{ secrets, vars }:
-nowConfig (
+{
+  secrets,
+  vars,
+  evalId,
+}:
+nowConfig evalId (
   lib.evalModules {
     class = "now";
     modules = [
@@ -225,7 +252,7 @@ nowConfig (
     specialArgs = {
       runner = {
         secrets = lib.genAttrs secrets (name: {
-          __nowSecret = name;
+          ${"__nowSecret_${evalId}"} = name;
         });
 
         inherit vars;
@@ -276,12 +303,12 @@ nowConfig (
                 nix-store --realise "$drv" >/dev/null
                 printf '%s' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
               '';
-              __nowUploadKey = name;
+              ${"__nowUpload_${evalId}"} = name;
             };
         };
 
         download = name: {
-          __nowDownload = name;
+          ${"__nowDownload_${evalId}"} = name;
         };
       };
     };

@@ -33,7 +33,7 @@ use smol::{channel, stream::StreamExt};
 use crate::{
     CheckoutStrategy,
     builder::{NowBuilder, local::LocalBuilder},
-    environment::NowEnvironment,
+    environment::{EVAL_ID, NowEnvironment},
     job::JobResult,
 };
 
@@ -71,15 +71,12 @@ pub(crate) struct NowStrategy {
     pub(crate) fail_fast: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub(crate) struct NowStep {
     pub(crate) name: String,
-    #[serde(rename = "runDrv", default)]
     pub(crate) run_drv: PathBuf,
-    #[serde(rename = "teardownDrv", default)]
     pub(crate) teardown_drv: Option<PathBuf>,
     pub(crate) env: HashMap<String, NowStepEnvVar>,
-    #[serde(rename = "__nowUploadKey", default)]
     pub(crate) upload_key: Option<String>,
 }
 
@@ -91,15 +88,13 @@ pub(crate) enum NowStepEnvVar {
     Download(NowStepDownload),
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug)]
 pub(crate) struct NowStepSecret {
-    #[serde(rename = "__nowSecret")]
     pub(crate) secret_name: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug)]
 pub(crate) struct NowStepDownload {
-    #[serde(rename = "__nowDownload")]
     pub(crate) download_name: String,
 }
 
@@ -242,15 +237,16 @@ impl NowEnvironment {
             .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
         let nix_workflow_path = format!("(/. + {})", serde_json::to_string(&nix_workflow_str)?);
 
+        let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
+
         let secrets_json = serde_json::to_string(&serde_json::to_string(
             &self.secrets.keys().collect::<Vec<_>>(),
         )?)?;
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;
-
-        let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
+        let eval_uuid = serde_json::to_string(&*EVAL_ID)?;
 
         let nix_command = format!(
-            "(import {nix_workflow_path} {workflow_args}) {workflow_path} {{ secrets = builtins.fromJSON {secrets_json}; vars = builtins.fromJSON {vars_json}; }}"
+            "(import {nix_workflow_path} {workflow_args}) {workflow_path} {{ secrets = builtins.fromJSON {secrets_json}; vars = builtins.fromJSON {vars_json}; evalId = {eval_uuid}; }}"
         );
 
         let mut command = Command::new("nix");
@@ -354,7 +350,7 @@ impl NowWorkflow {
                 .map(|job_id| {
                     graph_nodes
                         .get(job_id)
-                        .map(|index| *index)
+                        .copied()
                         .ok_or_else(|| color_eyre::eyre::eyre!("Unknown job '{job_id}'"))
                 })
                 .collect::<color_eyre::Result<HashSet<NodeIndex<u32>>>>()?;

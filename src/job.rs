@@ -126,7 +126,7 @@ impl NowEnvironment {
                         self.uploads
                             .lock()
                             .expect("not poisoned")
-                            .insert(upload_key.clone(), upload_path);
+                            .insert(upload_key.to_string(), upload_path);
                     }
                     <color_eyre::Result<_>>::Ok(())
                 };

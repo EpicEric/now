@@ -21,6 +21,7 @@ use clap::{CommandFactory, Parser, ValueEnum};
 use crate::{environment::NowEnvironment, workflow::NowWorkflowParams};
 
 mod builder;
+mod deserialize;
 mod environment;
 mod job;
 mod project;

@@ -21,7 +21,7 @@ use std::{
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
     process::Command,
-    sync::Mutex,
+    sync::{LazyLock, Mutex},
 };
 
 use crate::{
@@ -29,6 +29,8 @@ use crate::{
     secret::SecretString,
     workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow},
 };
+
+pub(crate) static EVAL_ID: LazyLock<String> = LazyLock::new(|| uuid::Uuid::new_v4().to_string());
 
 #[derive(Debug)]
 pub(crate) struct NowEnvironment {
@@ -134,8 +136,10 @@ impl NowEnvironment {
 
         let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
 
+        let eval_uuid = serde_json::to_string(&*EVAL_ID)?;
+
         let nix_command = format!(
-            "import {nix_env_path} {workflow_args} {workflow_path} (builtins.fromJSON {env_var_json})"
+            "import {nix_env_path} {workflow_args} {workflow_path} (builtins.fromJSON {env_var_json}) {eval_uuid}"
         );
 
         let mut command = Command::new("nix");
@@ -162,7 +166,8 @@ impl NowEnvironment {
         let mut vars: HashSet<String> = HashSet::new();
         let mut secrets: HashSet<String> = HashSet::new();
 
-        let vars_regex = regex::Regex::new(r#"@@__nowVar_([^@]+)@@"#).expect("valid regex");
+        let vars_regex =
+            regex::Regex::new(&format!("@@__nowVar_{}_([^@]+)@@", *EVAL_ID)).expect("valid regex");
 
         let mut job_fn = |job: &NowJob| {
             for step in &job.steps {
