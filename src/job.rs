@@ -14,18 +14,12 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    ffi::OsStr,
-    io::{BufRead, BufReader, Read},
-    os::unix::ffi::OsStrExt,
-    path::PathBuf,
-    pin::Pin,
-};
+use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf, pin::Pin};
 
-use futures::{TryStreamExt, stream::FuturesUnordered};
+use futures::{AsyncReadExt, TryStreamExt, stream::FuturesUnordered};
 use owo_colors::OwoColorize;
 use petgraph::matrix_graph::NodeIndex;
-use smol::{channel::TryRecvError, stream::StreamExt};
+use smol::{channel::TryRecvError, io::AsyncBufReadExt, io::BufReader, stream::StreamExt};
 
 use crate::{
     builder::{NowBuilder, local::LocalBuilder},
@@ -73,7 +67,9 @@ impl NowEnvironment {
                     let teardown = builder.realize_derivation(teardown_drv, &guard).await?;
                     teardown_stack.push((&step.name, teardown, &step.env));
                 }
+
                 let run = builder.realize_derivation(&step.run_drv, &guard).await?;
+
                 let mut downloads: Vec<PathBuf> = Vec::new();
                 {
                     let uploads = self.uploads.lock().expect("not poisoned");
@@ -91,33 +87,18 @@ impl NowEnvironment {
                     }
                 }
                 builder.download(&downloads, &guard).await?;
-                let (mut child, mut reader) = builder.run_derivation(
+
+                let mut child = builder.run_derivation(
                     &cwdir,
                     run,
                     self.generate_env_vars_for_step(&step.env)?,
                 )?;
-                if let Some(upload_key) = step.upload_key.as_ref() {
-                    let mut buf = Vec::new();
-                    reader.read_to_end(&mut buf)?;
-                    let upload_path = PathBuf::from(OsStr::from_bytes(
-                        buf.rsplit(|byte| *byte == b'\n')
-                            .next()
-                            .expect("non-empty stdout")
-                            .trim_ascii(),
-                    ));
-                    builder.fetch_derivation(&upload_path, &guard).await?;
-                    eprintln!(
-                        "{} Uploaded '{}' ({})",
-                        format!("{} step[{}]>", runner, step.name).style(style),
-                        upload_key,
-                        upload_path.to_string_lossy(),
-                    );
-                    self.uploads
-                        .lock()
-                        .expect("not poisoned")
-                        .insert(upload_key.clone(), upload_path);
-                } else {
-                    for line in BufReader::new(reader).lines() {
+                let mut stdout = child.stdout.take().expect("stdout is piped");
+                let stderr = child.stderr.take().expect("stderr is piped");
+
+                let log_task = async {
+                    let mut lines = BufReader::new(stderr).lines();
+                    while let Some(line) = lines.next().await {
                         if let Ok(line) = line {
                             eprintln!(
                                 "{} {}",
@@ -128,8 +109,34 @@ impl NowEnvironment {
                             break;
                         }
                     }
-                }
-                let exit_status = child.status().await?;
+                };
+
+                let upload_task = async {
+                    if let Some(upload_key) = step.upload_key.as_ref() {
+                        let mut buf = Vec::new();
+                        stdout.read_to_end(&mut buf).await?;
+                        let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
+                        builder.fetch_derivation(&upload_path, &guard).await?;
+                        eprintln!(
+                            "{} Uploaded '{}' ({})",
+                            format!("{} step[{}]>", runner, step.name).style(style),
+                            upload_key,
+                            upload_path.to_string_lossy(),
+                        );
+                        self.uploads
+                            .lock()
+                            .expect("not poisoned")
+                            .insert(upload_key.clone(), upload_path);
+                    }
+                    <color_eyre::Result<_>>::Ok(())
+                };
+
+                let (exit_status, (_, upload_result)) =
+                    smol::future::zip(child.status(), smol::future::zip(log_task, upload_task))
+                        .await;
+                upload_result?;
+                let exit_status = exit_status?;
+
                 if !exit_status.success() {
                     return Err(color_eyre::eyre::eyre!(
                         "Step '{}' failed ({})",
@@ -143,22 +150,26 @@ impl NowEnvironment {
         .await;
 
         for (step_name, teardown, step_env) in teardown_stack.into_iter().rev() {
-            let (mut child, reader) = builder.run_derivation(
+            let mut child = builder.run_derivation(
                 &cwdir,
                 teardown,
                 self.generate_env_vars_for_step(step_env)?,
             )?;
-            for line in BufReader::new(reader).lines() {
+            let stderr = child.stderr.take().expect("stderr is piped");
+
+            let mut lines = BufReader::new(stderr).lines();
+            while let Some(line) = lines.next().await {
                 if let Ok(line) = line {
                     eprintln!(
                         "{} {}",
                         format!("{} step[{}]>", runner, step_name).style(style),
-                        line
+                        line,
                     );
                 } else {
                     break;
                 }
             }
+
             let exit_status = child.status().await?;
             if !exit_status.success() {
                 eprintln!(

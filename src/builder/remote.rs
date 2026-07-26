@@ -18,7 +18,6 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::{OsStr, OsString},
     hash::{DefaultHasher, Hash, Hasher},
-    io::PipeReader,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
     pin::Pin,
@@ -426,7 +425,7 @@ impl NowBuilder for RemoteBuilder {
         cwdir: &Path,
         derivation: PathBuf,
         envs: HashMap<OsString, OsString>,
-    ) -> color_eyre::Result<(Child, PipeReader)> {
+    ) -> color_eyre::Result<Child> {
         let mut full_command: OsString = "cd ".into();
         full_command.push(cwdir);
         full_command.push(" ; ");
@@ -445,12 +444,11 @@ impl NowBuilder for RemoteBuilder {
             command.arg("-i").arg(ssh_identity);
         }
         command.arg(&self.ssh_uri).arg(full_command);
-        let (reader, writer) = std::io::pipe()?;
         command
             .stdin(Stdio::null())
-            .stdout(writer.try_clone()?)
-            .stderr(writer);
-        Ok((command.spawn()?, reader))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        Ok(command.spawn()?)
     }
 
     async fn fetch_derivation(

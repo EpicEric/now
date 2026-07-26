@@ -96,7 +96,7 @@ let
           name = "now-step";
           runtimeInputs = step.path ++ [ (mkNowStep pkgs') ];
           text = ''
-            now-step ${script step.run} ${
+            now-step ${if step.__nowUploadKey == null then "" else "--preserve-stdout"} ${script step.run} ${
               builtins.concatStringsSep " " (
                 map lib.strings.escapeShellArg (
                   builtins.attrNames (
@@ -134,7 +134,7 @@ let
 
       env = env';
 
-      __nowUploadKey = step.__nowUploadKey or null;
+      __nowUploadKey = step.__nowUploadKey;
     };
 
   stepFn =

@@ -17,7 +17,6 @@
 use std::{
     collections::HashMap,
     ffi::OsString,
-    io::PipeReader,
     path::{Path, PathBuf},
     pin::Pin,
 };
@@ -99,7 +98,7 @@ pub(crate) trait NowBuilder {
         cwdir: &Path,
         derivation: PathBuf,
         envs: HashMap<OsString, OsString>,
-    ) -> color_eyre::Result<(Child, PipeReader)>;
+    ) -> color_eyre::Result<Child>;
 
     async fn fetch_derivation(
         &self,

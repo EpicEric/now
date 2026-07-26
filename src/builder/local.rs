@@ -18,7 +18,7 @@ use std::{
     collections::{HashMap, HashSet},
     env::temp_dir,
     ffi::{OsStr, OsString},
-    io::{PipeReader, Write},
+    io::Write,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
 };
@@ -231,18 +231,17 @@ impl NowBuilder for LocalBuilder {
         cwdir: &Path,
         derivation: PathBuf,
         envs: HashMap<OsString, OsString>,
-    ) -> color_eyre::Result<(Child, PipeReader)> {
+    ) -> color_eyre::Result<Child> {
         let mut command = Command::new(derivation.join("bin/now-step"));
-        let (reader, writer) = std::io::pipe()?;
         command
             .current_dir(cwdir)
             .stdin(Stdio::null())
-            .stdout(writer.try_clone()?)
-            .stderr(writer)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .env_clear()
             .envs(&self.env)
             .envs(envs);
-        Ok((command.spawn()?, reader))
+        Ok(command.spawn()?)
     }
 
     async fn fetch_derivation(
