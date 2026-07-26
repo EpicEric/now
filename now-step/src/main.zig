@@ -18,41 +18,89 @@ const std = @import("std");
 const builtin = @import("builtin");
 const now_step = @import("now_step");
 
-fn kill_child(io: std.Io, child: *std.process.Child) void {
+fn killChild(io: std.Io, child: *std.process.Child) void {
     child.kill(io);
     _ = child.wait(io) catch {};
 }
 
-fn wait_for_child(child: *std.process.Child, io: std.Io, result: *std.process.Child.Term) void {
-    wait_for_child_inner(child, io, result) catch |err| {
-        std.log.err("wait_for_child failed: {t}", .{err});
+fn waitForChild(child: *std.process.Child, io: std.Io, result: *std.process.Child.Term) void {
+    waitForChildInner(child, io, result) catch |err| {
+        std.log.err("waitForChild failed: {t}", .{err});
     };
 }
 
-fn wait_for_child_inner(child: *std.process.Child, io: std.Io, result: *std.process.Child.Term) !void {
+fn waitForChildInner(child: *std.process.Child, io: std.Io, result: *std.process.Child.Term) !void {
     result.* = try child.wait(io);
 }
 
 fn pipe(reader: *std.Io.Reader, writer: *std.Io.Writer) void {
-    pipe_inner(reader, writer) catch |err| {
+    pipeInner(reader, writer) catch |err| {
         std.log.err("pipe failed: {t}", .{err});
     };
 }
 
-fn pipe_inner(reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
+fn pipeInner(reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
     _ = try reader.streamRemaining(writer);
     try writer.flush();
 }
 
-fn write_to_stderr(mutex: *std.Io.Mutex, io: std.Io, reader: *std.Io.Reader, writer: *std.Io.Writer, secret_collection: now_step.SecretCollection) void {
-    write_to_stderr_inner(mutex, io, reader, writer, secret_collection) catch |err| {
-        std.log.err("write_to_stderr failed: {t}", .{err});
+fn takeLine(r: *std.Io.Reader) std.Io.Reader.DelimiterError![]u8 {
+    {
+        const contents = r.buffer[0..r.end];
+        const seek = r.seek;
+        if (std.mem.findScalarPos(u8, contents, seek, '\r')) |end| {
+            const slice = contents[seek..end];
+            if (end + 1 < r.end and r.buffer[end + 1] == '\n') {
+                r.toss(slice.len + 2);
+            } else {
+                r.toss(slice.len + 1);
+            }
+            return slice;
+        } else if (std.mem.findScalarPos(u8, contents, seek, '\n')) |end| {
+            const slice = contents[seek..end];
+            r.toss(slice.len + 1);
+            return slice;
+        }
+    }
+    while (true) {
+        const content_len = r.end - r.seek;
+        if (r.buffer.len - content_len == 0) break;
+        try r.fillMore();
+        const seek = r.seek;
+        const contents = r.buffer[0..r.end];
+        if (std.mem.findScalarPos(u8, contents, seek, '\r')) |end| {
+            const slice = contents[seek..end];
+            if (end + 1 < r.end and r.buffer[end + 1] == '\n') {
+                r.toss(slice.len + 2);
+            } else {
+                r.toss(slice.len + 1);
+            }
+            return slice;
+        } else if (std.mem.findScalarPos(u8, contents, seek, '\n')) |end| {
+            const slice = contents[seek..end];
+            r.toss(slice.len + 1);
+            return slice;
+        }
+    }
+    var failing_writer = std.Io.Writer.failing;
+    while (r.vtable.stream(r, &failing_writer, .limited(1))) |n| {
+        std.debug.assert(n == 0);
+    } else |err| switch (err) {
+        error.WriteFailed => return error.StreamTooLong,
+        error.ReadFailed => |e| return e,
+        error.EndOfStream => |e| return e,
+    }
+}
+
+fn writeToStderr(mutex: *std.Io.Mutex, io: std.Io, reader: *std.Io.Reader, writer: *std.Io.Writer, secret_collection: now_step.SecretCollection) void {
+    writeToStderrInner(mutex, io, reader, writer, secret_collection) catch |err| {
+        std.log.err("writeToStderr failed: {t}", .{err});
     };
 }
 
-fn write_to_stderr_inner(mutex: *std.Io.Mutex, io: std.Io, reader: *std.Io.Reader, writer: *std.Io.Writer, secret_collection: now_step.SecretCollection) !void {
+fn writeToStderrInner(mutex: *std.Io.Mutex, io: std.Io, reader: *std.Io.Reader, writer: *std.Io.Writer, secret_collection: now_step.SecretCollection) !void {
     while (true) {
-        const line = reader.takeDelimiterInclusive('\n') catch |err| switch (err) {
+        const line = takeLine(reader) catch |err| switch (err) {
             error.EndOfStream => {
                 const rest = reader.buffered();
                 if (rest.len > 0) {
@@ -60,6 +108,8 @@ fn write_to_stderr_inner(mutex: *std.Io.Mutex, io: std.Io, reader: *std.Io.Reade
                     try mutex.lock(io);
                     defer mutex.unlock(io);
                     try writer.writeAll(redacted);
+                    try writer.writeByte('\n');
+                    try writer.flush();
                 }
                 break;
             },
@@ -70,6 +120,8 @@ fn write_to_stderr_inner(mutex: *std.Io.Mutex, io: std.Io, reader: *std.Io.Reade
                     try mutex.lock(io);
                     defer mutex.unlock(io);
                     try writer.writeAll(redacted);
+                    try writer.writeByte('\n');
+                    try writer.flush();
                 }
                 break;
             },
@@ -80,11 +132,9 @@ fn write_to_stderr_inner(mutex: *std.Io.Mutex, io: std.Io, reader: *std.Io.Reade
         try mutex.lock(io);
         defer mutex.unlock(io);
         try writer.writeAll(redacted_line);
+        try writer.writeByte('\n');
         try writer.flush();
     }
-    try mutex.lock(io);
-    defer mutex.unlock(io);
-    try writer.flush();
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -135,7 +185,7 @@ pub fn main(init: std.process.Init) !void {
         .stdout = .pipe,
         .stderr = .pipe,
     });
-    errdefer kill_child(io, &child);
+    errdefer killChild(io, &child);
 
     var child_stdout_buffer: [2048]u8 = undefined;
     var child_stdout_file = std.Io.File{ .handle = child.stdout.?.handle, .flags = .{ .nonblocking = false } };
@@ -160,10 +210,10 @@ pub fn main(init: std.process.Init) !void {
         const stdout_writer = &stdout_file_writer.interface;
         try task_group.concurrent(io, pipe, .{ child_stdout_reader, stdout_writer });
     } else {
-        try task_group.concurrent(io, write_to_stderr, .{ &mutex, io, child_stdout_reader, stderr_writer, secret_collection });
+        try task_group.concurrent(io, writeToStderr, .{ &mutex, io, child_stdout_reader, stderr_writer, secret_collection });
     }
-    try task_group.concurrent(io, write_to_stderr, .{ &mutex, io, child_stderr_reader, stderr_writer, secret_collection });
-    try task_group.concurrent(io, wait_for_child, .{ &child, io, &result });
+    try task_group.concurrent(io, writeToStderr, .{ &mutex, io, child_stderr_reader, stderr_writer, secret_collection });
+    try task_group.concurrent(io, waitForChild, .{ &child, io, &result });
     try task_group.await(io);
 
     std.process.exit(result.exited);
