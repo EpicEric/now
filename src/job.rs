@@ -99,7 +99,12 @@ impl NowEnvironment {
                 if let Some(upload_key) = step.upload_key.as_ref() {
                     let mut buf = Vec::new();
                     reader.read_to_end(&mut buf)?;
-                    let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
+                    let upload_path = PathBuf::from(OsStr::from_bytes(
+                        buf.rsplit(|byte| *byte == b'\n')
+                            .next()
+                            .expect("non-empty stdout")
+                            .trim_ascii(),
+                    ));
                     builder.fetch_derivation(&upload_path, &guard).await?;
                     eprintln!(
                         "{} Uploaded '{}' ({})",

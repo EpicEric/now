@@ -103,7 +103,7 @@ let
         description = "Environment values to make available to steps in this job.";
       };
       steps = lib.mkOption {
-        type = types.listOf (types.nullOr step);
+        type = types.listOf (types.nullOr types.raw);
         default = [ ];
         description = "Steps to run in this job.";
       };

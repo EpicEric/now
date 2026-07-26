@@ -200,7 +200,7 @@ impl NowBuilder for LocalBuilder {
             },
             async {
                 if child.status().await?.success() {
-                    let mut stdout = child.stdout.take().ok_or(color_eyre::eyre::eyre!(""))?;
+                    let mut stdout = child.stdout.take().expect("stdout is piped");
                     let mut buf = Vec::new();
                     stdout.read_to_end(&mut buf).await?;
                     Ok(PathBuf::from(OsStr::from_bytes(buf.trim_ascii())))

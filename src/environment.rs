@@ -25,12 +25,14 @@ use std::{
 };
 
 use crate::{
+    project::create_nix_project_source,
     secret::SecretString,
     workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow},
 };
 
 #[derive(Debug)]
 pub(crate) struct NowEnvironment {
+    pub(crate) nix_project_source: PathBuf,
     pub(crate) secrets: HashMap<String, SecretString>,
     pub(crate) vars: HashMap<String, String>,
     pub(crate) local_env: HashMap<OsString, OsString>,
@@ -58,7 +60,10 @@ impl NowEnvironment {
         };
         env_vars.extend(std::env::vars_os());
 
-        let parsed_workflow = Self::parse_workflow(workflow, &env_vars, nixpkgs_expr)?;
+        let nix_project_source = create_nix_project_source()?;
+
+        let parsed_workflow =
+            Self::parse_workflow(workflow, &nix_project_source, &env_vars, nixpkgs_expr)?;
 
         let secrets: color_eyre::Result<HashMap<String, SecretString>> = parsed_workflow
             .secrets
@@ -93,6 +98,7 @@ impl NowEnvironment {
             .collect();
 
         Ok(Self {
+            nix_project_source,
             secrets: secrets?,
             vars: vars?,
             local_env: env_vars,
@@ -102,6 +108,7 @@ impl NowEnvironment {
 
     fn parse_workflow(
         workflow: &Path,
+        nix_project_source: &Path,
         env_vars: &HashMap<OsString, OsString>,
         nixpkgs_expr: &str,
     ) -> color_eyre::Result<ParsedWorkflow> {
@@ -118,10 +125,17 @@ impl NowEnvironment {
                 .collect::<Vec<_>>(),
         )?)?;
 
+        let nix_env = nix_project_source.join("nix/env.nix");
+        let nix_env_canonical = std::fs::canonicalize(&nix_env)?;
+        let nix_env_str = nix_env_canonical
+            .to_str()
+            .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
+        let nix_env_path = format!("(/. + {})", serde_json::to_string(&nix_env_str)?);
+
         let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
 
         let nix_command = format!(
-            "import ./nix/env.nix {workflow_args} {workflow_path} (builtins.fromJSON {env_var_json})"
+            "import {nix_env_path} {workflow_args} {workflow_path} (builtins.fromJSON {env_var_json})"
         );
 
         let mut command = Command::new("nix");
@@ -233,5 +247,11 @@ impl NowEnvironment {
         }
 
         Ok(map)
+    }
+}
+
+impl Drop for NowEnvironment {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.nix_project_source);
     }
 }

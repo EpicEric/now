@@ -22,7 +22,7 @@
 
 let
   inherit (pkgs) lib;
-  inherit (import ./types.nix { inherit lib; }) job;
+  inherit (import ./types.nix { inherit lib; }) job step;
 
   mkNowStep = pkgs: (import ./. { inherit pkgs; }).now-step;
 
@@ -61,7 +61,7 @@ let
         requiredSystemFeatures = [ ];
       };
 
-  stepFn =
+  stepFnInner =
     placeholder_name: pkgs': env: step:
     let
       inherit (pkgs')
@@ -136,6 +136,30 @@ let
 
       __nowUploadKey = step.__nowUploadKey or null;
     };
+
+  stepFn =
+    placeholder_name: pkgs': env: s:
+    if s == null then
+      null
+    else
+      let
+        appliedStep =
+          if lib.isFunction s then
+            s {
+              pkgs = pkgs';
+              inherit lib;
+            }
+          else
+            s;
+        step' =
+          (lib.evalModules {
+            modules = [
+              { options.__step = lib.mkOption { type = step; }; }
+              { __step = appliedStep; }
+            ];
+          }).config.__step;
+      in
+      stepFnInner placeholder_name pkgs' env step';
 
   nowConfig =
     module:
@@ -227,24 +251,30 @@ nowConfig (
         steps = {
           build =
             name: deriv:
-            assert lib.assertMsg (lib.isStorePath deriv)
+            assert lib.assertMsg (lib.isDerivation deriv)
               "derivation argument to runner.steps.build must be a derivation";
-            {
-              name = "build ${if name == "" then deriv else name}";
+            { pkgs, ... }: {
+              name = "build ${if name == "" then deriv.name else name}";
+              path = [ pkgs.nix ];
               run = ''
-                printf ${deriv}
+                drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
+                nix-store --realise "$drv" >/dev/null
+                printf 'now: Built %s\n' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
               '';
             };
 
           upload =
             name: deriv:
             assert lib.assertMsg (name != "") "name argument to runner.steps.upload must not be empty";
-            assert lib.assertMsg (lib.isStorePath deriv)
+            assert lib.assertMsg (lib.isDerivation deriv)
               "derivation argument to runner.steps.upload must be a derivation";
-            {
+            { pkgs, ... }: {
               name = "upload ${name}";
+              path = [ pkgs.nix ];
               run = ''
-                printf ${deriv}
+                drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
+                nix-store --realise "$drv" >/dev/null
+                printf '%s' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
               '';
               __nowUploadKey = name;
             };

@@ -35,7 +35,6 @@ use crate::{
     builder::{NowBuilder, local::LocalBuilder},
     environment::NowEnvironment,
     job::JobResult,
-    project::create_nix_project_source,
 };
 
 #[derive(Debug, Deserialize)]
@@ -236,7 +235,7 @@ impl NowEnvironment {
             .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
         let workflow_path = format!("(/. + {})", serde_json::to_string(&workflow_str)?);
 
-        let nix_workflow = create_nix_project_source()?.join("nix/workflow.nix");
+        let nix_workflow = self.nix_project_source.join("nix/workflow.nix");
         let nix_workflow_canonical = std::fs::canonicalize(&nix_workflow)?;
         let nix_workflow_str = nix_workflow_canonical
             .to_str()
