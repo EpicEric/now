@@ -239,14 +239,11 @@ impl NowEnvironment {
 
         let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
 
-        let secrets_json = serde_json::to_string(&serde_json::to_string(
-            &self.secrets.keys().collect::<Vec<_>>(),
-        )?)?;
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;
         let eval_uuid = serde_json::to_string(&*EVAL_ID)?;
 
         let nix_command = format!(
-            "(import {nix_workflow_path} {workflow_args}) {workflow_path} {{ secrets = builtins.fromJSON {secrets_json}; vars = builtins.fromJSON {vars_json}; evalId = {eval_uuid}; }}"
+            "(import {nix_workflow_path} {workflow_args}) {workflow_path} {{ vars = builtins.fromJSON {vars_json}; evalId = {eval_uuid}; }}"
         );
 
         let mut command = Command::new("nix");

@@ -67,10 +67,10 @@ Here's a full example of `now`'s features:
             # You can set environment variables for this step (or for the whole job)
             env = {
               FOO = "Hello!";
-              # Runtime-specified variable (interpolation allowed)
-              BAR = "${runner.vars.BAR} (copy)";
-              # Runtime-specified secret (interpolation not allowed)
-              BAZ = runner.secrets.BAZ;
+              # Runtime-specified variable (interpolation allowed; empty if missing)
+              BAR = "${runner.var "BAR"} (copy)";
+              # Runtime-specified secret (interpolation not allowed; must be specified)
+              BAZ = runner.secret "BAZ";
             };
             # You can also specify which shell to use
             shell = pkgs.python313;

@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ runner, lib, ... }:
 let
   mkNow = pkgs: import ./. { inherit pkgs; };
 in
@@ -107,6 +107,7 @@ in
         name = "Test run matrix";
         steps = [
           {
+            env.BUILDERS = runner.var "BUILDERS";
             path = [
               (mkNow pkgs)
             ];

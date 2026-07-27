@@ -6,8 +6,8 @@
         {
           shell = pkgs.python3;
           env = {
-            FIRST_VAR = runner.vars.TEST_FIRST_VAR;
-            FIRST_SECRET = runner.secrets.TEST_FIRST_SECRET;
+            FIRST_VAR = runner.var "TEST_FIRST_VAR";
+            FIRST_SECRET = runner.secret "TEST_FIRST_SECRET";
           };
           run = ''
             import os
@@ -30,8 +30,8 @@
         {
           shell = pkgs.python3;
           env = {
-            SECOND_VAR = runner.vars.TEST_SECOND_VAR;
-            SECOND_SECRET = runner.secrets.TEST_SECOND_SECRET;
+            SECOND_VAR = runner.var "TEST_SECOND_VAR";
+            SECOND_SECRET = runner.secret "TEST_SECOND_SECRET";
           };
           run = ''
             import os

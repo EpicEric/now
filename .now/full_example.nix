@@ -124,7 +124,7 @@ in
               {
                 name = "Upload coverage reports to Codecov";
                 env = {
-                  CODECOV_TOKEN = runner.secrets.CODECOV_TOKEN;
+                  CODECOV_TOKEN = runner.secret "CODECOV_TOKEN";
                 };
                 run = ''
                   codecovcli do-upload -f ./codecov.json --token "$CODECOV_TOKEN"
@@ -192,9 +192,9 @@ in
             steps = [
               {
                 name = "Login to DockerHub";
-                env.DOCKERHUB_PUSH_TOKEN = runner.secrets.DOCKERHUB_PUSH_TOKEN;
+                env.DOCKERHUB_PUSH_TOKEN = runner.secret "DOCKERHUB_PUSH_TOKEN";
                 run = ''
-                  echo $DOCKERHUB_PUSH_TOKEN | docker login --password-stdin --username ${runner.vars.DOCKERHUB_USERNAME} docker.io
+                  echo $DOCKERHUB_PUSH_TOKEN | docker login --password-stdin --username ${runner.var "DOCKERHUB_USERNAME"} docker.io
                 '';
                 teardown = ''
                   docker logout docker.io
@@ -205,9 +205,9 @@ in
               }
               {
                 name = "Login to GHCR";
-                env.GITHUB_TOKEN = runner.secrets.GITHUB_TOKEN;
+                env.GITHUB_TOKEN = runner.secret "GITHUB_TOKEN";
                 run = ''
-                  echo $GITHUB_TOKEN | docker login --pasword-stdin --username ${runner.vars.GITHUB_USERNAME} ghcr.io
+                  echo $GITHUB_TOKEN | docker login --pasword-stdin --username ${runner.var "GITHUB_USERNAME"} ghcr.io
                 '';
                 teardown = ''
                   docker logout ghcr.io
@@ -224,7 +224,7 @@ in
                       lib.cartesianProduct {
                         image = [
                           "${runner.vars.DOCKERHUB_USERNAME}/now"
-                          "ghcr.io/${runner.vars.GITHUB_USERNAME}/now"
+                          "ghcr.io/${runner.var "GITHUB_USERNAME"}/now"
                         ];
                         tag = [
                           "latest"

@@ -20,12 +20,10 @@
   pkgs ? import nixpkgs { inherit system; },
 }:
 
-workflow: allVarNames: evalId:
+workflow: evalId:
 let
-  inherit (pkgs) lib;
   env = {
-    secrets = allVarNames;
-    vars = lib.genAttrs allVarNames (name: "@@__nowVar_${evalId}_${name}@@");
+    var = name: "@@__nowVar_${evalId}_${name}@@";
     inherit evalId;
   };
 in

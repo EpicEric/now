@@ -16,9 +16,9 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    ffi::{OsStr, OsString},
+    ffi::OsString,
     io::Write,
-    os::unix::ffi::OsStrExt,
+    os::unix::ffi::OsStringExt,
     path::{Path, PathBuf},
     process::Command,
     sync::{LazyLock, Mutex},
@@ -42,8 +42,8 @@ pub(crate) struct NowEnvironment {
 }
 
 struct ParsedWorkflow {
-    vars: HashSet<String>,
-    secrets: HashSet<String>,
+    vars: HashSet<OsString>,
+    secrets: HashSet<OsString>,
 }
 
 impl NowEnvironment {
@@ -64,45 +64,72 @@ impl NowEnvironment {
 
         let nix_project_source = create_nix_project_source()?;
 
-        let parsed_workflow =
-            Self::parse_workflow(workflow, &nix_project_source, &env_vars, nixpkgs_expr)?;
+        let parsed_workflow = Self::parse_workflow(workflow, &nix_project_source, nixpkgs_expr)?;
 
         let secrets: color_eyre::Result<HashMap<String, SecretString>> = parsed_workflow
             .secrets
             .into_iter()
-            .map(
-                |secret| match env_vars.remove(OsStr::from_bytes(secret.as_bytes())) {
-                    Some(value) => {
-                        let value = SecretString::new(value.into_string().map_err(|_| {
-                            color_eyre::eyre::eyre!("Invalid value for {secret} envvar")
-                        })?);
-                        Ok((secret, value))
+            .filter_map(|secret| {
+                let Some(value) = env_vars.remove(&secret) else {
+                    return None;
+                };
+                let key = match secret.into_string() {
+                    Ok(secret) => secret,
+                    Err(os_string) => {
+                        return Some(Err(color_eyre::eyre::eyre!(
+                            "Invalid value for {} envvar",
+                            String::from_utf8_lossy(os_string.as_encoded_bytes())
+                        )));
                     }
-                    None => Err(color_eyre::eyre::eyre!("Missing {secret} envvar")),
-                },
-            )
+                };
+                let value = match value.into_string() {
+                    Ok(value) => SecretString::new(value),
+                    Err(os_string) => {
+                        return Some(Err(color_eyre::eyre::eyre!(
+                            "Invalid value for {} envvar",
+                            String::from_utf8_lossy(os_string.as_encoded_bytes())
+                        )));
+                    }
+                };
+                Some(Ok((key, value)))
+            })
             .collect();
+        let secrets = secrets?;
 
         let vars: color_eyre::Result<HashMap<String, String>> = parsed_workflow
             .vars
             .into_iter()
-            .map(
-                |var| match env_vars.remove(OsStr::from_bytes(var.as_bytes())) {
-                    Some(value) => {
-                        let value = value.into_string().map_err(|_| {
-                            color_eyre::eyre::eyre!("Invalid value for {var} envvar")
-                        })?;
-                        Ok((var, value))
+            .filter_map(|var| {
+                let Some(value) = env_vars.remove(&var) else {
+                    return None;
+                };
+                let key = match var.into_string() {
+                    Ok(var) => var,
+                    Err(os_string) => {
+                        return Some(Err(color_eyre::eyre::eyre!(
+                            "Invalid value for {} envvar",
+                            String::from_utf8_lossy(os_string.as_encoded_bytes())
+                        )));
                     }
-                    None => Err(color_eyre::eyre::eyre!("Missing {var} envvar")),
-                },
-            )
+                };
+                let value = match value.into_string() {
+                    Ok(value) => value,
+                    Err(os_string) => {
+                        return Some(Err(color_eyre::eyre::eyre!(
+                            "Invalid value for {} envvar",
+                            String::from_utf8_lossy(os_string.as_encoded_bytes())
+                        )));
+                    }
+                };
+                Some(Ok((key, value)))
+            })
             .collect();
+        let vars = vars?;
 
         Ok(Self {
             nix_project_source,
-            secrets: secrets?,
-            vars: vars?,
+            secrets,
+            vars,
             local_env: env_vars,
             uploads: Default::default(),
         })
@@ -111,7 +138,6 @@ impl NowEnvironment {
     fn parse_workflow(
         workflow: &Path,
         nix_project_source: &Path,
-        env_vars: &HashMap<OsString, OsString>,
         nixpkgs_expr: &str,
     ) -> color_eyre::Result<ParsedWorkflow> {
         let workflow_canonical = std::fs::canonicalize(workflow)?;
@@ -119,13 +145,6 @@ impl NowEnvironment {
             .to_str()
             .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
         let workflow_path = format!("(/. + {})", serde_json::to_string(&workflow_str)?);
-
-        let env_var_json = serde_json::to_string(&serde_json::to_string(
-            &env_vars
-                .keys()
-                .filter_map(|key| key.to_str())
-                .collect::<Vec<_>>(),
-        )?)?;
 
         let nix_env = nix_project_source.join("nix/env.nix");
         let nix_env_canonical = std::fs::canonicalize(&nix_env)?;
@@ -138,9 +157,8 @@ impl NowEnvironment {
 
         let eval_uuid = serde_json::to_string(&*EVAL_ID)?;
 
-        let nix_command = format!(
-            "import {nix_env_path} {workflow_args} {workflow_path} (builtins.fromJSON {env_var_json}) {eval_uuid}"
-        );
+        let nix_command =
+            format!("import {nix_env_path} {workflow_args} {workflow_path} {eval_uuid}");
 
         let mut command = Command::new("nix");
         command.args([
@@ -163,25 +181,20 @@ impl NowEnvironment {
 
         let workflow: NowWorkflow = serde_json::from_slice(&output.stdout)?;
 
-        let mut vars: HashSet<String> = HashSet::new();
-        let mut secrets: HashSet<String> = HashSet::new();
+        let mut secrets: HashSet<OsString> = HashSet::new();
 
-        let vars_regex =
-            regex::Regex::new(&format!("@@__nowVar_{}_([^@]+)@@", *EVAL_ID)).expect("valid regex");
+        let vars_regex = regex::bytes::Regex::new(&format!("@@__nowVar_{}_([^@]+)@@", *EVAL_ID))
+            .expect("valid regex");
+        let vars: HashSet<OsString> = vars_regex
+            .captures_iter(&output.stdout)
+            .map(|needle| OsString::from_vec(needle.get(1).expect("is match").as_bytes().to_vec()))
+            .collect();
 
         let mut job_fn = |job: &NowJob| {
             for step in &job.steps {
                 for env_value in step.env.values() {
-                    match env_value {
-                        NowStepEnvVar::Plain(var) => {
-                            vars.extend(vars_regex.captures_iter(var).map(|needle| {
-                                needle.get(1).expect("is match").as_str().to_string()
-                            }));
-                        }
-                        NowStepEnvVar::Secret(secret) => {
-                            secrets.insert(secret.secret_name.clone());
-                        }
-                        NowStepEnvVar::Download(_) => {}
+                    if let NowStepEnvVar::Secret(secret) = env_value {
+                        secrets.insert(OsString::from_vec(secret.secret_name.as_bytes().to_vec()));
                     }
                 }
             }
@@ -198,10 +211,18 @@ impl NowEnvironment {
             }
         }
 
-        for secret in &secrets {
-            if vars.contains(secret) {
+        let mut intersection = secrets.intersection(&vars);
+        if let Some(secret) = intersection.next() {
+            let intersection_count = intersection.count();
+            if intersection_count == 0 {
                 return Err(color_eyre::eyre::eyre!(
-                    "Secret '{secret}' cannot also be used as a regular variable"
+                    "Invalid workflow: secret '{}' cannot also be used as a regular variable",
+                    String::from_utf8_lossy(secret.as_encoded_bytes())
+                ));
+            } else {
+                return Err(color_eyre::eyre::eyre!(
+                    "Invalid workflow: secret '{}' and {intersection_count} other(s) cannot also be used as regular variables",
+                    String::from_utf8_lossy(secret.as_encoded_bytes())
                 ));
             }
         }
@@ -229,7 +250,7 @@ impl NowEnvironment {
                                 .get(&secret.secret_name)
                                 .ok_or_else(|| {
                                     color_eyre::eyre::eyre!(
-                                        "Missing secret {}",
+                                        "Missing secret '{}'",
                                         &secret.secret_name
                                     )
                                 })?
@@ -241,7 +262,7 @@ impl NowEnvironment {
                         let download_path =
                             uploads.get(&download.download_name).ok_or_else(|| {
                                 color_eyre::eyre::eyre!(
-                                    "Missing download {}",
+                                    "Missing download '{}'",
                                     &download.download_name
                                 )
                             })?;

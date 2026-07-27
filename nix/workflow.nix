@@ -238,9 +238,20 @@ in
 
 workflow:
 {
-  secrets,
-  vars,
   evalId,
+  secret ?
+    name:
+    assert lib.assertMsg (lib.isValidPosixName name)
+      "environment variable '${name}' is not a valid POSIX variable name";
+    {
+      ${"__nowSecret_${evalId}"} = name;
+    },
+  vars ? { },
+  var ?
+    name:
+    assert lib.assertMsg (lib.isValidPosixName name)
+      "environment variable '${name}' is not a valid POSIX variable name";
+    vars.${name} or "",
 }:
 nowConfig evalId (
   lib.evalModules {
@@ -251,11 +262,7 @@ nowConfig evalId (
     ];
     specialArgs = {
       runner = {
-        secrets = lib.genAttrs secrets (name: {
-          ${"__nowSecret_${evalId}"} = name;
-        });
-
-        inherit vars;
+        inherit secret var;
 
         matrix =
           variants: job':
