@@ -9,6 +9,7 @@ in
     test = {
       name = "Run tests";
       needs = [
+        "test-abort"
         "test-env"
         "test-error"
         "test-jobs"
@@ -36,6 +37,29 @@ in
         }
       ];
     };
+
+    test-abort =
+      { pkgs, ... }:
+      {
+        name = "Test abort";
+        steps = [
+          {
+            path = [
+              (mkNow pkgs)
+            ];
+            run = ''
+              now run --abort .now/tests/abort.nix || error_code=$?
+              if [ "$error_code" -eq 0 ]; then
+                echo "Test shouldn't have succeeded!"
+                exit 1
+              else
+                echo ""
+                echo "=== hint: this means the test works ==="
+              fi
+            '';
+          }
+        ];
+      };
 
     test-env =
       { pkgs, ... }:

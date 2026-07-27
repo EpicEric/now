@@ -86,6 +86,10 @@ enum Command {
         #[arg(short, long, value_name = "FILE")]
         env_file: Option<PathBuf>,
 
+        /// Immediately abort on job failure.
+        #[arg(long)]
+        abort: bool,
+
         /// Evaluate but don't run the workflow.
         #[arg(long)]
         eval: bool,
@@ -154,13 +158,29 @@ fn main() -> color_eyre::Result<()> {
             jobs,
             all_jobs,
             env_file,
+            abort,
             eval,
             checkout_strategy,
             builders,
         } => {
             if all_jobs && jobs.is_some() {
                 return Err(color_eyre::eyre::eyre!(
-                    "Conflicting --job and --all-jobs options"
+                    "Conflicting --all-jobs and --job options"
+                ));
+            }
+            if all_jobs && eval {
+                return Err(color_eyre::eyre::eyre!(
+                    "Conflicting --abort and --all-jobs options"
+                ));
+            }
+            if eval && jobs.is_some() {
+                return Err(color_eyre::eyre::eyre!(
+                    "Conflicting --eval and --job options"
+                ));
+            }
+            if abort && eval {
+                return Err(color_eyre::eyre::eyre!(
+                    "Conflicting --abort and --eval options"
                 ));
             }
             if workflow.is_dir() {
@@ -183,6 +203,7 @@ fn main() -> color_eyre::Result<()> {
             environment.run_workflow(NowWorkflowParams {
                 workflow,
                 nixpkgs_expr,
+                abort,
                 eval,
                 jobs,
                 all_jobs,

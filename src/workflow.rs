@@ -101,6 +101,7 @@ pub(crate) struct NowStepDownload {
 pub(crate) struct NowWorkflowParams {
     pub(crate) workflow: PathBuf,
     pub(crate) nixpkgs_expr: String,
+    pub(crate) abort: bool,
     pub(crate) eval: bool,
     pub(crate) jobs: Option<Vec<String>>,
     pub(crate) all_jobs: bool,
@@ -114,6 +115,7 @@ impl NowEnvironment {
         NowWorkflowParams {
             workflow: workflow_path,
             nixpkgs_expr,
+            abort,
             eval,
             jobs,
             all_jobs,
@@ -207,6 +209,9 @@ impl NowEnvironment {
                             tree.remove_node(node_index);
                         }
                         Err(error) => {
+                            if abort {
+                                builder.cancel_builders();
+                            }
                             result = result.and(Err(error));
                         }
                     }
