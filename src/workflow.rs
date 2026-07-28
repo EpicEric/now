@@ -246,9 +246,10 @@ impl NowEnvironment {
 
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;
         let eval_uuid = serde_json::to_string(&*EVAL_ID)?;
+        let nix_project_path = serde_json::to_string(&self.nix_project_source)?;
 
         let nix_command = format!(
-            "(import {nix_workflow_path} {workflow_args}) {workflow_path} {{ vars = builtins.fromJSON {vars_json}; evalId = {eval_uuid}; }}"
+            "(import {nix_workflow_path} {workflow_args}) {workflow_path} {{ vars = builtins.fromJSON {vars_json}; evalId = {eval_uuid}; gcrootDir = {nix_project_path}; }}"
         );
 
         let mut command = Command::new("nix");

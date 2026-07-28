@@ -239,6 +239,7 @@ in
 workflow:
 {
   evalId,
+  gcrootDir,
   vars ? { },
   var ?
     name:
@@ -291,10 +292,14 @@ nowConfig evalId (
               "derivation argument to runner.steps.build must be a derivation";
             { pkgs, ... }: {
               name = "build ${if name == "" then deriv.name else name}";
-              path = [ pkgs.nix ];
+              path = [
+                pkgs.nix
+                pkgs.mktemp
+              ];
               run = ''
                 drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
-                nix-store --realise "$drv" >/dev/null
+                tmpdir=$(mktemp -d ${gcrootDir}/gcroot.XXXXXXXXXX)
+                nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
                 printf 'now: Built %s\n' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
               '';
             };
@@ -306,10 +311,14 @@ nowConfig evalId (
               "derivation argument to runner.steps.upload must be a derivation";
             { pkgs, ... }: {
               name = "upload ${name}";
-              path = [ pkgs.nix ];
+              path = [
+                pkgs.nix
+                pkgs.mktemp
+              ];
               run = ''
                 drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
-                nix-store --realise "$drv" >/dev/null
+                tmpdir=$(mktemp -d ${gcrootDir}/gcroot.XXXXXXXXXX)
+                nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
                 printf '%s' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
               '';
               ${"__nowUpload_${evalId}"} = name;

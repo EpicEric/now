@@ -20,11 +20,11 @@
   pkgs ? import nixpkgs { inherit system; },
 }:
 
-workflow: evalId:
+workflow: evalId: gcrootDir:
 let
   env = {
     var = name: "@@__nowVar_${evalId}_${name}@@";
-    inherit evalId;
+    inherit evalId gcrootDir;
   };
 in
 import ./workflow.nix { inherit system nixpkgs pkgs; } workflow env

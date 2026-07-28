@@ -156,9 +156,11 @@ impl NowEnvironment {
         let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
 
         let eval_uuid = serde_json::to_string(&*EVAL_ID)?;
+        let nix_project_path = serde_json::to_string(nix_project_source)?;
 
-        let nix_command =
-            format!("import {nix_env_path} {workflow_args} {workflow_path} {eval_uuid}");
+        let nix_command = format!(
+            "import {nix_env_path} {workflow_args} {workflow_path} {eval_uuid} {nix_project_path}"
+        );
 
         let mut command = Command::new("nix");
         command.args([
