@@ -45,50 +45,38 @@ fn pipeInner(reader: *std.Io.Reader, writer: *std.Io.Writer) !void {
 }
 
 fn takeLine(r: *std.Io.Reader) std.Io.Reader.DelimiterError![]u8 {
-    {
-        const contents = r.buffer[0..r.end];
-        const seek = r.seek;
-        if (std.mem.findScalarPos(u8, contents, seek, '\r')) |end| {
-            const slice = contents[seek..end];
-            if (end + 1 < r.end and r.buffer[end + 1] == '\n') {
-                r.toss(slice.len + 2);
-            } else {
-                r.toss(slice.len + 1);
-            }
-            return slice;
-        } else if (std.mem.findScalarPos(u8, contents, seek, '\n')) |end| {
-            const slice = contents[seek..end];
-            r.toss(slice.len + 1);
-            return slice;
-        }
-    }
+    var scanned: usize = 0;
     while (true) {
-        const content_len = r.end - r.seek;
-        if (r.buffer.len - content_len == 0) break;
-        try r.fillMore();
-        const seek = r.seek;
-        const contents = r.buffer[0..r.end];
-        if (std.mem.findScalarPos(u8, contents, seek, '\r')) |end| {
-            const slice = contents[seek..end];
-            if (end + 1 < r.end and r.buffer[end + 1] == '\n') {
-                r.toss(slice.len + 2);
-            } else {
-                r.toss(slice.len + 1);
+        const contents = r.buffer[r.seek..r.end];
+        if (std.mem.findAnyPos(u8, contents, scanned, "\r\n")) |i| {
+            if (contents[i] == '\n') {
+                r.toss(i + 1);
+                return contents[0..i];
             }
-            return slice;
-        } else if (std.mem.findScalarPos(u8, contents, seek, '\n')) |end| {
-            const slice = contents[seek..end];
-            r.toss(slice.len + 1);
-            return slice;
+            if (i + 1 < contents.len) {
+                if (contents[i + 1] == '\n') {
+                    r.toss(i + 2);
+                } else {
+                    r.toss(i + 1);
+                }
+                return contents[0..i];
+            }
+            scanned = i;
+        } else {
+            scanned = contents.len;
         }
-    }
-    var failing_writer = std.Io.Writer.failing;
-    while (r.vtable.stream(r, &failing_writer, .limited(1))) |n| {
-        std.debug.assert(n == 0);
-    } else |err| switch (err) {
-        error.WriteFailed => return error.StreamTooLong,
-        error.ReadFailed => |e| return e,
-        error.EndOfStream => |e| return e,
+        if (contents.len == r.buffer.len) return error.StreamTooLong;
+        r.fillMore() catch |err| switch (err) {
+            error.ReadFailed => |e| return e,
+            error.EndOfStream => {
+                const rest = r.buffer[r.seek..r.end];
+                if (rest.len != 0 and rest[rest.len - 1] == '\r') {
+                    r.toss(rest.len);
+                    return rest[0 .. rest.len - 1];
+                }
+                return error.EndOfStream;
+            },
+        };
     }
 }
 

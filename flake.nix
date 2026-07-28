@@ -1,12 +1,10 @@
 {
   description = "Nix-based distributed command runner";
 
-  inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
-  };
+  inputs = { };
 
   outputs =
-    { self, nixpkgs }:
+    { self, ... }@args:
     let
       systems = [
         "x86_64-linux"
@@ -30,16 +28,20 @@
             }
           ) acc (builtins.attrNames fSystem)
         ) { } systems);
+
+      inputs = import ./.tack {
+        overrides = args.tackOverrides or { };
+      };
     in
     eachSystem (
       system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import inputs.nixpkgs { inherit system; };
         inherit (import ./nix { inherit system pkgs; }) now now-step shell;
       in
       {
         packages.${system} = {
-          default = self.packages.${system}.now;
+          default = now;
           inherit now now-step;
         };
 

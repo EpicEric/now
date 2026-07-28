@@ -32,7 +32,7 @@ pub fn init(allocator: std.mem.Allocator, environ_map: *std.process.Environ.Map,
     for (secret_names) |name| {
         const envvar = environ_map.get(name);
         if (envvar) |secret_value| {
-            var iterator = std.mem.splitScalar(u8, secret_value, '\n');
+            var iterator = std.mem.splitAny(u8, secret_value, "\r\n");
             while (iterator.next()) |secret_line| {
                 if (secret_line.len > 0) {
                     try secrets.append(allocator, secret_line);

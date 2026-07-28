@@ -16,7 +16,8 @@
 
 {
   system ? builtins.currentSystem,
-  pkgs ? import <nixpkgs> { inherit system; },
+  inputs ? import ../.tack,
+  pkgs ? import inputs.nixpkgs { inherit system; },
 }:
 let
   now = pkgs.callPackage ../package.nix { };

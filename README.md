@@ -15,6 +15,9 @@ Still an early work-in-progress. Expect breaking changes and broken functionalit
 ## Quick start
 
 ```bash
+# Binary cache:
+#   extra-substituters = https://cache.eric.dev.br
+#   extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=
 nix run github:EpicEric/now -- init
 ```
 

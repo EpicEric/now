@@ -239,13 +239,6 @@ in
 workflow:
 {
   evalId,
-  secret ?
-    name:
-    assert lib.assertMsg (lib.isValidPosixName name)
-      "environment variable '${name}' is not a valid POSIX variable name";
-    {
-      ${"__nowSecret_${evalId}"} = name;
-    },
   vars ? { },
   var ?
     name:
@@ -253,6 +246,15 @@ workflow:
       "environment variable '${name}' is not a valid POSIX variable name";
     vars.${name} or "",
 }:
+let
+  secret =
+    name:
+    assert lib.assertMsg (lib.isValidPosixName name)
+      "environment variable '${name}' is not a valid POSIX variable name";
+    {
+      ${"__nowSecret_${evalId}"} = name;
+    };
+in
 nowConfig evalId (
   lib.evalModules {
     class = "now";

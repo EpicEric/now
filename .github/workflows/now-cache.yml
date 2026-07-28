@@ -1,0 +1,46 @@
+on:
+  push:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "now-cache"
+  cancel-in-progress: true
+
+jobs:
+  build-nix-packages:
+    name: Build and push Nix packages (${{ matrix.system }})
+    environment: niks3
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            system: x86_64-linux
+          - runner: ubuntu-24.04-arm
+            system: aarch64-linux
+          - runner: macos-26-intel
+            system: x86_64-darwin
+          - runner: macos-26
+            system: aarch64-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: true
+      - name: Install Nix
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3 # v31.10.6
+        with:
+          nix_path: nixpkgs=channel:nixpkgs-unstable
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            extra-substituters = ${{ vars.NIKS3_SERVER_URL }}
+            extra-trusted-public-keys = ${{ vars.NIKS3_PUBLIC_KEY }}
+      - name: Run now workflow
+        env:
+          NIKS3_SERVER_URL: ${{ vars.NIKS3_SERVER_URL }}
+          NIKS3_AUTH_TOKEN: ${{ secrets.NIKS3_AUTH_TOKEN }}
+        run: |
+          nix run . -- run .now/cache.nix

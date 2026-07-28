@@ -1,4 +1,4 @@
-{ runner, lib, ... }:
+{ runner, ... }:
 let
   mkNow = pkgs: import ./. { inherit pkgs; };
 in
@@ -54,7 +54,7 @@ in
                 exit 1
               else
                 echo ""
-                echo "=== hint: this means the test works ==="
+                echo "=== hint: if 'fail' is the last job, the test works ==="
               fi
             '';
           }
@@ -150,14 +150,9 @@ in
 
     test-nixpkgs =
       { pkgs, ... }:
-      let
-        nixpkgs_flake_expr =
-          if (lib.versionAtLeast pkgs.nix.version "2.35") then "./." else "\"github:EpicEric/now\"";
-      in
       {
         name = "Test nixpkgs";
         steps = [
-
           {
             path = [
               (mkNow pkgs)
@@ -167,7 +162,7 @@ in
               now run .now/tests/nixpkgs.nix
 
               # now's Python3 version
-              now run .now/tests/nixpkgs.nix --nixpkgs '(builtins.getFlake ${nixpkgs_flake_expr}).inputs."nixpkgs"'
+              now run .now/tests/nixpkgs.nix --nixpkgs '(import ./.tack).nixpkgs'
             '';
           }
         ];
