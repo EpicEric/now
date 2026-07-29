@@ -36,7 +36,7 @@ use crate::{
     CheckoutStrategy,
     builder::{CheckoutTask, CommandCheckoutTask, NixConfig, NowBuilder, remote::RemoteBuilder},
     environment::NowEnvironment,
-    utils::pipe_outputs_to_stderr,
+    utils::{get_random_string, pipe_outputs_to_stderr},
     workflow::NowJob,
 };
 
@@ -76,7 +76,12 @@ impl LocalBuilder {
 
         let config: NixConfig = serde_json::from_slice(&output.stdout)?;
 
-        let remote_builders = RemoteBuilder::get_remote_builders(&config, strategy, builders)?;
+        let remote_builders = RemoteBuilder::get_remote_builders(
+            &config,
+            strategy,
+            builders,
+            environment.nix_project_source.as_ref(),
+        )?;
 
         let (cancellation, cancellation_rx) = channel::bounded(1);
 
@@ -150,7 +155,7 @@ impl NowBuilder for LocalBuilder {
         match self.strategy {
             CheckoutStrategy::Default => Ok((None, std::env::current_dir()?)),
             CheckoutStrategy::None => {
-                let tmpdir = temp_dir().join(format!("now-{}", uuid::Uuid::new_v4()));
+                let tmpdir = temp_dir().join(format!("now-{}", get_random_string(10)));
 
                 let mut command = Command::new("mkdir");
                 command

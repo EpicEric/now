@@ -20,6 +20,7 @@ use std::{
     os::unix::ffi::{OsStrExt, OsStringExt},
 };
 
+use rand::distr::SampleString;
 use smol::{io::AsyncReadExt, process::Child};
 
 pub(crate) fn escape_os_string(string: OsString) -> OsString {
@@ -70,4 +71,8 @@ pub(crate) async fn pipe_outputs_to_stderr(child: &mut Child) -> color_eyre::Res
         stderr.write_all(&buf)?;
     }
     Ok(stderr.flush()?)
+}
+
+pub(crate) fn get_random_string(len: usize) -> String {
+    rand::distr::Alphanumeric.sample_string(&mut rand::rng(), len)
 }

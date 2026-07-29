@@ -24,8 +24,6 @@ in
           name = "read";
           env.FILE = runner.download upload_key;
           run = ''
-            echo Sleeping
-            sleep 30
             printf "$FILE: "
             cat $FILE
           '';

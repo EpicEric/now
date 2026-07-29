@@ -25,16 +25,17 @@ use std::{
 };
 
 use crate::{
-    project::create_nix_project_source,
+    project::{ProjectSource, create_nix_project_source},
     secret::SecretString,
+    utils::get_random_string,
     workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow},
 };
 
-pub(crate) static EVAL_ID: LazyLock<String> = LazyLock::new(|| uuid::Uuid::new_v4().to_string());
+pub(crate) static EVAL_ID: LazyLock<String> = LazyLock::new(|| get_random_string(10));
 
 #[derive(Debug)]
 pub(crate) struct NowEnvironment {
-    pub(crate) nix_project_source: PathBuf,
+    pub(crate) nix_project_source: ProjectSource,
     pub(crate) secrets: HashMap<String, SecretString>,
     pub(crate) vars: HashMap<String, String>,
     pub(crate) local_env: HashMap<OsString, OsString>,
@@ -64,7 +65,8 @@ impl NowEnvironment {
 
         let nix_project_source = create_nix_project_source()?;
 
-        let parsed_workflow = Self::parse_workflow(workflow, &nix_project_source, nixpkgs_expr)?;
+        let parsed_workflow =
+            Self::parse_workflow(workflow, nix_project_source.as_ref(), nixpkgs_expr)?;
 
         let secrets: color_eyre::Result<HashMap<String, SecretString>> = parsed_workflow
             .secrets
@@ -155,11 +157,11 @@ impl NowEnvironment {
 
         let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
 
-        let eval_uuid = serde_json::to_string(&*EVAL_ID)?;
+        let eval_id = serde_json::to_string(&*EVAL_ID)?;
         let nix_project_path = serde_json::to_string(nix_project_source)?;
 
         let nix_command = format!(
-            "import {nix_env_path} {workflow_args} {workflow_path} {eval_uuid} {nix_project_path}"
+            "import {nix_env_path} {workflow_args} {workflow_path} {eval_id} {nix_project_path}"
         );
 
         let mut command = Command::new("nix");
@@ -275,11 +277,5 @@ impl NowEnvironment {
         }
 
         Ok(map)
-    }
-}
-
-impl Drop for NowEnvironment {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.nix_project_source);
     }
 }

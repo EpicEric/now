@@ -14,15 +14,36 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{env::temp_dir, fs::create_dir_all, path::PathBuf};
+use std::{
+    env::temp_dir,
+    fs::create_dir_all,
+    path::{Path, PathBuf},
+};
 
 use include_dir::{Dir, include_dir};
+
+use crate::utils::get_random_string;
 
 static NIX_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/nix");
 static NOW_STEP_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/now-step");
 
-pub(crate) fn create_nix_project_source() -> color_eyre::Result<PathBuf> {
-    let tmpdir = temp_dir().join(format!("now-{}", uuid::Uuid::new_v4()));
+#[derive(Debug, Clone)]
+pub(crate) struct ProjectSource(PathBuf);
+
+impl AsRef<Path> for ProjectSource {
+    fn as_ref(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for ProjectSource {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+pub(crate) fn create_nix_project_source() -> color_eyre::Result<ProjectSource> {
+    let tmpdir = temp_dir().join(format!("now-{}", get_random_string(10)));
 
     let nix_dir = tmpdir.join("nix");
     create_dir_all(&nix_dir)?;
@@ -32,5 +53,5 @@ pub(crate) fn create_nix_project_source() -> color_eyre::Result<PathBuf> {
     create_dir_all(&now_step_dir)?;
     NOW_STEP_DIR.extract(&now_step_dir)?;
 
-    Ok(tmpdir)
+    Ok(ProjectSource(tmpdir))
 }

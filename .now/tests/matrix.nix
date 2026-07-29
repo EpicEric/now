@@ -25,16 +25,12 @@
       ];
     };
 
-    local-2 = runner.matrix [ { name = "Local job"; } ] (
+    local-2 = runner.matrix [ { name = "Local 2"; } ] (
       { name, ... }: {
         inherit name;
         needs = [ "local" ];
         steps = [
-          {
-            run = ''
-              ls
-            '';
-          }
+          { run = "ls"; }
         ];
       }
     );
@@ -47,6 +43,13 @@
             pwd
           '';
         }
+      ];
+    };
+
+    remote-2 = runner.matrix [ { requiredSystemFeatures = [ "now" ]; } ] {
+      needs = [ "remote" ];
+      steps = [
+        { run = "ls"; }
       ];
     };
   };

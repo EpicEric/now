@@ -235,7 +235,7 @@ impl NowEnvironment {
             .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
         let workflow_path = format!("(/. + {})", serde_json::to_string(&workflow_str)?);
 
-        let nix_workflow = self.nix_project_source.join("nix/workflow.nix");
+        let nix_workflow = self.nix_project_source.as_ref().join("nix/workflow.nix");
         let nix_workflow_canonical = std::fs::canonicalize(&nix_workflow)?;
         let nix_workflow_str = nix_workflow_canonical
             .to_str()
@@ -245,11 +245,11 @@ impl NowEnvironment {
         let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
 
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;
-        let eval_uuid = serde_json::to_string(&*EVAL_ID)?;
-        let nix_project_path = serde_json::to_string(&self.nix_project_source)?;
+        let eval_id = serde_json::to_string(&*EVAL_ID)?;
+        let nix_project_path = serde_json::to_string(self.nix_project_source.as_ref())?;
 
         let nix_command = format!(
-            "(import {nix_workflow_path} {workflow_args}) {workflow_path} {{ vars = builtins.fromJSON {vars_json}; evalId = {eval_uuid}; gcrootDir = {nix_project_path}; }}"
+            "(import {nix_workflow_path} {workflow_args}) {workflow_path} {{ vars = builtins.fromJSON {vars_json}; evalId = {eval_id}; gcrootDir = {nix_project_path}; }}"
         );
 
         let mut command = Command::new("nix");

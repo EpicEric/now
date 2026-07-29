@@ -298,7 +298,7 @@ nowConfig evalId (
               ];
               run = ''
                 drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
-                tmpdir=$(mktemp -d ${gcrootDir}/gcroot.XXXXXXXXXX)
+                tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
                 nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
                 printf 'now: Built %s\n' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
               '';
@@ -317,7 +317,7 @@ nowConfig evalId (
               ];
               run = ''
                 drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
-                tmpdir=$(mktemp -d ${gcrootDir}/gcroot.XXXXXXXXXX)
+                tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
                 nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
                 printf '%s' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
               '';
