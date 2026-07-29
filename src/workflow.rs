@@ -102,6 +102,7 @@ pub(crate) struct NowStepDownload {
 pub(crate) struct NowWorkflowParams {
     pub(crate) workflow: PathBuf,
     pub(crate) nixpkgs_expr: String,
+    pub(crate) use_cache: bool,
     pub(crate) abort: bool,
     pub(crate) eval: bool,
     pub(crate) jobs: Option<Vec<String>>,
@@ -116,6 +117,7 @@ impl NowEnvironment {
         NowWorkflowParams {
             workflow: workflow_path,
             nixpkgs_expr,
+            use_cache,
             abort,
             eval,
             jobs,
@@ -124,7 +126,7 @@ impl NowEnvironment {
             builders,
         }: NowWorkflowParams,
     ) -> color_eyre::Result<()> {
-        let builder = LocalBuilder::new(self, strategy, builders)?;
+        let builder = LocalBuilder::new(self, use_cache, strategy, builders)?;
         let style = builder.get_style();
 
         eprintln!(
@@ -132,7 +134,7 @@ impl NowEnvironment {
             format!("{}>", builder.get_name()).style(style),
             workflow_path.to_string_lossy()
         );
-        let workflow = self.evaluate_workflow(&workflow_path, nixpkgs_expr)?;
+        let workflow = self.evaluate_workflow(&workflow_path, nixpkgs_expr, use_cache)?;
         if eval {
             println!("{:?}", &workflow);
             return Ok(());
@@ -247,6 +249,7 @@ impl NowEnvironment {
         &self,
         workflow: &Path,
         nixpkgs_expr: String,
+        use_cache: bool,
     ) -> color_eyre::Result<NowWorkflow> {
         let workflow_canonical = std::fs::canonicalize(workflow)?;
         let workflow_str = workflow_canonical
@@ -268,7 +271,7 @@ impl NowEnvironment {
         let nix_project_path = serde_json::to_string(self.nix_project_source.as_ref())?;
 
         let nix_command = format!(
-            "(import {nix_workflow_path} {workflow_args}) {workflow_path} {{ vars = builtins.fromJSON {vars_json}; evalId = {eval_id}; gcrootDir = {nix_project_path}; }}"
+            "(import {nix_workflow_path} {workflow_args}) {{ workflow = {workflow_path}; vars = builtins.fromJSON {vars_json}; evalId = {eval_id}; useCache = {use_cache}; gcrootDir = {nix_project_path}; }}"
         );
 
         let mut command = Command::new("nix");

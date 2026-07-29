@@ -36,7 +36,10 @@ use smol::{
 
 use crate::{
     CheckoutStrategy,
-    builder::{CheckoutTask, CommandCheckoutTask, NixConfig, NowBuilder},
+    builder::{
+        CACHE_PUBLIC_KEY, CACHE_SUBSTITUTER, CheckoutTask, CommandCheckoutTask, NixConfig,
+        NowBuilder,
+    },
     utils::{escape_os_string, get_random_string, pipe_outputs_to_stderr, trim_string},
     workflow::NowJob,
 };
@@ -80,6 +83,7 @@ pub(crate) struct RemoteBuilder {
     pub(crate) cancellation: channel::Sender<()>,
     pub(crate) cancellation_rx: Mutex<channel::Receiver<()>>,
     pub(crate) control_path: PathBuf,
+    pub(crate) use_cache: bool,
     pub(crate) strategy: CheckoutStrategy,
     pub(crate) short_name: String,
     pub(crate) ssh_uri: String,
@@ -92,6 +96,7 @@ pub(crate) struct RemoteBuilder {
 impl RemoteBuilder {
     pub(crate) fn get_remote_builders(
         config: &NixConfig,
+        use_cache: bool,
         strategy: CheckoutStrategy,
         builders: Option<String>,
         project_source: &Path,
@@ -180,6 +185,7 @@ impl RemoteBuilder {
             vec.push(RemoteBuilder {
                 cancellation,
                 cancellation_rx: Mutex::new(cancellation_rx),
+                use_cache,
                 strategy,
                 control_path,
                 short_name,
@@ -395,7 +401,14 @@ impl NowBuilder for RemoteBuilder {
         derivation: &Path,
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<PathBuf> {
-        let mut full_command: OsString = "nix-store --realise ".into();
+        let mut full_command: OsString = "nix-store".into();
+        if self.use_cache {
+            full_command.push(" --option extra-substituters ");
+            full_command.push(CACHE_SUBSTITUTER);
+            full_command.push(" --option extra-trusted-public-keys ");
+            full_command.push(CACHE_PUBLIC_KEY);
+        }
+        full_command.push(" --realise ");
         full_command.push(derivation);
 
         let mut command = Command::new("ssh");

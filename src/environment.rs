@@ -52,6 +52,7 @@ impl NowEnvironment {
         workflow: &Path,
         env_file: Option<&PathBuf>,
         nixpkgs_expr: &str,
+        use_cache: bool,
     ) -> color_eyre::Result<NowEnvironment> {
         let mut env_vars: HashMap<OsString, OsString> = HashMap::new();
         if let Some(env_file) = env_file {
@@ -65,8 +66,12 @@ impl NowEnvironment {
 
         let nix_project_source = create_nix_project_source()?;
 
-        let parsed_workflow =
-            Self::parse_workflow(workflow, nix_project_source.as_ref(), nixpkgs_expr)?;
+        let parsed_workflow = Self::parse_workflow(
+            workflow,
+            nix_project_source.as_ref(),
+            nixpkgs_expr,
+            use_cache,
+        )?;
 
         let secrets: color_eyre::Result<HashMap<String, SecretString>> = parsed_workflow
             .secrets
@@ -141,6 +146,7 @@ impl NowEnvironment {
         workflow: &Path,
         nix_project_source: &Path,
         nixpkgs_expr: &str,
+        use_cache: bool,
     ) -> color_eyre::Result<ParsedWorkflow> {
         let workflow_canonical = std::fs::canonicalize(workflow)?;
         let workflow_str = workflow_canonical
@@ -161,7 +167,7 @@ impl NowEnvironment {
         let nix_project_path = serde_json::to_string(nix_project_source)?;
 
         let nix_command = format!(
-            "import {nix_env_path} {workflow_args} {workflow_path} {eval_id} {nix_project_path}"
+            "import {nix_env_path} {workflow_args} {{ workflow = {workflow_path}; evalId = {eval_id}; useCache = {use_cache}; gcrootDir = {nix_project_path}; }}"
         );
 
         let mut command = Command::new("nix");

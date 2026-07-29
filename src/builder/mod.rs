@@ -35,6 +35,10 @@ pub(crate) trait CheckoutTask {
     fn run<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = color_eyre::Result<()>> + 'a>>;
 }
 
+pub(crate) static CACHE_SUBSTITUTER: &str = "https://cache.eric.dev.br";
+pub(crate) static CACHE_PUBLIC_KEY: &str =
+    "cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=";
+
 struct CommandCheckoutTask {
     pub(crate) builder: String,
     pub(crate) child: Child,

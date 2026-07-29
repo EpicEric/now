@@ -24,10 +24,18 @@ let
   inherit (pkgs) lib;
   types = import ./types.nix { inherit lib; };
 
-  mkNowStep = pkgs: (import ./. { inherit pkgs; }).now-step;
+  mkNowStep =
+    { useCache, pkgs }:
+    if useCache then
+      (import ./. {
+        inherit (pkgs.stdenv.hostPlatform) system;
+        inherit useCache;
+      }).now-step
+    else
+      (import ./. { inherit pkgs; }).now-step;
 
   normalizeJob =
-    job: evalId:
+    { job, evalId }:
     (lib.evalModules {
       modules = [
         { options.__job = lib.mkOption { type = types.job evalId; }; }
@@ -36,27 +44,37 @@ let
     }).config.__job;
 
   mapMaybeList =
-    fn: job': evalId:
+    {
+      fn,
+      job',
+      evalId,
+    }:
     if builtins.isList job' then
       map (
         e:
         fn {
-          job = normalizeJob e.job evalId;
+          job = normalizeJob {
+            inherit (e) job;
+            inherit evalId;
+          };
           pkgs' = e.pkgs' or pkgs;
           requiredSystemFeatures = e.requiredSystemFeatures or [ ];
         }
       ) job'
     else
       fn {
-        job = normalizeJob (
-          if lib.isFunction job' then
-            job' {
-              inherit pkgs;
-              inherit (pkgs) lib;
-            }
-          else
-            job'
-        ) evalId;
+        job = normalizeJob {
+          job = (
+            if lib.isFunction job' then
+              job' {
+                inherit pkgs;
+                inherit (pkgs) lib;
+              }
+            else
+              job'
+          );
+          inherit evalId;
+        };
         pkgs' = pkgs;
         requiredSystemFeatures = [ ];
       };
@@ -68,6 +86,7 @@ let
       jobEnv,
       step,
       evalId,
+      useCache,
     }:
     let
       inherit (pkgs)
@@ -100,7 +119,11 @@ let
       runDrv =
         (writeShellApplication {
           name = "now-step";
-          runtimeInputs = step.path ++ [ (mkNowStep pkgs) ];
+          runtimeInputs = step.path ++ [
+            (mkNowStep {
+              inherit useCache pkgs;
+            })
+          ];
           text = ''
             now-step ${
               if step."__nowUpload_${evalId}" == null then "" else "--preserve-stdout"
@@ -124,7 +147,11 @@ let
         else
           (writeShellApplication {
             name = "now-step";
-            runtimeInputs = step.path ++ [ (mkNowStep pkgs) ];
+            runtimeInputs = step.path ++ [
+              (mkNowStep {
+                inherit useCache pkgs;
+              })
+            ];
             text = ''
               now-step ${script step.teardown} ${
                 builtins.concatStringsSep " " (
@@ -152,6 +179,7 @@ let
       jobEnv,
       step,
       evalId,
+      useCache,
     }:
     if step == null then
       null
@@ -171,43 +199,51 @@ let
           pkgs
           jobEnv
           evalId
+          useCache
           ;
         step = step';
       };
 
   nowConfig =
-    evalId: module:
+    {
+      evalId,
+      useCache,
+      module,
+    }:
     module.config
     // {
       jobs = builtins.mapAttrs (
         jobKey: job':
-        mapMaybeList (
-          {
-            job,
-            pkgs',
-            requiredSystemFeatures,
-          }:
-          assert lib.assertMsg (builtins.all (
-            x: lib.isString x
-          ) requiredSystemFeatures) "requiredSystemFeatures argument must be a list of strings";
-          job
-          // {
-            name = if (job.name != null && job.name != "") then job.name else jobKey;
-            buildSystem = pkgs'.stdenv.buildPlatform.system;
-            hostSystem = pkgs'.stdenv.hostPlatform.system;
-            inherit requiredSystemFeatures;
-            steps = lib.imap0 (
-              i: step:
-              stepFn {
-                inherit step;
-                placeholder_name = "${jobKey}-${toString i}";
-                pkgs = pkgs';
-                jobEnv = job.env;
-                inherit evalId;
-              }
-            ) job.steps;
-          }
-        ) job' evalId
+        mapMaybeList {
+          fn = (
+            {
+              job,
+              pkgs',
+              requiredSystemFeatures,
+            }:
+            assert lib.assertMsg (builtins.all (
+              x: lib.isString x
+            ) requiredSystemFeatures) "requiredSystemFeatures argument must be a list of strings";
+            job
+            // {
+              name = if (job.name != null && job.name != "") then job.name else jobKey;
+              buildSystem = pkgs'.stdenv.buildPlatform.system;
+              hostSystem = pkgs'.stdenv.hostPlatform.system;
+              inherit requiredSystemFeatures;
+              steps = lib.imap0 (
+                i: step:
+                stepFn {
+                  inherit step;
+                  placeholder_name = "${jobKey}-${toString i}";
+                  pkgs = pkgs';
+                  jobEnv = job.env;
+                  inherit evalId useCache;
+                }
+              ) job.steps;
+            }
+          );
+          inherit job' evalId;
+        }
       ) module.config.jobs;
     };
 
@@ -236,9 +272,10 @@ let
     };
 in
 
-workflow:
 {
+  workflow,
   evalId,
+  useCache,
   gcrootDir,
   vars ? { },
   var ?
@@ -256,79 +293,82 @@ let
       ${"__nowSecret_${evalId}"} = name;
     };
 in
-nowConfig evalId (
-  lib.evalModules {
-    class = "now";
-    modules = [
-      nowModule
-      workflow
-    ];
-    specialArgs = {
-      runner = {
-        inherit secret var;
+nowConfig {
+  inherit evalId useCache;
+  module = (
+    lib.evalModules {
+      class = "now";
+      modules = [
+        nowModule
+        workflow
+      ];
+      specialArgs = {
+        runner = {
+          inherit secret var;
 
-        matrix =
-          variants: job':
-          map (v: {
-            job =
-              if lib.isFunction job' then
-                job' (
-                  {
-                    inherit pkgs;
-                    inherit (pkgs) lib;
-                  }
-                  // v
-                )
-              else
-                job';
-            pkgs' = v.pkgs or pkgs;
-            requiredSystemFeatures = v.requiredSystemFeatures or [ ];
-          }) variants;
+          matrix =
+            variants: job':
+            map (v: {
+              job =
+                if lib.isFunction job' then
+                  job' (
+                    {
+                      inherit pkgs;
+                      inherit (pkgs) lib;
+                    }
+                    // v
+                  )
+                else
+                  job';
+              pkgs' = v.pkgs or pkgs;
+              requiredSystemFeatures = v.requiredSystemFeatures or [ ];
+            }) variants;
 
-        steps = {
-          build =
-            name: deriv:
-            assert lib.assertMsg (lib.isDerivation deriv)
-              "derivation argument to runner.steps.build must be a derivation";
-            { pkgs, ... }: {
-              name = "build ${if name == "" then deriv.name else name}";
-              path = [
-                pkgs.nix
-                pkgs.mktemp
-              ];
-              run = ''
-                drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
-                tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
-                nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
-                printf 'now: Built %s\n' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
-              '';
-            };
+          steps = {
+            build =
+              name: deriv:
+              assert lib.assertMsg (lib.isDerivation deriv)
+                "derivation argument to runner.steps.build must be a derivation";
+              { pkgs, ... }: {
+                name = "build ${if name == "" then deriv.name else name}";
+                path = [
+                  pkgs.nix
+                  pkgs.mktemp
+                ];
+                run = ''
+                  drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
+                  tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
+                  nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
+                  printf 'now: Built %s\n' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
+                '';
+              };
 
-          upload =
-            name: deriv:
-            assert lib.assertMsg (name != "") "name argument to runner.steps.upload must not be empty";
-            assert lib.assertMsg (lib.isDerivation deriv)
-              "derivation argument to runner.steps.upload must be a derivation";
-            { pkgs, ... }: {
-              name = "upload ${name}";
-              path = [
-                pkgs.nix
-                pkgs.mktemp
-              ];
-              run = ''
-                drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
-                tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
-                nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
-                printf '%s' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
-              '';
-              ${"__nowUpload_${evalId}"} = name;
-            };
-        };
+            upload =
+              name: deriv:
+              assert lib.assertMsg (name != "") "name argument to runner.steps.upload must not be empty";
+              assert lib.assertMsg (lib.isDerivation deriv)
+                "derivation argument to runner.steps.upload must be a derivation";
+              { pkgs, ... }: {
+                name = "upload ${name}";
+                path = [
+                  pkgs.nix
+                  pkgs.mktemp
+                ];
+                run = ''
+                  drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
+                  tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
+                  nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
+                  printf '%s' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
+                '';
+                ${"__nowUpload_${evalId}"} = name;
+              };
+          };
 
-        download = name: {
-          ${"__nowDownload_${evalId}"} = name;
+          download = name: {
+            ${"__nowDownload_${evalId}"} = name;
+          };
         };
       };
-    };
-  }
-)
+    }
+  );
+}

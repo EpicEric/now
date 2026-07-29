@@ -48,11 +48,19 @@ static LONG_ABOUT: &str = "now - Nix-based distributed command runner.
   \x1b[2m# Load envvars from a dotenv file\x1b[0m
   now run --env-file .env .now/workflow-with-secrets.nix
 
-  \x1b[2m# Run the \"deploy\" job (and all dependencies), and specify a remote builder for the run\x1b[0m
+  \x1b[2m# Run the \"deploy\" job (and all dependencies),
+  # and specify a remote builder for the run\x1b[0m
   now run \\
     --job deploy \\
     --builders \"ssh://mac aarch64-darwin\" \\
-    .now/remote.nix";
+    .now/remote.nix
+
+  \x1b[2m# Abort immediately on first failing job,
+  # and don't checkout the current directory\x1b[0m
+  now run \\
+    --abort \\
+    --checkout none \\
+    .now/fresh-dir.nix";
 
 #[derive(Parser)]
 #[command(version, about, long_about = LONG_ABOUT)]
@@ -119,6 +127,12 @@ enum Command {
             value_name = "EXPRESSION"
         )]
         nixpkgs_expr: String,
+
+        /// Whether to use now's binary cache and pinned nixpkgs when building the step runner.
+        ///
+        /// This avoids having to download and run the compiler toolchain on local and remote builds.
+        #[arg(long)]
+        use_cache: bool,
     },
 
     /// Generate shell completions.
@@ -154,7 +168,6 @@ fn main() -> color_eyre::Result<()> {
         }
         Command::Run {
             mut workflow,
-            nixpkgs_expr,
             jobs,
             all_jobs,
             env_file,
@@ -162,6 +175,8 @@ fn main() -> color_eyre::Result<()> {
             eval,
             checkout_strategy,
             builders,
+            nixpkgs_expr,
+            use_cache,
         } => {
             if all_jobs && jobs.is_some() {
                 return Err(color_eyre::eyre::eyre!(
@@ -199,10 +214,12 @@ fn main() -> color_eyre::Result<()> {
                     workflow.to_string_lossy()
                 ));
             }
-            let mut environment = NowEnvironment::get(&workflow, env_file.as_ref(), &nixpkgs_expr)?;
+            let mut environment =
+                NowEnvironment::get(&workflow, env_file.as_ref(), &nixpkgs_expr, use_cache)?;
             environment.run_workflow(NowWorkflowParams {
                 workflow,
                 nixpkgs_expr,
+                use_cache,
                 abort,
                 eval,
                 jobs,

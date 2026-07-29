@@ -34,7 +34,10 @@ use smol::{
 
 use crate::{
     CheckoutStrategy,
-    builder::{CheckoutTask, CommandCheckoutTask, NixConfig, NowBuilder, remote::RemoteBuilder},
+    builder::{
+        CACHE_PUBLIC_KEY, CACHE_SUBSTITUTER, CheckoutTask, CommandCheckoutTask, NixConfig,
+        NowBuilder, remote::RemoteBuilder,
+    },
     environment::NowEnvironment,
     utils::{get_random_string, pipe_outputs_to_stderr, trim_string},
     workflow::NowJob,
@@ -45,6 +48,7 @@ pub(crate) struct LocalBuilder {
     pub(crate) cancellation_rx: Mutex<channel::Receiver<()>>,
     pub(crate) env: HashMap<OsString, OsString>,
     pub(crate) strategy: CheckoutStrategy,
+    pub(crate) use_cache: bool,
     pub(crate) hostname: String,
     pub(crate) short_name: String,
     pub(crate) system: String,
@@ -55,6 +59,7 @@ pub(crate) struct LocalBuilder {
 impl LocalBuilder {
     pub(crate) fn new(
         environment: &NowEnvironment,
+        use_cache: bool,
         strategy: CheckoutStrategy,
         builders: Option<String>,
     ) -> color_eyre::Result<Self> {
@@ -79,6 +84,7 @@ impl LocalBuilder {
 
         let remote_builders = RemoteBuilder::get_remote_builders(
             &config,
+            use_cache,
             strategy,
             builders,
             environment.nix_project_source.as_ref(),
@@ -93,6 +99,7 @@ impl LocalBuilder {
             cancellation,
             cancellation_rx: Mutex::new(cancellation_rx),
             env: environment.local_env.clone(),
+            use_cache,
             strategy,
             hostname,
             short_name,
@@ -199,6 +206,16 @@ impl NowBuilder for LocalBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<PathBuf> {
         let mut command = Command::new("nix-store");
+        if self.use_cache {
+            command.args([
+                "--option",
+                "extra-substituters",
+                CACHE_SUBSTITUTER,
+                "--option",
+                "extra-trusted-public-keys",
+                CACHE_PUBLIC_KEY,
+            ]);
+        }
         command
             .arg("--realise")
             .arg(derivation)

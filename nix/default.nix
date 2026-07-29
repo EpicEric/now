@@ -18,10 +18,13 @@
   system ? builtins.currentSystem,
   inputs ? import ../.tack,
   pkgs ? import inputs.nixpkgs { inherit system; },
+  useCache ? false,
 }:
 let
   now = pkgs.callPackage ../package.nix { };
-  now-step = pkgs.callPackage ../now-step/package.nix { };
+  now-step = pkgs.callPackage ../now-step/package.nix (
+    pkgs.lib.optionalAttrs useCache { optimizeLevel = "ReleaseSafe"; }
+  );
 in
 {
   inherit now now-step;

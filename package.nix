@@ -31,6 +31,7 @@ rustPlatform.buildRustPackage {
   src = lib.fileset.toSource {
     root = ./.;
     fileset = lib.fileset.unions [
+      ./.tack
       ./nix
       ./now-step
       ./src

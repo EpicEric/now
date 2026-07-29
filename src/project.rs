@@ -26,6 +26,7 @@ use crate::utils::get_random_string;
 
 static NIX_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/nix");
 static NOW_STEP_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/now-step");
+static TACK_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/.tack");
 
 #[derive(Debug, Clone)]
 pub(crate) struct ProjectSource(PathBuf);
@@ -52,6 +53,10 @@ pub(crate) fn create_nix_project_source() -> color_eyre::Result<ProjectSource> {
     let now_step_dir = tmpdir.join("now-step");
     create_dir_all(&now_step_dir)?;
     NOW_STEP_DIR.extract(&now_step_dir)?;
+
+    let now_step_dir = tmpdir.join(".tack");
+    create_dir_all(&now_step_dir)?;
+    TACK_DIR.extract(&now_step_dir)?;
 
     Ok(ProjectSource(tmpdir))
 }
