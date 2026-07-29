@@ -34,7 +34,7 @@ impl NowEnvironment {
     async fn run_job(&self, builder: &dyn NowBuilder, job: NowJob) -> color_eyre::Result<()> {
         let guard = builder.acquire().await;
         let style = builder.get_style();
-        let runner = builder.get_name();
+        let runner = builder.get_short_name();
         if matches!(guard.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
             return Err(color_eyre::eyre::eyre!("Runner aborted"));
         }

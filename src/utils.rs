@@ -76,3 +76,14 @@ pub(crate) async fn pipe_outputs_to_stderr(child: &mut Child) -> color_eyre::Res
 pub(crate) fn get_random_string(len: usize) -> String {
     rand::distr::Alphanumeric.sample_string(&mut rand::rng(), len)
 }
+
+pub(crate) fn trim_string(original: String, max_chars: usize) -> String {
+    debug_assert!(max_chars > 0);
+    if original.chars().count() <= max_chars {
+        return original;
+    }
+    let mut output = String::with_capacity(max_chars);
+    output.extend(original.chars().take(max_chars - 1));
+    output.push('…');
+    output
+}

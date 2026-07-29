@@ -26,6 +26,7 @@ use futures::stream::FuturesUnordered;
 use owo_colors::OwoColorize;
 use petgraph::{
     acyclic::Acyclic, algo::Cycle, matrix_graph::NodeIndex, stable_graph::StableDiGraph,
+    visit::EdgeRef,
 };
 use serde::Deserialize;
 use smol::{channel, stream::StreamExt};
@@ -172,18 +173,19 @@ impl NowEnvironment {
             let mut futures = FuturesUnordered::<Pin<Box<dyn Future<Output = JobResult>>>>::new();
             let mut result = Ok(());
 
-            loop {
-                let mut current_nodes: HashSet<NodeIndex<u32>> = HashSet::new();
-                for node in tree.nodes_iter() {
-                    if tree
-                        .edges_directed(node, petgraph::Direction::Incoming)
-                        .next()
-                        .is_none()
-                    {
-                        current_nodes.insert(node);
-                    }
+            let mut current_nodes: HashSet<NodeIndex<u32>> = HashSet::new();
+            for node in tree.nodes_iter() {
+                if tree
+                    .edges_directed(node, petgraph::Direction::Incoming)
+                    .next()
+                    .is_none()
+                {
+                    current_nodes.insert(node);
                 }
+            }
+            debug_assert!(!current_nodes.is_empty());
 
+            loop {
                 for node_index in current_nodes {
                     let node_weight = &tree[node_index];
                     match node_weight {
@@ -203,21 +205,38 @@ impl NowEnvironment {
                     }
                 }
 
-                if let Some(future) = futures.next().await {
-                    match future {
-                        Ok(node_index) => {
-                            tree.remove_node(node_index);
-                        }
-                        Err(error) => {
-                            if abort {
-                                builder.cancel_builders();
+                loop {
+                    if let Some(future) = futures.next().await {
+                        match future {
+                            Ok(node_index) => {
+                                current_nodes = HashSet::new();
+                                let possible_next_nodes: Vec<_> = tree
+                                    .edges_directed(node_index, petgraph::Direction::Outgoing)
+                                    .map(|edge| edge.target())
+                                    .collect();
+                                tree.remove_node(node_index);
+                                for node in possible_next_nodes {
+                                    if tree
+                                        .edges_directed(node, petgraph::Direction::Incoming)
+                                        .next()
+                                        .is_none()
+                                    {
+                                        current_nodes.insert(node);
+                                    }
+                                }
+                                break;
                             }
-                            result = result.and(Err(error));
+                            Err(error) => {
+                                if abort {
+                                    builder.cancel_builders();
+                                }
+                                result = result.and(Err(error));
+                            }
                         }
-                    }
-                } else {
-                    return result;
-                };
+                    } else {
+                        return result;
+                    };
+                }
             }
         });
 

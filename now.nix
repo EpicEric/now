@@ -10,6 +10,7 @@ in
       name = "Run tests";
       needs = [
         "test-abort"
+        "test-cycle"
         "test-env"
         "test-error"
         "test-jobs"
@@ -55,6 +56,29 @@ in
               else
                 echo ""
                 echo "=== hint: if 'fail' is the last job, the test works ==="
+              fi
+            '';
+          }
+        ];
+      };
+
+    test-cycle =
+      { pkgs, ... }:
+      {
+        name = "Test cycle";
+        steps = [
+          {
+            path = [
+              (mkNow pkgs)
+            ];
+            run = ''
+              now run --abort .now/tests/cycle.nix || error_code=$?
+              if [ "$error_code" -eq 0 ]; then
+                echo "Test shouldn't have succeeded!"
+                exit 1
+              else
+                echo ""
+                echo "=== hint: this means the test works ==="
               fi
             '';
           }

@@ -71,6 +71,8 @@ pub(crate) trait NowBuilder {
 
     fn get_name(&self) -> String;
 
+    fn get_short_name(&self) -> String;
+
     fn get_style(&self) -> owo_colors::Style;
 
     fn checkout(&self) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)>;

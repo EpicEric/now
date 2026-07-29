@@ -36,7 +36,7 @@ use crate::{
     CheckoutStrategy,
     builder::{CheckoutTask, CommandCheckoutTask, NixConfig, NowBuilder, remote::RemoteBuilder},
     environment::NowEnvironment,
-    utils::{get_random_string, pipe_outputs_to_stderr},
+    utils::{get_random_string, pipe_outputs_to_stderr, trim_string},
     workflow::NowJob,
 };
 
@@ -46,6 +46,7 @@ pub(crate) struct LocalBuilder {
     pub(crate) env: HashMap<OsString, OsString>,
     pub(crate) strategy: CheckoutStrategy,
     pub(crate) hostname: String,
+    pub(crate) short_name: String,
     pub(crate) system: String,
     pub(crate) system_features: HashSet<String>,
     pub(crate) remote_builders: Vec<RemoteBuilder>,
@@ -85,12 +86,16 @@ impl LocalBuilder {
 
         let (cancellation, cancellation_rx) = channel::bounded(1);
 
+        let hostname = sys_info::hostname()?;
+        let short_name = trim_string(hostname.clone(), 40);
+
         Ok(Self {
             cancellation,
             cancellation_rx: Mutex::new(cancellation_rx),
             env: environment.local_env.clone(),
             strategy,
-            hostname: sys_info::hostname()?,
+            hostname,
+            short_name,
             system: config.system.value,
             system_features: config.system_features.value.into_iter().collect(),
             remote_builders,
@@ -145,6 +150,10 @@ impl NowBuilder for LocalBuilder {
 
     fn get_name(&self) -> String {
         self.hostname.clone()
+    }
+
+    fn get_short_name(&self) -> String {
+        self.short_name.clone()
     }
 
     fn get_style(&self) -> owo_colors::Style {

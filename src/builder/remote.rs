@@ -37,7 +37,7 @@ use smol::{
 use crate::{
     CheckoutStrategy,
     builder::{CheckoutTask, CommandCheckoutTask, NixConfig, NowBuilder},
-    utils::{escape_os_string, get_random_string, pipe_outputs_to_stderr},
+    utils::{escape_os_string, get_random_string, pipe_outputs_to_stderr, trim_string},
     workflow::NowJob,
 };
 
@@ -81,6 +81,7 @@ pub(crate) struct RemoteBuilder {
     pub(crate) cancellation_rx: Mutex<channel::Receiver<()>>,
     pub(crate) control_path: PathBuf,
     pub(crate) strategy: CheckoutStrategy,
+    pub(crate) short_name: String,
     pub(crate) ssh_uri: String,
     pub(crate) ssh_identity: Option<String>,
     pub(crate) systems: HashSet<String>,
@@ -174,12 +175,14 @@ impl RemoteBuilder {
             let (cancellation, cancellation_rx) = channel::bounded(1);
 
             let control_path = project_source.join(format!("ssh-{}", get_random_string(10)));
+            let short_name = trim_string(ssh_uri.clone(), 40);
 
             vec.push(RemoteBuilder {
                 cancellation,
                 cancellation_rx: Mutex::new(cancellation_rx),
                 strategy,
                 control_path,
+                short_name,
                 ssh_uri,
                 ssh_identity,
                 systems,
@@ -216,6 +219,10 @@ impl NowBuilder for RemoteBuilder {
 
     fn get_name(&self) -> String {
         self.ssh_uri.clone()
+    }
+
+    fn get_short_name(&self) -> String {
+        self.short_name.clone()
     }
 
     fn get_style(&self) -> owo_colors::Style {
