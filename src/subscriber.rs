@@ -111,13 +111,14 @@ impl tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscriberVis
                     trim_string(builder, self.builder_name_limit),
                     step
                 )
-                .style(style),
+                .if_supports_color(owo_colors::Stream::Stderr, |text| text.style(style)),
                 message
             ))
         } else {
             Some(format!(
                 "{} {}",
-                format!("{}>", trim_string(builder, self.builder_name_limit)).style(style),
+                format!("{}>", trim_string(builder, self.builder_name_limit))
+                    .if_supports_color(owo_colors::Stream::Stderr, |text| text.style(style)),
                 message
             ))
         }

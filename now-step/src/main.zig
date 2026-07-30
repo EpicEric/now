@@ -153,13 +153,9 @@ pub fn main(init: std.process.Init) !void {
     defer child_env.deinit();
     var env_iterator = init.environ_map.iterator();
     while (env_iterator.next()) |entry| {
-        if (!std.mem.eql(u8, entry.key_ptr.*, "NO_COLOR") and !std.mem.eql(u8, entry.key_ptr.*, "COLORFGBG")) {
-            try child_env.put(entry.key_ptr.*, entry.value_ptr.*);
-        }
+        try child_env.put(entry.key_ptr.*, entry.value_ptr.*);
     }
     try child_env.put("CI", "true");
-    try child_env.put("FORCE_COLOR", "1");
-    try child_env.put("CLICOLOR_FORCE", "1");
     try child_env.put("TERM", "xterm-256color");
 
     var io_impl: std.Io.Threaded = .init(allocator, .{});
