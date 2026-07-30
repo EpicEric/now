@@ -20,16 +20,17 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     process::Command,
+    time::Duration,
 };
 
 use futures::stream::FuturesUnordered;
-use owo_colors::OwoColorize;
 use petgraph::{
     acyclic::Acyclic, algo::Cycle, matrix_graph::NodeIndex, stable_graph::StableDiGraph,
     visit::EdgeRef,
 };
 use serde::Deserialize;
 use smol::{channel, stream::StreamExt};
+use tracing::info;
 
 use crate::{
     CheckoutStrategy,
@@ -104,6 +105,7 @@ pub(crate) struct NowWorkflowParams {
     pub(crate) nixpkgs_expr: String,
     pub(crate) use_cache: bool,
     pub(crate) abort: bool,
+    pub(crate) timeout: Option<Duration>,
     pub(crate) eval: bool,
     pub(crate) jobs: Option<Vec<String>>,
     pub(crate) all_jobs: bool,
@@ -119,6 +121,7 @@ impl NowEnvironment {
             nixpkgs_expr,
             use_cache,
             abort,
+            timeout,
             eval,
             jobs,
             all_jobs,
@@ -127,11 +130,12 @@ impl NowEnvironment {
         }: NowWorkflowParams,
     ) -> color_eyre::Result<()> {
         let builder = LocalBuilder::new(self, use_cache, strategy, builders)?;
-        let style = builder.get_style();
+        let runner = builder.get_name();
 
-        eprintln!(
-            "{} Evaluating workflow '{}'...",
-            format!("{}>", builder.get_name()).style(style),
+        info!(
+            builder = runner,
+            is_remote = false,
+            "Evaluating workflow '{}'...",
             workflow_path.to_string_lossy()
         );
         let workflow = self.evaluate_workflow(&workflow_path, nixpkgs_expr, use_cache)?;
@@ -141,15 +145,17 @@ impl NowEnvironment {
         }
 
         if let Some(name) = workflow.name.as_ref() {
-            eprintln!(
-                "{} Building tree for '{}'...",
-                format!("{}>", builder.get_name()).style(style),
+            info!(
+                builder = runner,
+                is_remote = false,
+                "Building tree for '{}'...",
                 name
             );
         } else {
-            eprintln!(
-                "{} Building tree for workflow...",
-                format!("{}>", builder.get_name()).style(style)
+            info!(
+                builder = runner,
+                is_remote = false,
+                "Building tree for workflow..."
             );
         }
         let NowWorkflowGraph {
@@ -164,10 +170,23 @@ impl NowEnvironment {
             let _ = sender.try_send(());
         })?;
         let builder_ref = &builder;
-        let ctrl_c_task = executor.spawn(async move {
-            if ctrl_c.recv().await.is_ok() {
-                builder_ref.cancel_builders();
-            }
+        let abort_task = executor.spawn(async move {
+            smol::future::race(
+                async {
+                    if ctrl_c.recv().await.is_ok() {
+                        builder_ref.cancel_builders();
+                    }
+                },
+                async {
+                    if let Some(timeout) = timeout {
+                        smol::Timer::after(timeout).await;
+                        builder_ref.cancel_builders();
+                    } else {
+                        smol::future::pending::<()>().await;
+                    }
+                },
+            )
+            .await;
             smol::future::pending::<color_eyre::Result<()>>().await
         });
 
@@ -242,7 +261,7 @@ impl NowEnvironment {
             }
         });
 
-        smol::future::block_on(executor.run(smol::future::or(workflow_task, ctrl_c_task)))
+        smol::future::block_on(executor.run(smol::future::or(workflow_task, abort_task)))
     }
 
     fn evaluate_workflow(

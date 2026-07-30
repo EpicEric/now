@@ -14,11 +14,17 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr, time::Duration};
 
 use clap::{CommandFactory, Parser, ValueEnum};
+use color_eyre::eyre::Context;
+use tracing::level_filters::LevelFilter;
+use tracing_duper::DuperLayer;
+use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{environment::NowEnvironment, workflow::NowWorkflowParams};
+use crate::{
+    environment::NowEnvironment, subscriber::NowSubscriberLayer, workflow::NowWorkflowParams,
+};
 
 mod builder;
 mod deserialize;
@@ -26,6 +32,7 @@ mod environment;
 mod job;
 mod project;
 mod secret;
+mod subscriber;
 mod utils;
 mod workflow;
 
@@ -98,6 +105,10 @@ enum Command {
         #[arg(long)]
         abort: bool,
 
+        /// Timeout for the entire workflow, eg. `1h`.
+        #[arg(long, value_parser = validate_duration, value_name = "DURATION")]
+        timeout: Option<Duration>,
+
         /// Evaluate but don't run the workflow.
         #[arg(long)]
         eval: bool,
@@ -133,6 +144,12 @@ enum Command {
         /// This avoids having to download and run the compiler toolchain on local and remote builds.
         #[arg(long)]
         use_cache: bool,
+
+        /// Whether to emit traces in Duper instead of colored logs.
+        ///
+        /// For more information on Duper: <https://duper.dev.br/>
+        #[arg(long)]
+        tracing: bool,
     },
 
     /// Generate shell completions.
@@ -140,6 +157,12 @@ enum Command {
         /// Which shell to generate completions for.
         shell: clap_complete::Shell,
     },
+}
+
+fn validate_duration(value: &str) -> color_eyre::Result<Duration> {
+    Ok(humantime::Duration::from_str(value)
+        .with_context(|| "invalid duration")?
+        .into())
 }
 
 fn main() -> color_eyre::Result<()> {
@@ -161,23 +184,43 @@ fn main() -> color_eyre::Result<()> {
                 std::fs::create_dir_all(parent)?;
             }
             std::fs::write(&path, include_bytes!("init.nix"))?;
-            eprintln!(
+            println!(
                 "'{}' has been initialized with a basic workflow",
                 path.to_string_lossy(),
             )
         }
+
         Command::Run {
             mut workflow,
             jobs,
             all_jobs,
             env_file,
             abort,
+            timeout,
             eval,
             checkout_strategy,
             builders,
             nixpkgs_expr,
             use_cache,
+            tracing,
         } => {
+            let env_filter = EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env_lossy();
+            if tracing {
+                tracing_subscriber::registry()
+                    .with(
+                        DuperLayer::default()
+                            .with_span_timings(true)
+                            .with_filter(env_filter),
+                    )
+                    .init();
+            } else {
+                tracing_subscriber::registry()
+                    .with(NowSubscriberLayer::default().with_filter(env_filter))
+                    .init();
+            }
+
             if all_jobs && jobs.is_some() {
                 return Err(color_eyre::eyre::eyre!(
                     "Conflicting --all-jobs and --job options"
@@ -198,6 +241,7 @@ fn main() -> color_eyre::Result<()> {
                     "Conflicting --abort and --eval options"
                 ));
             }
+
             if workflow.is_dir() {
                 let now = workflow.join("now.nix");
                 if now.exists() && !now.is_dir() {
@@ -214,6 +258,7 @@ fn main() -> color_eyre::Result<()> {
                     workflow.to_string_lossy()
                 ));
             }
+
             let mut environment =
                 NowEnvironment::get(&workflow, env_file.as_ref(), &nixpkgs_expr, use_cache)?;
             environment.run_workflow(NowWorkflowParams {
@@ -221,6 +266,7 @@ fn main() -> color_eyre::Result<()> {
                 nixpkgs_expr,
                 use_cache,
                 abort,
+                timeout,
                 eval,
                 jobs,
                 all_jobs,
@@ -228,6 +274,7 @@ fn main() -> color_eyre::Result<()> {
                 builders,
             })?;
         }
+
         Command::Completions { shell } => {
             clap_complete::generate(
                 shell,

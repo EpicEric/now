@@ -24,7 +24,6 @@ use std::{
 };
 
 use async_trait::async_trait;
-use owo_colors::Style;
 use smol::{
     channel,
     io::AsyncReadExt,
@@ -39,7 +38,7 @@ use crate::{
         NowBuilder, remote::RemoteBuilder,
     },
     environment::NowEnvironment,
-    utils::{get_random_string, pipe_outputs_to_stderr, trim_string},
+    utils::{get_random_string, pipe_outputs_to_stderr},
     workflow::NowJob,
 };
 
@@ -50,7 +49,6 @@ pub(crate) struct LocalBuilder {
     pub(crate) strategy: CheckoutStrategy,
     pub(crate) use_cache: bool,
     pub(crate) hostname: String,
-    pub(crate) short_name: String,
     pub(crate) system: String,
     pub(crate) system_features: HashSet<String>,
     pub(crate) remote_builders: Vec<RemoteBuilder>,
@@ -93,7 +91,6 @@ impl LocalBuilder {
         let (cancellation, cancellation_rx) = channel::bounded(1);
 
         let hostname = sys_info::hostname()?;
-        let short_name = trim_string(hostname.clone(), 40);
 
         Ok(Self {
             cancellation,
@@ -102,7 +99,6 @@ impl LocalBuilder {
             use_cache,
             strategy,
             hostname,
-            short_name,
             system: config.system.value,
             system_features: config.system_features.value.into_iter().collect(),
             remote_builders,
@@ -159,12 +155,8 @@ impl NowBuilder for LocalBuilder {
         self.hostname.clone()
     }
 
-    fn get_short_name(&self) -> String {
-        self.short_name.clone()
-    }
-
-    fn get_style(&self) -> owo_colors::Style {
-        Style::new().blue()
+    fn is_remote(&self) -> bool {
+        false
     }
 
     fn checkout(&self) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)> {

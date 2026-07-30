@@ -17,9 +17,9 @@
 use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf, pin::Pin};
 
 use futures::{AsyncReadExt, TryStreamExt, stream::FuturesUnordered};
-use owo_colors::OwoColorize;
 use petgraph::matrix_graph::NodeIndex;
 use smol::{channel::TryRecvError, io::AsyncBufReadExt, io::BufReader, stream::StreamExt};
+use tracing::{info, warn};
 
 use crate::{
     builder::{NowBuilder, local::LocalBuilder},
@@ -33,15 +33,14 @@ type JobFut<'a> = Pin<Box<dyn Future<Output = JobResult> + 'a>>;
 impl NowEnvironment {
     async fn run_job(&self, builder: &dyn NowBuilder, job: NowJob) -> color_eyre::Result<()> {
         let guard = builder.acquire().await;
-        let style = builder.get_style();
-        let runner = builder.get_short_name();
+        let runner = builder.get_name();
+        let is_remote = builder.is_remote();
         if matches!(guard.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
             return Err(color_eyre::eyre::eyre!("Runner aborted"));
         }
-        eprintln!(
-            "{} Running job '{}'...",
-            format!("{}>", runner).style(style),
-            &job.name
+        info!(
+            builder = runner,
+            is_remote, "Running job '{}'...", &job.name
         );
 
         let (mut checkout_child, cwdir) = builder.checkout()?;
@@ -100,11 +99,7 @@ impl NowEnvironment {
                     let mut lines = BufReader::new(stderr).lines();
                     while let Some(line) = lines.next().await {
                         if let Ok(line) = line {
-                            eprintln!(
-                                "{} {}",
-                                format!("{} step[{}]>", runner, step.name).style(style),
-                                line,
-                            );
+                            info!(builder = runner, is_remote, step = step.name, "{}", line);
                         } else {
                             break;
                         }
@@ -117,11 +112,13 @@ impl NowEnvironment {
                         stdout.read_to_end(&mut buf).await?;
                         let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
                         builder.fetch_derivation(&upload_path, &guard).await?;
-                        eprintln!(
-                            "{} Uploaded '{}' ({})",
-                            format!("{} step[{}]>", runner, step.name).style(style),
+                        info!(
+                            builder = runner,
+                            is_remote,
+                            step = step.name,
+                            "Uploaded '{}', ({})",
                             upload_key,
-                            upload_path.to_string_lossy(),
+                            upload_path.to_string_lossy()
                         );
                         self.uploads
                             .lock()
@@ -160,10 +157,13 @@ impl NowEnvironment {
             let mut lines = BufReader::new(stderr).lines();
             while let Some(line) = lines.next().await {
                 if let Ok(line) = line {
-                    eprintln!(
-                        "{} {}",
-                        format!("{} step[{}]>", runner, step_name).style(style),
-                        line,
+                    info!(
+                        builder = runner,
+                        is_remote,
+                        step = step_name,
+                        teardown = true,
+                        "{}",
+                        line
                     );
                 } else {
                     break;
@@ -172,9 +172,12 @@ impl NowEnvironment {
 
             let exit_status = child.status().await?;
             if !exit_status.success() {
-                eprintln!(
-                    "{} Teardown failed ({}); continuing",
-                    format!("{} step[{}]>", runner, step_name).style(style),
+                warn!(
+                    builder = runner,
+                    is_remote,
+                    step = step_name,
+                    teardown = true,
+                    "Teardown failed ({}); continuing",
                     exit_status
                 );
                 result = result.and(Err(color_eyre::eyre::eyre!(

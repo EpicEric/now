@@ -17,7 +17,6 @@
 use std::{
     collections::{HashMap, HashSet},
     ffi::{OsStr, OsString},
-    hash::{DefaultHasher, Hash, Hasher},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
     pin::Pin,
@@ -25,8 +24,6 @@ use std::{
 
 use async_trait::async_trait;
 use futures::FutureExt;
-use owo_colors::Style;
-use rand::{SeedableRng, seq::IndexedRandom};
 use smol::{
     channel,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -40,7 +37,7 @@ use crate::{
         CACHE_PUBLIC_KEY, CACHE_SUBSTITUTER, CheckoutTask, CommandCheckoutTask, NixConfig,
         NowBuilder,
     },
-    utils::{escape_os_string, get_random_string, pipe_outputs_to_stderr, trim_string},
+    utils::{escape_os_string, get_random_string, pipe_outputs_to_stderr},
     workflow::NowJob,
 };
 
@@ -85,7 +82,6 @@ pub(crate) struct RemoteBuilder {
     pub(crate) control_path: PathBuf,
     pub(crate) use_cache: bool,
     pub(crate) strategy: CheckoutStrategy,
-    pub(crate) short_name: String,
     pub(crate) ssh_uri: String,
     pub(crate) ssh_identity: Option<String>,
     pub(crate) systems: HashSet<String>,
@@ -180,7 +176,6 @@ impl RemoteBuilder {
             let (cancellation, cancellation_rx) = channel::bounded(1);
 
             let control_path = project_source.join(format!("ssh-{}", get_random_string(10)));
-            let short_name = trim_string(ssh_uri.clone(), 40);
 
             vec.push(RemoteBuilder {
                 cancellation,
@@ -188,7 +183,6 @@ impl RemoteBuilder {
                 use_cache,
                 strategy,
                 control_path,
-                short_name,
                 ssh_uri,
                 ssh_identity,
                 systems,
@@ -227,23 +221,8 @@ impl NowBuilder for RemoteBuilder {
         self.ssh_uri.clone()
     }
 
-    fn get_short_name(&self) -> String {
-        self.short_name.clone()
-    }
-
-    fn get_style(&self) -> owo_colors::Style {
-        let mut hasher = DefaultHasher::new();
-        self.ssh_uri.hash(&mut hasher);
-        *[
-            Style::new().yellow(),
-            Style::new().magenta(),
-            Style::new().green(),
-            Style::new().cyan(),
-            Style::new().purple(),
-            Style::new().red(),
-        ]
-        .choose(&mut rand::rngs::SmallRng::seed_from_u64(hasher.finish()))
-        .expect("not empty")
+    fn is_remote(&self) -> bool {
+        true
     }
 
     fn checkout(&self) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)> {
