@@ -64,9 +64,9 @@ rustPlatform.buildRustPackage {
   ''
   + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
     installShellCompletion --cmd now \
-      --bash <($out/bin/now completions bash) \
-      --fish <($out/bin/now completions fish) \
-      --zsh <($out/bin/now completions zsh)
+      --bash <(COMPLETE=bash $out/bin/now) \
+      --fish <(COMPLETE=fish $out/bin/now) \
+      --zsh <(COMPLETE=zsh $out/bin/now)
   '';
 
   meta = {

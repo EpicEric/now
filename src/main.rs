@@ -14,9 +14,15 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{path::PathBuf, str::FromStr, time::Duration};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+    str::FromStr,
+    time::Duration,
+};
 
 use clap::{CommandFactory, Parser, ValueEnum};
+use clap_complete::{ArgValueCandidates, ArgValueCompleter, CompletionCandidate, PathCompleter};
 use color_eyre::eyre::Context;
 use tracing::level_filters::LevelFilter;
 use tracing_duper::DuperLayer;
@@ -41,8 +47,8 @@ mod workflow;
 pub(crate) enum CheckoutStrategy {
     /// Don't checkout; create a fresh directory for every job.
     None,
-    /// On the local builder, run commands at the local directory.
-    /// On remote builders, copy non-ignored files from the local directory via rsync.
+    /// Run commands at the local directory.
+    /// On remote builders, copy non-ignored files from the local directory.
     Default,
 }
 
@@ -70,7 +76,7 @@ static LONG_ABOUT: &str = "now - Nix-based distributed command runner.
     .now/fresh-dir.nix";
 
 #[derive(Parser)]
-#[command(version, about, long_about = LONG_ABOUT)]
+#[command(name = "now", version, about, long_about = LONG_ABOUT)]
 enum Command {
     /// Initialize a basic workflow.
     Init {
@@ -81,14 +87,21 @@ enum Command {
     /// Run a workflow.
     Run {
         /// Path to the workflow.
+        #[arg(add = ArgValueCompleter::new(PathCompleter::any().filter(workflow_filter)))]
         workflow: PathBuf,
 
         /// Jobs to target in this run.
+        ///
         /// If unspecified, the default jobs of the workflow are run.
         /// If there are no default jobs in the workflow, all jobs are run.
         ///
         /// Cannot be used together with the `--all-jobs` option.
-        #[arg(short, long = "job", value_name = "JOB")]
+        #[arg(
+            short,
+            long = "job",
+            value_name = "JOB",
+            add = ArgValueCandidates::new(job_completer)
+        )]
         jobs: Option<Vec<String>>,
 
         /// If set, all jobs are run.
@@ -123,6 +136,7 @@ enum Command {
         checkout_strategy: CheckoutStrategy,
 
         /// A semicolon-separated list of build machines.
+        ///
         /// When specified, overrides the remote builders configuration of the host.
         ///
         /// For more information on the syntax, see:
@@ -151,12 +165,6 @@ enum Command {
         #[arg(long)]
         tracing: bool,
     },
-
-    /// Generate shell completions.
-    Completions {
-        /// Which shell to generate completions for.
-        shell: clap_complete::Shell,
-    },
 }
 
 fn validate_duration(value: &str) -> color_eyre::Result<Duration> {
@@ -166,6 +174,8 @@ fn validate_duration(value: &str) -> color_eyre::Result<Duration> {
 }
 
 fn main() -> color_eyre::Result<()> {
+    clap_complete::CompleteEnv::with_factory(Command::command).complete();
+
     match Command::parse() {
         Command::Init { workflow } => {
             let mut path = workflow.unwrap_or(PathBuf::from("."));
@@ -274,15 +284,49 @@ fn main() -> color_eyre::Result<()> {
                 builders,
             })?;
         }
-
-        Command::Completions { shell } => {
-            clap_complete::generate(
-                shell,
-                &mut Command::command(),
-                env!("CARGO_BIN_NAME"),
-                &mut std::io::stdout(),
-            );
-        }
     }
     Ok(())
+}
+
+fn workflow_filter(path: &Path) -> bool {
+    path.is_dir() || path.extension().is_some_and(|extension| extension == "nix")
+}
+
+fn job_completer() -> Vec<CompletionCandidate> {
+    let Ok(command_matches) = Command::command().try_get_matches_from(std::env::args_os().skip(2))
+    else {
+        return vec![];
+    };
+    let Some(matches) = command_matches.subcommand_matches("run") else {
+        return vec![];
+    };
+
+    let Ok(Some(workflow)) = matches.try_get_one::<PathBuf>("workflow") else {
+        return vec![];
+    };
+    let Ok(Some(jobs_iter)) = matches.try_get_many::<String>("jobs") else {
+        return vec![];
+    };
+
+    let Ok(environment) = NowEnvironment::get(workflow, None, "<nixpkgs>", false) else {
+        return vec![];
+    };
+
+    let mut jobs_iter = jobs_iter.rev();
+    let current_job = jobs_iter.next();
+    let jobs: HashSet<&String> = jobs_iter.collect();
+
+    environment
+        .jobs
+        .into_iter()
+        .filter_map(|(job, help)| {
+            if current_job.is_none_or(|current_job| job.starts_with(current_job))
+                && !jobs.contains(&job)
+            {
+                Some(CompletionCandidate::new(job).help(Some(help.into())))
+            } else {
+                None
+            }
+        })
+        .collect()
 }

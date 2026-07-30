@@ -15,7 +15,7 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     ffi::OsString,
     io::Write,
     os::unix::ffi::OsStringExt,
@@ -38,6 +38,7 @@ pub(crate) struct NowEnvironment {
     pub(crate) nix_project_source: ProjectSource,
     pub(crate) secrets: HashMap<String, SecretString>,
     pub(crate) vars: HashMap<String, String>,
+    pub(crate) jobs: BTreeMap<String, String>,
     pub(crate) local_env: HashMap<OsString, OsString>,
     pub(crate) uploads: Mutex<HashMap<String, PathBuf>>,
 }
@@ -45,6 +46,7 @@ pub(crate) struct NowEnvironment {
 struct ParsedWorkflow {
     vars: HashSet<OsString>,
     secrets: HashSet<OsString>,
+    jobs: BTreeMap<String, String>,
 }
 
 impl NowEnvironment {
@@ -137,6 +139,7 @@ impl NowEnvironment {
             nix_project_source,
             secrets,
             vars,
+            jobs: parsed_workflow.jobs,
             local_env: env_vars,
             uploads: Default::default(),
         })
@@ -237,7 +240,34 @@ impl NowEnvironment {
             }
         }
 
-        Ok(ParsedWorkflow { vars, secrets })
+        let jobs = workflow
+            .jobs
+            .iter()
+            .map(|(key, value)| {
+                let value: String = match value {
+                    NowJobContainer::Single(job) => job.name.clone(),
+                    NowJobContainer::Multiple(job_vec) => {
+                        let job_names: BTreeSet<String> =
+                            job_vec.iter().map(|job| job.name.clone()).collect();
+                        let mut joined_name = String::new();
+                        for name in job_names {
+                            if !joined_name.is_empty() {
+                                joined_name.push_str(", ");
+                            }
+                            joined_name.push_str(&name);
+                        }
+                        joined_name
+                    }
+                };
+                (key.clone(), value)
+            })
+            .collect();
+
+        Ok(ParsedWorkflow {
+            vars,
+            secrets,
+            jobs,
+        })
     }
 
     pub(crate) fn generate_env_vars_for_step(
