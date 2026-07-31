@@ -274,7 +274,7 @@ impl NowEnvironment {
         &self,
         step_env: &HashMap<String, NowStepEnvVar>,
     ) -> color_eyre::Result<HashMap<OsString, OsString>> {
-        let mut map: HashMap<OsString, OsString> = HashMap::with_capacity(step_env.len());
+        let mut map: HashMap<OsString, OsString> = HashMap::with_capacity(step_env.len() + 1);
 
         {
             let uploads = self.uploads.lock().expect("not poisoned");
@@ -309,6 +309,15 @@ impl NowEnvironment {
                         map.insert(key.into(), download_path.into());
                     }
                 }
+            }
+        }
+
+        match supports_color::on_cached(supports_color::Stream::Stderr) {
+            Some(_) => {
+                map.insert("FORCE_COLOR".into(), "1".into());
+            }
+            None => {
+                map.insert("NO_COLOR".into(), "1".into());
             }
         }
 

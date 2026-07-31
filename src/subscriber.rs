@@ -1,19 +1,43 @@
+// now: A Nix-based distributed command runner
+// Copyright (C) 2026 Eric Rodrigues Pires
+//
+// This program is free software: you can redistribute it and/or modify it under
+// the terms of the GNU Affero General Public License as published by the Free
+// Software Foundation, either version 3 of the License, or (at your option)
+// any later version.
+//
+// This program is distributed in the hope that it will be useful, but WITHOUT
+// ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+// FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+// more details.
+//
+// You should have received a copy of the GNU Affero General Public License along
+// with this program. If not, see <https://www.gnu.org/licenses/>.
+
 use std::{
+    collections::HashMap,
     hash::{Hash, Hasher},
     io::Write,
     marker::PhantomData,
+    sync::Mutex,
 };
 
-use owo_colors::OwoColorize;
+use owo_colors::{OwoColorize, Style};
 use rand::{SeedableRng, seq::IndexedRandom};
 use tracing::{Subscriber, field::Visit};
 use tracing_subscriber::{Layer, field::VisitOutput, registry::LookupSpan};
 
 use crate::utils::trim_string;
 
+struct CachedBuilder {
+    short_name: String,
+    style: Style,
+}
+
 pub(crate) struct NowSubscriberLayer<S, W = fn() -> std::io::Stderr> {
     make_writer: W,
     builder_name_limit: usize,
+    builder_style_cache: Mutex<HashMap<String, CachedBuilder>>,
     _subscriber: PhantomData<S>,
 }
 
@@ -22,6 +46,7 @@ impl<S> Default for NowSubscriberLayer<S> {
         Self {
             make_writer: std::io::stderr,
             builder_name_limit: 40,
+            builder_style_cache: Default::default(),
             _subscriber: Default::default(),
         }
     }
@@ -37,7 +62,8 @@ where
         event: &tracing::Event<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        let mut fields_visitor = NowSubscriberVisitor::new(self.builder_name_limit);
+        let mut fields_visitor =
+            NowSubscriberVisitor::new(&self.builder_style_cache, self.builder_name_limit);
         event.record(&mut fields_visitor);
         if let Some(log_line) = fields_visitor.finish() {
             let _ = writeln!(
@@ -49,7 +75,8 @@ where
     }
 }
 
-struct NowSubscriberVisitor {
+struct NowSubscriberVisitor<'a> {
+    builder_style_cache: &'a Mutex<HashMap<String, CachedBuilder>>,
     builder_name_limit: usize,
     builder: Option<String>,
     is_remote: Option<bool>,
@@ -57,9 +84,13 @@ struct NowSubscriberVisitor {
     message: Option<String>,
 }
 
-impl NowSubscriberVisitor {
-    fn new(builder_name_limit: usize) -> Self {
+impl<'a> NowSubscriberVisitor<'a> {
+    fn new(
+        builder_style_cache: &'a Mutex<HashMap<String, CachedBuilder>>,
+        builder_name_limit: usize,
+    ) -> Self {
         NowSubscriberVisitor {
+            builder_style_cache,
             builder_name_limit,
             builder: None,
             is_remote: None,
@@ -69,7 +100,7 @@ impl NowSubscriberVisitor {
     }
 }
 
-impl Visit for NowSubscriberVisitor {
+impl<'a> Visit for NowSubscriberVisitor<'a> {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn core::fmt::Debug) {
         match field.name() {
             "message" => self.message = Some(format!("{:?}", value)),
@@ -93,7 +124,7 @@ impl Visit for NowSubscriberVisitor {
     }
 }
 
-impl tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscriberVisitor {
+impl<'a> tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscriberVisitor<'a> {
     fn finish(self) -> Option<String> {
         let Some(message) = self.message else {
             return None;
@@ -102,22 +133,29 @@ impl tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscriberVis
             return Some(message);
         };
         let is_remote = self.is_remote.is_some_and(|is_remote| is_remote);
-        let style = get_style_for_runner(is_remote, &builder);
+
+        let (short_name, style) = {
+            let mut guard = self.builder_style_cache.lock().expect("not poisoned");
+            let builder = guard
+                .entry(builder.clone())
+                .or_insert_with(|| CachedBuilder {
+                    short_name: trim_string(builder.clone(), self.builder_name_limit),
+                    style: get_style_for_runner(is_remote, &builder),
+                });
+            (builder.short_name.clone(), builder.style)
+        };
+
         if let Some(step) = self.step {
             Some(format!(
                 "{} {}",
-                format!(
-                    "{} step[{}]>",
-                    trim_string(builder, self.builder_name_limit),
-                    step
-                )
-                .if_supports_color(owo_colors::Stream::Stderr, |text| text.style(style)),
+                format!("{} step[{}]>", short_name, step)
+                    .if_supports_color(owo_colors::Stream::Stderr, |text| text.style(style)),
                 message
             ))
         } else {
             Some(format!(
                 "{} {}",
-                format!("{}>", trim_string(builder, self.builder_name_limit))
+                format!("{}>", short_name)
                     .if_supports_color(owo_colors::Stream::Stderr, |text| text.style(style)),
                 message
             ))

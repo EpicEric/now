@@ -28,7 +28,7 @@ use petgraph::{
     acyclic::Acyclic, algo::Cycle, matrix_graph::NodeIndex, stable_graph::StableDiGraph,
     visit::EdgeRef,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use smol::{channel, stream::StreamExt};
 use tracing::info;
 
@@ -39,21 +39,21 @@ use crate::{
     job::JobResult,
 };
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct NowWorkflow {
     pub(crate) name: Option<String>,
     pub(crate) default: Option<Vec<String>>,
     pub(crate) jobs: HashMap<String, NowJobContainer>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum NowJobContainer {
     Single(NowJob),
     Multiple(Vec<NowJob>),
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct NowJob {
     pub(crate) name: String,
     #[serde(rename = "buildSystem")]
@@ -67,7 +67,7 @@ pub(crate) struct NowJob {
     pub(crate) steps: Vec<NowStep>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct NowStrategy {
     #[serde(rename = "fail-fast")]
     pub(crate) fail_fast: bool,
@@ -82,7 +82,7 @@ pub(crate) struct NowStep {
     pub(crate) upload_key: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum NowStepEnvVar {
     Plain(String),
@@ -140,7 +140,7 @@ impl NowEnvironment {
         );
         let workflow = self.evaluate_workflow(&workflow_path, nixpkgs_expr, use_cache)?;
         if eval {
-            println!("{:?}", &workflow);
+            println!("{}", serde_json::to_string(&workflow)?);
             return Ok(());
         }
 

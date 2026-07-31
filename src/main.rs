@@ -33,11 +33,11 @@ use crate::{
 };
 
 mod builder;
-mod deserialize;
 mod environment;
 mod job;
 mod project;
 mod secret;
+mod serde;
 mod subscriber;
 mod utils;
 mod workflow;

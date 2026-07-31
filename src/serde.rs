@@ -16,12 +16,27 @@
 
 use std::{collections::HashMap, path::PathBuf};
 
-use serde::{Deserialize, de::Visitor};
+use serde::{Deserialize, Serialize, de::Visitor, ser::SerializeStruct};
 
 use crate::{
     environment::EVAL_ID,
     workflow::{NowStep, NowStepDownload, NowStepEnvVar, NowStepSecret},
 };
+
+impl Serialize for NowStep {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut strct = serializer.serialize_struct("NowStep", 5)?;
+        strct.serialize_field("name", &self.name)?;
+        strct.serialize_field("runDrv", &self.run_drv)?;
+        strct.serialize_field("teardownDrv", &self.teardown_drv)?;
+        strct.serialize_field("env", &self.env)?;
+        strct.serialize_field("uploadKey", &self.upload_key)?;
+        strct.end()
+    }
+}
 
 impl<'de> Deserialize<'de> for NowStep {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -93,6 +108,17 @@ impl<'de> Deserialize<'de> for NowStep {
     }
 }
 
+impl Serialize for NowStepSecret {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut strct = serializer.serialize_struct("NowStepSecret", 1)?;
+        strct.serialize_field("secretName", &self.secret_name)?;
+        strct.end()
+    }
+}
+
 impl<'de> Deserialize<'de> for NowStepSecret {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -124,6 +150,17 @@ impl<'de> Deserialize<'de> for NowStepSecret {
         }
 
         deserializer.deserialize_struct("NowStepSecret", &["secret_name"], NowStepSecretVisitor)
+    }
+}
+
+impl Serialize for NowStepDownload {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut strct = serializer.serialize_struct("NowStepDownload", 1)?;
+        strct.serialize_field("downloadName", &self.download_name)?;
+        strct.end()
     }
 }
 

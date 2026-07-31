@@ -1058,6 +1058,7 @@ dependencies = [
  "serde",
  "serde_json",
  "smol",
+ "supports-color 3.0.2",
  "sys-info",
  "tracing",
  "tracing-subscriber",
