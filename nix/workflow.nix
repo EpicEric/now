@@ -35,10 +35,22 @@ let
       (import ./. { inherit pkgs; }).now-step;
 
   normalizeJob =
-    { job, evalId }:
+    {
+      job,
+      evalId,
+      pkgs',
+      specialArgs ? { },
+    }:
     (lib.evalModules {
       modules = [
-        { options.__job = lib.mkOption { type = types.job evalId; }; }
+        {
+          options.__job = lib.mkOption {
+            type = types.job {
+              inherit evalId specialArgs;
+              pkgs = pkgs';
+            };
+          };
+        }
         { __job = job; }
       ];
     }).config.__job;
@@ -49,35 +61,38 @@ let
       job',
       evalId,
     }:
+    let
+      normalize =
+        {
+          job,
+          pkgs' ? pkgs,
+          specialArgs ? { },
+          requiredSystemFeatures ? [ ],
+        }:
+        fn {
+          job = normalizeJob {
+            inherit
+              job
+              evalId
+              pkgs'
+              specialArgs
+              ;
+          };
+          inherit pkgs' requiredSystemFeatures;
+        };
+    in
     if builtins.isList job' then
       map (
         e:
-        fn {
-          job = normalizeJob {
-            inherit (e) job;
-            inherit evalId;
-          };
+        normalize {
+          inherit (e) job;
           pkgs' = e.pkgs' or pkgs;
+          specialArgs = e.specialArgs or { };
           requiredSystemFeatures = e.requiredSystemFeatures or [ ];
         }
       ) job'
     else
-      fn {
-        job = normalizeJob {
-          job = (
-            if lib.isFunction job' then
-              job' {
-                inherit pkgs;
-                inherit (pkgs) lib;
-              }
-            else
-              job'
-          );
-          inherit evalId;
-        };
-        pkgs' = pkgs;
-        requiredSystemFeatures = [ ];
-      };
+      normalize { job = job'; };
 
   stepFnInner =
     {
@@ -188,8 +203,8 @@ let
         step' =
           (lib.evalModules {
             modules = [
-              { options.__step = lib.mkOption { type = types.step evalId; }; }
-              { __step = if lib.isFunction step then step { inherit pkgs lib; } else step; }
+              { options.__step = lib.mkOption { type = types.step { inherit evalId pkgs; }; }; }
+              { __step = step; }
             ];
           }).config.__step;
       in
@@ -309,18 +324,12 @@ nowConfig {
           matrix =
             variants: job':
             map (v: {
-              job =
-                if lib.isFunction job' then
-                  job' (
-                    {
-                      inherit pkgs;
-                      inherit (pkgs) lib;
-                    }
-                    // v
-                  )
-                else
-                  job';
+              job = job';
               pkgs' = v.pkgs or pkgs;
+              specialArgs = removeAttrs v [
+                "pkgs"
+                "requiredSystemFeatures"
+              ];
               requiredSystemFeatures = v.requiredSystemFeatures or [ ];
             }) variants;
 
