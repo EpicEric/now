@@ -19,7 +19,7 @@ use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf, pin::Pin};
 use futures::{AsyncReadExt, TryStreamExt, stream::FuturesUnordered};
 use petgraph::matrix_graph::NodeIndex;
 use smol::{channel::TryRecvError, io::AsyncBufReadExt, io::BufReader, stream::StreamExt};
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 
 use crate::{
     builder::{NowBuilder, local::LocalBuilder},
@@ -31,6 +31,7 @@ pub(crate) type JobResult = color_eyre::Result<NodeIndex<u32>>;
 type JobFut<'a> = Pin<Box<dyn Future<Output = JobResult> + 'a>>;
 
 impl NowEnvironment {
+    #[instrument(skip_all, fields(builder = builder.get_name(), job = job.name))]
     async fn run_job(&self, builder: &dyn NowBuilder, job: NowJob) -> color_eyre::Result<()> {
         let guard = builder.acquire().await;
         let runner = builder.get_name();
@@ -63,12 +64,32 @@ impl NowEnvironment {
 
             for step in job.steps.iter() {
                 if let Some(teardown_drv) = step.teardown_drv.as_ref() {
+                    let _guard = tracing::info_span!(
+                        "step-teardown-realize",
+                        job = job.name,
+                        step = step.name,
+                        r#type = "step-teardown-realize",
+                    );
                     let teardown = builder.realize_derivation(teardown_drv, &guard).await?;
                     teardown_stack.push((&step.name, teardown, &step.env));
                 }
 
-                let run = builder.realize_derivation(&step.run_drv, &guard).await?;
+                let run = {
+                    let _guard = tracing::info_span!(
+                        "step-run-realize",
+                        job = job.name,
+                        step = step.name,
+                        r#type = "step-run-realize",
+                    );
+                    builder.realize_derivation(&step.run_drv, &guard).await?
+                };
 
+                let _guard = tracing::info_span!(
+                    "step-run",
+                    job = job.name,
+                    step = step.name,
+                    r#type = "step-run",
+                );
                 let mut downloads: Vec<PathBuf> = Vec::new();
                 {
                     let uploads = self.uploads.lock().expect("not poisoned");
@@ -147,11 +168,35 @@ impl NowEnvironment {
         .await;
 
         for (step_name, teardown, step_env) in teardown_stack.into_iter().rev() {
-            let mut child = builder.run_derivation(
-                &cwdir,
-                teardown,
-                self.generate_env_vars_for_step(step_env)?,
-            )?;
+            let _guard = tracing::info_span!(
+                "step-teardown",
+                job = job.name,
+                step = step_name,
+                r#type = "step-teardown",
+            );
+
+            let env_vars = match self.generate_env_vars_for_step(step_env) {
+                Ok(env_vars) => env_vars,
+                Err(error) => {
+                    warn!(
+                        builder = runner,
+                        is_remote,
+                        step = step_name,
+                        teardown = true,
+                        "Teardown failed ({}); continuing",
+                        error
+                    );
+                    result = result.and_then(|_| {
+                        Err(color_eyre::eyre::eyre!(
+                            "Teardown for step '{}' failed ({})",
+                            step_name,
+                            error,
+                        ))
+                    });
+                    continue;
+                }
+            };
+            let mut child = builder.run_derivation(&cwdir, teardown, env_vars)?;
             let stderr = child.stderr.take().expect("stderr is piped");
 
             let mut lines = BufReader::new(stderr).lines();
@@ -170,7 +215,27 @@ impl NowEnvironment {
                 }
             }
 
-            let exit_status = child.status().await?;
+            let exit_status = match child.status().await {
+                Ok(exit_status) => exit_status,
+                Err(error) => {
+                    warn!(
+                        builder = runner,
+                        is_remote,
+                        step = step_name,
+                        teardown = true,
+                        "Teardown failed ({}); continuing",
+                        error
+                    );
+                    result = result.and_then(|_| {
+                        Err(color_eyre::eyre::eyre!(
+                            "Teardown for step '{}' failed ({})",
+                            step_name,
+                            error,
+                        ))
+                    });
+                    continue;
+                }
+            };
             if !exit_status.success() {
                 warn!(
                     builder = runner,
@@ -180,11 +245,13 @@ impl NowEnvironment {
                     "Teardown failed ({}); continuing",
                     exit_status
                 );
-                result = result.and(Err(color_eyre::eyre::eyre!(
-                    "Teardown for step '{}' failed ({})",
-                    step_name,
-                    exit_status
-                )));
+                result = result.and_then(|_| {
+                    Err(color_eyre::eyre::eyre!(
+                        "Teardown for step '{}' failed ({})",
+                        step_name,
+                        exit_status
+                    ))
+                });
             }
         }
 

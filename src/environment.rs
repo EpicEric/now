@@ -24,6 +24,8 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
+use tracing::instrument;
+
 use crate::{
     project::{ProjectSource, create_nix_project_source},
     secret::SecretString,
@@ -33,7 +35,6 @@ use crate::{
 
 pub(crate) static EVAL_ID: LazyLock<String> = LazyLock::new(|| get_random_string(10));
 
-#[derive(Debug)]
 pub(crate) struct NowEnvironment {
     pub(crate) nix_project_source: ProjectSource,
     pub(crate) secrets: HashMap<String, SecretString>,
@@ -50,6 +51,7 @@ struct ParsedWorkflow {
 }
 
 impl NowEnvironment {
+    #[instrument]
     pub(crate) fn get(
         workflow: &Path,
         env_file: Option<&PathBuf>,
@@ -145,6 +147,7 @@ impl NowEnvironment {
         })
     }
 
+    #[instrument]
     fn parse_workflow(
         workflow: &Path,
         nix_project_source: &Path,

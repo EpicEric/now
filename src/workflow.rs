@@ -30,7 +30,7 @@ use petgraph::{
 };
 use serde::{Deserialize, Serialize};
 use smol::{channel, stream::StreamExt};
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{
     CheckoutStrategy,
@@ -114,6 +114,10 @@ pub(crate) struct NowWorkflowParams {
 }
 
 impl NowEnvironment {
+    #[instrument(
+        skip_all,
+        fields(workflow = ?workflow_path, nixpkgs_expr, use_cache, abort, timeout, eval, jobs, all_jobs, checkout_strategy, builders)
+    )]
     pub(crate) fn run_workflow(
         &mut self,
         NowWorkflowParams {
@@ -264,6 +268,7 @@ impl NowEnvironment {
         smol::future::block_on(executor.run(smol::future::or(workflow_task, abort_task)))
     }
 
+    #[instrument(skip(self))]
     fn evaluate_workflow(
         &self,
         workflow: &Path,
@@ -327,6 +332,7 @@ struct NowWorkflowGraph {
 }
 
 impl NowWorkflow {
+    #[instrument(skip(self))]
     fn build_graph(
         self,
         target_jobs: Option<Vec<String>>,
