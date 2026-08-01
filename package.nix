@@ -35,6 +35,7 @@ rustPlatform.buildRustPackage {
       ./nix
       ./now-step
       ./src
+      ./build.rs
       ./Cargo.toml
       ./Cargo.lock
     ];
