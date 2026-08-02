@@ -137,7 +137,7 @@ impl NowEnvironment {
         let runner = builder.get_name();
 
         info!(
-            builder = runner,
+            runner,
             is_remote = false,
             "Evaluating workflow '{}'...",
             workflow_path.to_string_lossy()
@@ -149,18 +149,9 @@ impl NowEnvironment {
         }
 
         if let Some(name) = workflow.name.as_ref() {
-            info!(
-                builder = runner,
-                is_remote = false,
-                "Building tree for '{}'...",
-                name
-            );
+            info!(runner, is_remote = false, "Building tree for '{}'...", name);
         } else {
-            info!(
-                builder = runner,
-                is_remote = false,
-                "Building tree for workflow..."
-            );
+            info!(runner, is_remote = false, "Building tree for workflow...");
         }
         let NowWorkflowGraph {
             dag: mut tree,

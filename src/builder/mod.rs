@@ -26,7 +26,7 @@ use smol::{channel, lock::futures::Lock, process::Child};
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::{utils::pipe_outputs_to_stderr, workflow::NowJob};
+use crate::utils::pipe_outputs_to_stderr;
 
 pub(crate) mod local;
 pub(crate) mod remote;
@@ -81,7 +81,8 @@ pub(crate) trait NowBuilder {
 
     async fn copy_derivations(
         &self,
-        job: &NowJob,
+        job_name: &str,
+        derivations: &Vec<PathBuf>,
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()>;
 
@@ -121,6 +122,8 @@ pub(crate) struct NixConfigValue<T> {
 #[derive(Deserialize, Debug)]
 pub(crate) struct NixConfig {
     builders: NixConfigValue<String>,
+    #[serde(rename = "extra-platforms")]
+    extra_platforms: NixConfigValue<Vec<String>>,
     system: NixConfigValue<String>,
     #[serde(rename = "system-features")]
     system_features: NixConfigValue<Vec<String>>,

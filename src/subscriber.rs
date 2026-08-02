@@ -82,7 +82,7 @@ where
 struct NowSubscriberVisitor<'a> {
     cache: &'a NowSubscriberCache,
     builder_name_limit: usize,
-    builder: Option<String>,
+    runner: Option<String>,
     is_remote: Option<bool>,
     step: Option<String>,
     message: Option<String>,
@@ -93,7 +93,7 @@ impl<'a> NowSubscriberVisitor<'a> {
         NowSubscriberVisitor {
             cache,
             builder_name_limit,
-            builder: None,
+            runner: None,
             is_remote: None,
             step: None,
             message: None,
@@ -118,7 +118,7 @@ impl<'a> Visit for NowSubscriberVisitor<'a> {
 
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
         match field.name() {
-            "builder" => self.builder = Some(value.to_string()),
+            "runner" => self.runner = Some(value.to_string()),
             "step" => self.step = Some(value.to_string()),
             _ => self.record_debug(field, &value),
         }
@@ -130,17 +130,17 @@ impl<'a> tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscribe
         let Some(message) = self.message else {
             return None;
         };
-        let Some(builder) = self.builder else {
+        let Some(runner) = self.runner else {
             return Some(message);
         };
         let is_remote = self.is_remote.is_some_and(|is_remote| is_remote);
 
         let mut guard = self.cache.inner.lock().expect("not poisoned");
         let builder = guard
-            .entry(builder.clone())
+            .entry(runner.clone())
             .or_insert_with(|| CachedBuilder {
-                short_name: trim_string(builder.clone(), self.builder_name_limit),
-                style: get_style_for_runner(is_remote, &builder),
+                short_name: trim_string(runner.clone(), self.builder_name_limit),
+                style: get_style_for_runner(is_remote, &runner),
             });
 
         if let Some(step) = self.step {

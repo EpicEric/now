@@ -16,13 +16,17 @@
 
 use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf, pin::Pin};
 
-use futures::{AsyncReadExt, TryStreamExt, stream::FuturesUnordered};
+use futures::{AsyncReadExt, stream::FuturesUnordered};
 use petgraph::matrix_graph::NodeIndex;
-use smol::{channel::TryRecvError, io::AsyncBufReadExt, io::BufReader, stream::StreamExt};
+use smol::{
+    channel::TryRecvError,
+    io::{AsyncBufReadExt, BufReader},
+    stream::StreamExt,
+};
 use tracing::{info, instrument, warn};
 
 use crate::{
-    builder::{NowBuilder, local::LocalBuilder},
+    builder::local::LocalBuilder,
     environment::NowEnvironment,
     workflow::{NowJob, NowStepEnvVar},
 };
@@ -31,20 +35,66 @@ pub(crate) type JobResult = color_eyre::Result<NodeIndex<u32>>;
 type JobFut<'a> = Pin<Box<dyn Future<Output = JobResult> + 'a>>;
 
 impl NowEnvironment {
-    #[instrument(skip_all, fields(builder = builder.get_name(), job = job.name))]
-    async fn run_job(&self, builder: &dyn NowBuilder, job: NowJob) -> color_eyre::Result<()> {
-        let guard = builder.acquire().await;
-        let runner = builder.get_name();
-        let is_remote = builder.is_remote();
+    #[instrument(skip_all, fields(job = job.name))]
+    async fn run_job(&self, local_builder: &LocalBuilder, job: NowJob) -> color_eyre::Result<()> {
+        let mut steps = Vec::with_capacity(job.steps.len());
+        let mut derivations = Vec::new();
+
+        {
+            let (guard, builder) = local_builder.get_builder(&job).await?;
+            if matches!(guard.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
+                return Err(color_eyre::eyre::eyre!("Runner aborted"));
+            }
+            info!(
+                runner = builder.get_name(),
+                is_remote = builder.is_remote(),
+                "Building derivations for job '{}'...",
+                &job.name
+            );
+
+            for step in &job.steps {
+                let teardown = if let Some(teardown_drv) = step.teardown_drv.as_ref() {
+                    let _guard = tracing::info_span!(
+                        "step-teardown-realize",
+                        job = job.name,
+                        step = step.name,
+                        r#type = "step-teardown-realize",
+                    );
+                    let teardown = builder.realize_derivation(teardown_drv, &guard).await?;
+                    derivations.push(teardown.clone());
+                    builder.fetch_derivation(&teardown, &guard).await?;
+                    Some(teardown)
+                } else {
+                    None
+                };
+                let run = {
+                    let _guard = tracing::info_span!(
+                        "step-run-realize",
+                        job = job.name,
+                        step = step.name,
+                        r#type = "step-run-realize",
+                    );
+                    let run = builder.realize_derivation(&step.run_drv, &guard).await?;
+                    derivations.push(run.clone());
+                    builder.fetch_derivation(&run, &guard).await?;
+                    run
+                };
+                steps.push((step, run, teardown));
+            }
+        }
+
+        let (guard, runner) = local_builder.get_runner(&job).await?;
         if matches!(guard.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
             return Err(color_eyre::eyre::eyre!("Runner aborted"));
         }
+        let runner_name = runner.get_name();
+        let is_remote = runner.is_remote();
         info!(
-            builder = runner,
+            runner = runner_name,
             is_remote, "Running job '{}'...", &job.name
         );
 
-        let (mut checkout_child, cwdir) = builder.checkout()?;
+        let (mut checkout_child, cwdir) = runner.checkout()?;
 
         let mut teardown_stack = Vec::new();
 
@@ -60,30 +110,11 @@ impl NowEnvironment {
                 .await?;
             }
 
-            builder.copy_derivations(&job, &guard).await?;
+            runner
+                .copy_derivations(&job.name, &derivations, &guard)
+                .await?;
 
-            for step in job.steps.iter() {
-                if let Some(teardown_drv) = step.teardown_drv.as_ref() {
-                    let _guard = tracing::info_span!(
-                        "step-teardown-realize",
-                        job = job.name,
-                        step = step.name,
-                        r#type = "step-teardown-realize",
-                    );
-                    let teardown = builder.realize_derivation(teardown_drv, &guard).await?;
-                    teardown_stack.push((&step.name, teardown, &step.env));
-                }
-
-                let run = {
-                    let _guard = tracing::info_span!(
-                        "step-run-realize",
-                        job = job.name,
-                        step = step.name,
-                        r#type = "step-run-realize",
-                    );
-                    builder.realize_derivation(&step.run_drv, &guard).await?
-                };
-
+            for (step, run, teardown) in steps {
                 let _guard = tracing::info_span!(
                     "step-run",
                     job = job.name,
@@ -106,9 +137,13 @@ impl NowEnvironment {
                         }
                     }
                 }
-                builder.download(&downloads, &guard).await?;
+                runner.download(&downloads, &guard).await?;
 
-                let mut child = builder.run_derivation(
+                if let Some(teardown) = teardown {
+                    teardown_stack.push((&step.name, teardown, &step.env));
+                }
+
+                let mut child = runner.run_derivation(
                     &cwdir,
                     run,
                     self.generate_env_vars_for_step(&step.env)?,
@@ -120,7 +155,13 @@ impl NowEnvironment {
                     let mut lines = BufReader::new(stderr).lines();
                     while let Some(line) = lines.next().await {
                         if let Ok(line) = line {
-                            info!(builder = runner, is_remote, step = step.name, "{}", line);
+                            info!(
+                                runner = runner_name,
+                                is_remote,
+                                step = step.name,
+                                "{}",
+                                line
+                            );
                         } else {
                             break;
                         }
@@ -141,9 +182,9 @@ impl NowEnvironment {
                     let mut buf = Vec::new();
                     stdout.read_to_end(&mut buf).await?;
                     let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
-                    builder.fetch_derivation(&upload_path, &guard).await?;
+                    runner.fetch_derivation(&upload_path, &guard).await?;
                     info!(
-                        builder = runner,
+                        runner = runner_name,
                         is_remote,
                         step = step.name,
                         "Uploaded '{}', ({})",
@@ -172,7 +213,7 @@ impl NowEnvironment {
                 Ok(env_vars) => env_vars,
                 Err(error) => {
                     warn!(
-                        builder = runner,
+                        runner = runner_name,
                         is_remote,
                         step = step_name,
                         teardown = true,
@@ -189,14 +230,14 @@ impl NowEnvironment {
                     continue;
                 }
             };
-            let mut child = builder.run_derivation(&cwdir, teardown, env_vars)?;
+            let mut child = runner.run_derivation(&cwdir, teardown, env_vars)?;
             let stderr = child.stderr.take().expect("stderr is piped");
 
             let mut lines = BufReader::new(stderr).lines();
             while let Some(line) = lines.next().await {
                 if let Ok(line) = line {
                     info!(
-                        builder = runner,
+                        runner = runner_name,
                         is_remote,
                         step = step_name,
                         teardown = true,
@@ -212,7 +253,7 @@ impl NowEnvironment {
                 Ok(exit_status) => exit_status,
                 Err(error) => {
                     warn!(
-                        builder = runner,
+                        runner = runner_name,
                         is_remote,
                         step = step_name,
                         teardown = true,
@@ -231,7 +272,7 @@ impl NowEnvironment {
             };
             if !exit_status.success() {
                 warn!(
-                    builder = runner,
+                    runner = runner_name,
                     is_remote,
                     step = step_name,
                     teardown = true,
@@ -249,7 +290,7 @@ impl NowEnvironment {
         }
 
         drop(checkout_child.take());
-        result.and(builder.undo_checkout(&cwdir).await)
+        result.and(runner.undo_checkout(&cwdir).await)
     }
 
     pub(crate) fn run_job_single<'a>(
@@ -270,39 +311,34 @@ impl NowEnvironment {
         jobs: Vec<NowJob>,
         node_index: NodeIndex<u32>,
     ) -> color_eyre::Result<JobFut<'a>> {
-        let fail_fast = FuturesUnordered::new();
-        let no_fail_fast = FuturesUnordered::new();
+        let mut fail_fast = FuturesUnordered::new();
+        let mut no_fail_fast = FuturesUnordered::new();
 
         for job in jobs {
-            let builder = local_builder.get_builder(&job)?;
             if job
                 .strategy
                 .as_ref()
                 .is_none_or(|strategy| strategy.fail_fast)
             {
-                fail_fast.push(self.run_job(builder, job));
+                fail_fast.push(self.run_job(local_builder, job));
             } else {
-                no_fail_fast.push(self.run_job(builder, job));
+                no_fail_fast.push(self.run_job(local_builder, job));
             }
         }
 
         Ok(Box::pin(async move {
             let (fail_fast, no_fail_fast) = smol::future::zip(
-                async {
-                    let mut result = Ok(());
-                    let mut stream = fail_fast.into_stream();
-                    while let Some(future) = stream.next().await {
-                        if future.is_err() && result.is_ok() {
-                            local_builder.cancel_builders();
-                            result = future;
+                async move {
+                    while let Some(future) = fail_fast.next().await {
+                        if future.is_err() {
+                            return future;
                         }
                     }
-                    result
+                    Ok(())
                 },
-                async {
+                async move {
                     let mut result = Ok(());
-                    let mut stream = no_fail_fast.into_stream();
-                    while let Some(future) = stream.next().await {
+                    while let Some(future) = no_fail_fast.next().await {
                         result = result.and(future);
                     }
                     result

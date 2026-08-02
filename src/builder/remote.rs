@@ -38,7 +38,6 @@ use crate::{
         NowBuilder,
     },
     utils::{escape_os_string, get_random_string, pipe_outputs_to_stderr},
-    workflow::NowJob,
 };
 
 struct RsyncCheckoutTask {
@@ -84,9 +83,26 @@ pub(crate) struct RemoteBuilder {
     pub(crate) strategy: CheckoutStrategy,
     pub(crate) ssh_uri: String,
     pub(crate) ssh_identity: Option<String>,
-    pub(crate) systems: HashSet<String>,
+    pub(crate) host_system: String,
+    pub(crate) build_systems: HashSet<String>,
     pub(crate) system_features: HashSet<String>,
     pub(crate) required_features: HashSet<String>,
+}
+
+pub(crate) fn ssh_options(control_path: &Path) -> impl Iterator<Item = OsString> {
+    let mut control_path_option: OsString = "ControlPath=".into();
+    control_path_option.push(&control_path);
+    [
+        "-o".into(),
+        "ControlMaster=auto".into(),
+        "-o".into(),
+        control_path_option,
+        "-o".into(),
+        "ControlPersist=300".into(),
+        "-o".into(),
+        "BatchMode=yes".into(),
+    ]
+    .into_iter()
 }
 
 impl RemoteBuilder {
@@ -126,7 +142,7 @@ impl RemoteBuilder {
                 continue;
             };
 
-            let systems = if let Some(systems) = iter.next()
+            let build_systems = if let Some(systems) = iter.next()
                 && systems != "-"
             {
                 systems
@@ -177,6 +193,37 @@ impl RemoteBuilder {
 
             let control_path = project_source.join(format!("ssh-{}", get_random_string(10)));
 
+            // Get host system for remote
+            let mut command = std::process::Command::new("ssh");
+            if let Some(ssh_identity) = ssh_identity.as_ref() {
+                command.arg("-i").arg(ssh_identity);
+            }
+            for arg in ssh_options(&control_path) {
+                command.arg(arg);
+            }
+            command
+                .args([
+                    &ssh_uri,
+                    "nix",
+                    "--extra-experimental-features",
+                    "'nix-command flakes'",
+                    "eval",
+                    "--impure",
+                    "--raw",
+                    "--expr",
+                    "builtins.currentSystem",
+                ])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            let output = command.output()?;
+            let host_system = if output.status.success() {
+                String::from_utf8(output.stdout)?
+            } else {
+                eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+                return Err(color_eyre::eyre::eyre!("Failed to connect to {}", ssh_uri));
+            };
+
             vec.push(RemoteBuilder {
                 cancellation,
                 cancellation_rx: Mutex::new(cancellation_rx),
@@ -185,29 +232,14 @@ impl RemoteBuilder {
                 control_path,
                 ssh_uri,
                 ssh_identity,
-                systems,
+                host_system,
+                build_systems,
                 system_features,
                 required_features,
             })
         }
 
         Ok(vec)
-    }
-
-    pub(crate) fn ssh_options(&self) -> impl Iterator<Item = OsString> {
-        let mut control_path: OsString = "ControlPath=".into();
-        control_path.push(&self.control_path);
-        [
-            "-o".into(),
-            "ControlMaster=auto".into(),
-            "-o".into(),
-            control_path,
-            "-o".into(),
-            "ControlPersist=300".into(),
-            "-o".into(),
-            "BatchMode=yes".into(),
-        ]
-        .into_iter()
     }
 }
 
@@ -235,7 +267,7 @@ impl NowBuilder for RemoteBuilder {
                     ssh_command.push(ssh_identity);
                     ssh_command.push(" ");
                 }
-                for arg in self.ssh_options() {
+                for arg in ssh_options(&self.control_path) {
                     ssh_command.push(arg);
                     ssh_command.push(" ");
                 }
@@ -291,7 +323,7 @@ impl NowBuilder for RemoteBuilder {
                 if let Some(ssh_identity) = self.ssh_identity.as_ref() {
                     command.arg("-i").arg(ssh_identity);
                 }
-                for arg in self.ssh_options() {
+                for arg in ssh_options(&self.control_path) {
                     command.arg(arg);
                 }
                 command
@@ -313,11 +345,12 @@ impl NowBuilder for RemoteBuilder {
 
     async fn copy_derivations(
         &self,
-        job: &NowJob,
+        job_name: &str,
+        derivations: &Vec<PathBuf>,
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         let mut ssh_opts = OsString::new();
-        for arg in self.ssh_options() {
+        for arg in ssh_options(&self.control_path) {
             ssh_opts.push(arg);
             ssh_opts.push(" ");
         }
@@ -331,21 +364,7 @@ impl NowBuilder for RemoteBuilder {
         ]);
         command
             .arg(&self.ssh_uri)
-            .args(
-                job.steps
-                    .iter()
-                    .flat_map(|step| {
-                        if let Some(teardown_drv) = step.teardown_drv.as_ref() {
-                            vec![
-                                step.run_drv.clone().into_os_string(),
-                                teardown_drv.clone().into_os_string(),
-                            ]
-                        } else {
-                            vec![step.run_drv.clone().into_os_string()]
-                        }
-                    })
-                    .collect::<Vec<_>>(),
-            )
+            .args(derivations)
             .env("NIX_SSHOPTS", ssh_opts)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -364,7 +383,7 @@ impl NowBuilder for RemoteBuilder {
                     pipe_outputs_to_stderr(&mut child).await?;
                     Err(color_eyre::eyre::eyre!(
                         "Failed to copy '{}' derivations to {}",
-                        job.name,
+                        job_name,
                         self.ssh_uri
                     ))
                 }
@@ -394,7 +413,7 @@ impl NowBuilder for RemoteBuilder {
         if let Some(ssh_identity) = self.ssh_identity.as_ref() {
             command.arg("-i").arg(ssh_identity);
         }
-        for arg in self.ssh_options() {
+        for arg in ssh_options(&self.control_path) {
             command.arg(arg);
         }
         command
@@ -436,7 +455,7 @@ impl NowBuilder for RemoteBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         let mut ssh_opts = OsString::new();
-        for arg in self.ssh_options() {
+        for arg in ssh_options(&self.control_path) {
             ssh_opts.push(arg);
             ssh_opts.push(" ");
         }
@@ -531,7 +550,7 @@ impl NowBuilder for RemoteBuilder {
         if let Some(ssh_identity) = self.ssh_identity.as_ref() {
             command.arg("-i").arg(ssh_identity);
         }
-        for arg in self.ssh_options() {
+        for arg in ssh_options(&self.control_path) {
             command.arg(arg);
         }
         command
@@ -549,7 +568,7 @@ impl NowBuilder for RemoteBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         let mut ssh_opts = OsString::new();
-        for arg in self.ssh_options() {
+        for arg in ssh_options(&self.control_path) {
             ssh_opts.push(arg);
             ssh_opts.push(" ");
         }
@@ -560,6 +579,7 @@ impl NowBuilder for RemoteBuilder {
                 "--extra-experimental-features",
                 "nix-command flakes",
                 "copy",
+                "--no-check-sigs",
                 "--from",
             ])
             .arg(&self.ssh_uri)
@@ -600,7 +620,7 @@ impl NowBuilder for RemoteBuilder {
                 if let Some(ssh_identity) = self.ssh_identity.as_ref() {
                     command.arg("-i").arg(ssh_identity);
                 }
-                for arg in self.ssh_options() {
+                for arg in ssh_options(&self.control_path) {
                     command.arg(arg);
                 }
                 command.arg(&self.ssh_uri).arg(rm_command);

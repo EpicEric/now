@@ -24,11 +24,13 @@ use std::{
 };
 
 use async_trait::async_trait;
+use futures::stream::FuturesUnordered;
 use smol::{
-    channel,
+    channel::{self, Receiver},
     io::AsyncReadExt,
-    lock::{Mutex, futures::Lock},
+    lock::{Mutex, MutexGuard, futures::Lock},
     process::{Child, Command, Stdio},
+    stream::StreamExt,
 };
 
 use crate::{
@@ -49,6 +51,7 @@ pub(crate) struct LocalBuilder {
     pub(crate) strategy: CheckoutStrategy,
     pub(crate) use_cache: bool,
     pub(crate) hostname: String,
+    pub(crate) extra_platforms: Vec<String>,
     pub(crate) system: String,
     pub(crate) system_features: HashSet<String>,
     pub(crate) remote_builders: Vec<RemoteBuilder>,
@@ -112,6 +115,7 @@ impl LocalBuilder {
             use_cache,
             strategy,
             hostname,
+            extra_platforms: config.extra_platforms.value,
             system: config.system.value,
             system_features: config.system_features.value.into_iter().collect(),
             remote_builders,
@@ -127,36 +131,104 @@ impl LocalBuilder {
         }
     }
 
-    pub(crate) fn get_builder(&self, job: &NowJob) -> color_eyre::Result<&dyn NowBuilder> {
+    pub(crate) async fn get_builder(
+        &self,
+        job: &NowJob,
+    ) -> color_eyre::Result<(MutexGuard<'_, Receiver<()>>, &dyn NowBuilder)> {
+        let mut builders = vec![];
+
         if job.build_system == self.system
             && job
                 .required_system_features
                 .iter()
                 .all(|feature| self.system_features.contains(feature))
         {
-            Ok(self)
-        } else {
-            for builder in self.remote_builders.iter() {
-                if builder.systems.contains(&job.build_system)
-                    && builder
-                        .required_features
-                        .iter()
-                        .all(|feature| job.required_system_features.contains(feature))
-                    && job
-                        .required_system_features
-                        .iter()
-                        .all(|feature| builder.system_features.contains(feature))
-                {
-                    return Ok(builder);
-                }
+            builders.push(self as &dyn NowBuilder);
+        }
+
+        for builder in self.remote_builders.iter() {
+            if builder.build_systems.contains(&job.build_system)
+                && builder
+                    .required_features
+                    .iter()
+                    .all(|feature| job.required_system_features.contains(feature))
+                && job
+                    .required_system_features
+                    .iter()
+                    .all(|feature| builder.system_features.contains(feature))
+            {
+                builders.push(builder as &dyn NowBuilder);
             }
-            Err(color_eyre::eyre::eyre!(
+        }
+
+        let mut builders_fut: FuturesUnordered<_> = builders
+            .into_iter()
+            .map(|builder| async move {
+                let guard = builder.acquire().await;
+                (guard, builder)
+            })
+            .collect();
+
+        let Some((guard, builder)) = builders_fut.next().await else {
+            return Err(color_eyre::eyre::eyre!(
                 "No builders match for job '{}' (buildSystem = {}, requiredSystemFeatures = {:?})",
                 job.name,
                 job.build_system,
                 job.required_system_features,
-            ))
+            ));
+        };
+
+        Ok((guard, builder))
+    }
+
+    pub(crate) async fn get_runner(
+        &self,
+        job: &NowJob,
+    ) -> color_eyre::Result<(MutexGuard<'_, Receiver<()>>, &dyn NowBuilder)> {
+        let mut runners = vec![];
+
+        if (job.host_system == self.system || self.extra_platforms.contains(&job.host_system))
+            && job
+                .required_system_features
+                .iter()
+                .all(|feature| self.system_features.contains(feature))
+        {
+            runners.push(self as &dyn NowBuilder);
         }
+
+        for builder in self.remote_builders.iter() {
+            if builder.host_system == job.host_system
+                && builder
+                    .required_features
+                    .iter()
+                    .all(|feature| job.required_system_features.contains(feature))
+                && job
+                    .required_system_features
+                    .iter()
+                    .all(|feature| builder.system_features.contains(feature))
+            {
+                runners.push(builder as &dyn NowBuilder);
+            }
+        }
+
+        let mut runners_fut: FuturesUnordered<_> = runners
+            .into_iter()
+            .map(|builder| async move {
+                let guard = builder.acquire().await;
+                (guard, builder)
+            })
+            .collect();
+
+        let Some((guard, runner)) = runners_fut.next().await else {
+            return Err(color_eyre::eyre::eyre!(
+                "No runners match for job '{}' (hostSystem = {}, requiredSystemFeatures = {:?})",
+                job.name,
+                job.build_system,
+                job.required_system_features,
+            ));
+        };
+
+        Ok((guard, runner))
     }
 }
 
@@ -203,7 +275,8 @@ impl NowBuilder for LocalBuilder {
 
     async fn copy_derivations(
         &self,
-        _job: &NowJob,
+        _job_name: &str,
+        _derivations: &Vec<PathBuf>,
         _cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         Ok(())
