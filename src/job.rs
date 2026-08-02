@@ -127,33 +127,7 @@ impl NowEnvironment {
                     }
                 };
 
-                let upload_task = async {
-                    if let Some(upload_key) = step.upload_key.as_ref() {
-                        let mut buf = Vec::new();
-                        stdout.read_to_end(&mut buf).await?;
-                        let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
-                        builder.fetch_derivation(&upload_path, &guard).await?;
-                        info!(
-                            builder = runner,
-                            is_remote,
-                            step = step.name,
-                            "Uploaded '{}', ({})",
-                            upload_key,
-                            upload_path.to_string_lossy()
-                        );
-                        self.uploads
-                            .lock()
-                            .expect("not poisoned")
-                            .insert(upload_key.to_string(), upload_path);
-                    }
-                    <color_eyre::Result<_>>::Ok(())
-                };
-
-                let (exit_status, (_, upload_result)) =
-                    smol::future::zip(child.status(), smol::future::zip(log_task, upload_task))
-                        .await;
-                upload_result?;
-                let exit_status = exit_status?;
+                let exit_status = smol::future::zip(child.status(), log_task).await.0?;
 
                 if !exit_status.success() {
                     return Err(color_eyre::eyre::eyre!(
@@ -161,6 +135,25 @@ impl NowEnvironment {
                         &step.name,
                         exit_status
                     ));
+                }
+
+                if let Some(upload_key) = step.upload_key.as_ref() {
+                    let mut buf = Vec::new();
+                    stdout.read_to_end(&mut buf).await?;
+                    let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
+                    builder.fetch_derivation(&upload_path, &guard).await?;
+                    info!(
+                        builder = runner,
+                        is_remote,
+                        step = step.name,
+                        "Uploaded '{}', ({})",
+                        upload_key,
+                        upload_path.to_string_lossy()
+                    );
+                    self.uploads
+                        .lock()
+                        .expect("not poisoned")
+                        .insert(upload_key.to_string(), upload_path);
                 }
             }
             Ok(())

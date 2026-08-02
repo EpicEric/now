@@ -34,10 +34,15 @@ struct CachedBuilder {
     style: Style,
 }
 
+#[derive(Default)]
+struct NowSubscriberCache {
+    inner: Mutex<HashMap<String, CachedBuilder>>,
+}
+
 pub(crate) struct NowSubscriberLayer<S, W = fn() -> std::io::Stderr> {
     make_writer: W,
     builder_name_limit: usize,
-    builder_style_cache: Mutex<HashMap<String, CachedBuilder>>,
+    cache: NowSubscriberCache,
     _subscriber: PhantomData<S>,
 }
 
@@ -46,7 +51,7 @@ impl<S> Default for NowSubscriberLayer<S> {
         Self {
             make_writer: std::io::stderr,
             builder_name_limit: 40,
-            builder_style_cache: Default::default(),
+            cache: Default::default(),
             _subscriber: Default::default(),
         }
     }
@@ -62,8 +67,7 @@ where
         event: &tracing::Event<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        let mut fields_visitor =
-            NowSubscriberVisitor::new(&self.builder_style_cache, self.builder_name_limit);
+        let mut fields_visitor = NowSubscriberVisitor::new(&self.cache, self.builder_name_limit);
         event.record(&mut fields_visitor);
         if let Some(log_line) = fields_visitor.finish() {
             let _ = writeln!(
@@ -76,7 +80,7 @@ where
 }
 
 struct NowSubscriberVisitor<'a> {
-    builder_style_cache: &'a Mutex<HashMap<String, CachedBuilder>>,
+    cache: &'a NowSubscriberCache,
     builder_name_limit: usize,
     builder: Option<String>,
     is_remote: Option<bool>,
@@ -85,12 +89,9 @@ struct NowSubscriberVisitor<'a> {
 }
 
 impl<'a> NowSubscriberVisitor<'a> {
-    fn new(
-        builder_style_cache: &'a Mutex<HashMap<String, CachedBuilder>>,
-        builder_name_limit: usize,
-    ) -> Self {
+    fn new(cache: &'a NowSubscriberCache, builder_name_limit: usize) -> Self {
         NowSubscriberVisitor {
-            builder_style_cache,
+            cache,
             builder_name_limit,
             builder: None,
             is_remote: None,
@@ -134,29 +135,28 @@ impl<'a> tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscribe
         };
         let is_remote = self.is_remote.is_some_and(|is_remote| is_remote);
 
-        let (short_name, style) = {
-            let mut guard = self.builder_style_cache.lock().expect("not poisoned");
-            let builder = guard
-                .entry(builder.clone())
-                .or_insert_with(|| CachedBuilder {
-                    short_name: trim_string(builder.clone(), self.builder_name_limit),
-                    style: get_style_for_runner(is_remote, &builder),
-                });
-            (builder.short_name.clone(), builder.style)
-        };
+        let mut guard = self.cache.inner.lock().expect("not poisoned");
+        let builder = guard
+            .entry(builder.clone())
+            .or_insert_with(|| CachedBuilder {
+                short_name: trim_string(builder.clone(), self.builder_name_limit),
+                style: get_style_for_runner(is_remote, &builder),
+            });
 
         if let Some(step) = self.step {
             Some(format!(
                 "{} {}",
-                format!("{} step[{}]>", short_name, step)
-                    .if_supports_color(owo_colors::Stream::Stderr, |text| text.style(style)),
+                format!("{} step[{}]>", &builder.short_name, step)
+                    .if_supports_color(owo_colors::Stream::Stderr, |text| text
+                        .style(builder.style)),
                 message
             ))
         } else {
             Some(format!(
                 "{} {}",
-                format!("{}>", short_name)
-                    .if_supports_color(owo_colors::Stream::Stderr, |text| text.style(style)),
+                format!("{}>", &builder.short_name)
+                    .if_supports_color(owo_colors::Stream::Stderr, |text| text
+                        .style(builder.style)),
                 message
             ))
         }

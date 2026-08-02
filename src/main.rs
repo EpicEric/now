@@ -24,7 +24,7 @@ use std::{
 use clap::{CommandFactory, Parser, ValueEnum};
 use clap_complete::{ArgValueCandidates, ArgValueCompleter, CompletionCandidate, PathCompleter};
 use color_eyre::eyre::Context;
-use tracing::{info, level_filters::LevelFilter};
+use tracing::level_filters::LevelFilter;
 use tracing_duper::DuperLayer;
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -269,7 +269,6 @@ fn main() -> color_eyre::Result<()> {
                 ));
             }
 
-            info!("Initializing environment...");
             let mut environment =
                 NowEnvironment::get(&workflow, env_file.as_ref(), &nixpkgs_expr, use_cache)?;
             environment.run_workflow(NowWorkflowParams {
