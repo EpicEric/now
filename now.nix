@@ -182,10 +182,10 @@ in
               (mkNow pkgs)
             ];
             run = ''
-              # Your Python3 version
+              # Your `hello` version
               now run .now/tests/nixpkgs.nix
 
-              # now's Python3 version
+              # now's `hello` version
               now run .now/tests/nixpkgs.nix --nixpkgs '(import ./.tack).nixpkgs'
             '';
           }

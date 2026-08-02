@@ -50,6 +50,10 @@ pub(crate) enum CheckoutStrategy {
     /// Run commands at the local directory.
     /// On remote builders, copy non-ignored files from the local directory.
     Default,
+    /// Experimental - Like `default`, but run each step inside a sandbox.
+    /// On Linux hosts, uses `bubblewrap`.
+    /// Darwin hosts are currently unsupported.
+    Sandbox,
 }
 
 static LONG_ABOUT: &str = "now - Nix-based distributed command runner.

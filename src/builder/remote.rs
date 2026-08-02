@@ -227,7 +227,7 @@ impl NowBuilder for RemoteBuilder {
 
     fn checkout(&self) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)> {
         match self.strategy {
-            CheckoutStrategy::Default => {
+            CheckoutStrategy::Default | CheckoutStrategy::Sandbox => {
                 let tmpdir = format!("now-{}", get_random_string(10));
                 let mut ssh_command: OsString = "ssh ".into();
                 if let Some(ssh_identity) = self.ssh_identity.as_ref() {
@@ -325,7 +325,7 @@ impl NowBuilder for RemoteBuilder {
         let mut command = Command::new("nix");
         command.args([
             "--extra-experimental-features",
-            "nix-command",
+            "nix-command flakes",
             "copy",
             "--to",
         ]);
@@ -445,7 +445,7 @@ impl NowBuilder for RemoteBuilder {
         command
             .args([
                 "--extra-experimental-features",
-                "nix-command",
+                "nix-command flakes",
                 "copy",
                 "--to",
             ])
@@ -496,7 +496,36 @@ impl NowBuilder for RemoteBuilder {
             full_command.push(" ");
         }
 
-        full_command.push(derivation.join("bin/now-step"));
+        if matches!(self.strategy, CheckoutStrategy::Sandbox) {
+            let escaped_cwdir = escape_os_string(cwdir.into());
+            let mut bwrap_cmd: OsString = "bwrap".into();
+            bwrap_cmd.push(" --ro-bind /nix/store /nix/store");
+            bwrap_cmd.push(" --bind-try /nix/var/nix/daemon-socket");
+            bwrap_cmd.push(" /nix/var/nix/daemon-socket");
+            bwrap_cmd.push(" --setenv NIX_REMOTE daemon");
+            bwrap_cmd.push(" --bind ");
+            bwrap_cmd.push(&escaped_cwdir);
+            bwrap_cmd.push(" ");
+            bwrap_cmd.push(&escaped_cwdir);
+            bwrap_cmd.push(" --proc /proc");
+            bwrap_cmd.push(" --dev /dev");
+            bwrap_cmd.push(" --tmpfs /tmp");
+            bwrap_cmd.push(" --ro-bind-try /etc/resolv.conf /etc/resolv.conf");
+            bwrap_cmd.push(" --ro-bind-try /etc/nsswitch.conf /etc/nsswitch.conf");
+            bwrap_cmd.push(" --ro-bind-try /etc/ssl/certs /etc/ssl/certs");
+            bwrap_cmd.push(" --ro-bind-try /etc/passwd /etc/passwd");
+            bwrap_cmd.push(" --ro-bind-try /etc/group /etc/group");
+            bwrap_cmd.push(" --ro-bind-try /etc/nix/nix.conf /etc/nix/nix.conf");
+            bwrap_cmd.push(" --dir /homeless-shelter");
+            bwrap_cmd.push(" --setenv HOME /homeless-shelter");
+            bwrap_cmd.push(" --setenv NIX_CONFIG \"experimental-features = nix-command flakes\"");
+            bwrap_cmd.push(" --die-with-parent -- ");
+            bwrap_cmd.push(derivation.join("bin/now-step"));
+            full_command.push("nix-shell -p bubblewrap --run ");
+            full_command.push(escape_os_string(bwrap_cmd));
+        } else {
+            full_command.push(derivation.join("bin/now-step"));
+        }
 
         let mut command = Command::new("ssh");
         if let Some(ssh_identity) = self.ssh_identity.as_ref() {
@@ -529,7 +558,7 @@ impl NowBuilder for RemoteBuilder {
         command
             .args([
                 "--extra-experimental-features",
-                "nix-command",
+                "nix-command flakes",
                 "copy",
                 "--from",
             ])
@@ -563,7 +592,7 @@ impl NowBuilder for RemoteBuilder {
 
     async fn undo_checkout(&self, path: &Path) -> color_eyre::Result<()> {
         match self.strategy {
-            CheckoutStrategy::Default | CheckoutStrategy::None => {
+            CheckoutStrategy::Default | CheckoutStrategy::None | CheckoutStrategy::Sandbox => {
                 let mut rm_command: OsString = "rm -rf ".into();
                 rm_command.push(path);
 

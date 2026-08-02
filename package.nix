@@ -15,6 +15,7 @@
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
 {
+  bubblewrap,
   installShellFiles,
   lib,
   makeWrapper,
@@ -56,11 +57,14 @@ rustPlatform.buildRustPackage {
   postInstall = ''
     wrapProgram $out/bin/now \
       --suffix PATH : ${
-        lib.makeBinPath [
-          nix
-          openssh
-          rsync
-        ]
+        lib.makeBinPath (
+          [
+            nix
+            openssh
+            rsync
+          ]
+          ++ lib.optionals stdenv.hostPlatform.isLinux [ bubblewrap ]
+        )
       }
   ''
   + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''

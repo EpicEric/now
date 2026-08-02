@@ -179,7 +179,7 @@ impl NowEnvironment {
         let mut command = Command::new("nix");
         command.args([
             "--extra-experimental-features",
-            "nix-command",
+            "nix-command flakes",
             "eval",
             "--impure",
             "--json",

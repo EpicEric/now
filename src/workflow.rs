@@ -59,7 +59,7 @@ pub(crate) struct NowJob {
     #[serde(rename = "buildSystem")]
     pub(crate) build_system: String,
     #[serde(rename = "hostSystem")]
-    pub(crate) _host_system: String,
+    pub(crate) host_system: String,
     #[serde(rename = "requiredSystemFeatures")]
     pub(crate) required_system_features: HashSet<String>,
     pub(crate) strategy: Option<NowStrategy>,
