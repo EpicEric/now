@@ -54,7 +54,7 @@ impl NowEnvironment {
 
             for step in &job.steps {
                 let teardown = if let Some(teardown_drv) = step.teardown_drv.as_ref() {
-                    let _guard = tracing::info_span!(
+                    let _span = tracing::info_span!(
                         "step-teardown-realize",
                         job = job.name,
                         step = step.name,
@@ -68,7 +68,7 @@ impl NowEnvironment {
                     None
                 };
                 let run = {
-                    let _guard = tracing::info_span!(
+                    let _span = tracing::info_span!(
                         "step-run-realize",
                         job = job.name,
                         step = step.name,
@@ -115,7 +115,7 @@ impl NowEnvironment {
                 .await?;
 
             for (step, run, teardown) in steps {
-                let _guard = tracing::info_span!(
+                let _span = tracing::info_span!(
                     "step-run",
                     job = job.name,
                     step = step.name,
@@ -202,7 +202,7 @@ impl NowEnvironment {
         .await;
 
         for (step_name, teardown, step_env) in teardown_stack.into_iter().rev() {
-            let _guard = tracing::info_span!(
+            let _span = tracing::info_span!(
                 "step-teardown",
                 job = job.name,
                 step = step_name,
