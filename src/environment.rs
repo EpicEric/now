@@ -20,10 +20,10 @@ use std::{
     io::Write,
     os::unix::ffi::OsStringExt,
     path::{Path, PathBuf},
-    process::Command,
     sync::{LazyLock, Mutex},
 };
 
+use smol::{channel::Receiver, process::Command};
 use tracing::instrument;
 
 use crate::{
@@ -52,8 +52,9 @@ struct ParsedWorkflow {
 
 impl NowEnvironment {
     #[instrument]
-    pub(crate) fn get(
+    pub(crate) async fn get(
         workflow: &Path,
+        ctrl_c: Receiver<()>,
         env_file: Option<&PathBuf>,
         nixpkgs_expr: &str,
         use_cache: bool,
@@ -68,87 +69,97 @@ impl NowEnvironment {
         };
         env_vars.extend(std::env::vars_os());
 
-        let nix_project_source = create_nix_project_source()?;
+        smol::future::or(
+            async {
+                let _ = ctrl_c.recv().await;
+                Err(color_eyre::eyre::eyre!("Evaluation aborted"))
+            },
+            async {
+                let nix_project_source = smol::unblock(create_nix_project_source).await?;
 
-        let parsed_workflow = Self::parse_workflow(
-            workflow,
-            nix_project_source.as_ref(),
-            nixpkgs_expr,
-            use_cache,
-        )?;
+                let parsed_workflow = Self::parse_workflow(
+                    workflow,
+                    nix_project_source.as_ref(),
+                    nixpkgs_expr,
+                    use_cache,
+                )
+                .await?;
 
-        let secrets: color_eyre::Result<HashMap<String, SecretString>> = parsed_workflow
-            .secrets
-            .into_iter()
-            .filter_map(|secret| {
-                let Some(value) = env_vars.remove(&secret) else {
-                    return None;
-                };
-                let key = match secret.into_string() {
-                    Ok(secret) => secret,
-                    Err(os_string) => {
-                        return Some(Err(color_eyre::eyre::eyre!(
-                            "Invalid value for {} envvar",
-                            String::from_utf8_lossy(os_string.as_encoded_bytes())
-                        )));
-                    }
-                };
-                let value = match value.into_string() {
-                    Ok(value) => SecretString::new(value),
-                    Err(os_string) => {
-                        return Some(Err(color_eyre::eyre::eyre!(
-                            "Invalid value for {} envvar",
-                            String::from_utf8_lossy(os_string.as_encoded_bytes())
-                        )));
-                    }
-                };
-                Some(Ok((key, value)))
-            })
-            .collect();
-        let secrets = secrets?;
+                let secrets: color_eyre::Result<HashMap<String, SecretString>> = parsed_workflow
+                    .secrets
+                    .into_iter()
+                    .filter_map(|secret| {
+                        let Some(value) = env_vars.remove(&secret) else {
+                            return None;
+                        };
+                        let key = match secret.into_string() {
+                            Ok(secret) => secret,
+                            Err(os_string) => {
+                                return Some(Err(color_eyre::eyre::eyre!(
+                                    "Invalid value for {} envvar",
+                                    String::from_utf8_lossy(os_string.as_encoded_bytes())
+                                )));
+                            }
+                        };
+                        let value = match value.into_string() {
+                            Ok(value) => SecretString::new(value),
+                            Err(os_string) => {
+                                return Some(Err(color_eyre::eyre::eyre!(
+                                    "Invalid value for {} envvar",
+                                    String::from_utf8_lossy(os_string.as_encoded_bytes())
+                                )));
+                            }
+                        };
+                        Some(Ok((key, value)))
+                    })
+                    .collect();
+                let secrets = secrets?;
 
-        let vars: color_eyre::Result<HashMap<String, String>> = parsed_workflow
-            .vars
-            .into_iter()
-            .filter_map(|var| {
-                let Some(value) = env_vars.remove(&var) else {
-                    return None;
-                };
-                let key = match var.into_string() {
-                    Ok(var) => var,
-                    Err(os_string) => {
-                        return Some(Err(color_eyre::eyre::eyre!(
-                            "Invalid value for {} envvar",
-                            String::from_utf8_lossy(os_string.as_encoded_bytes())
-                        )));
-                    }
-                };
-                let value = match value.into_string() {
-                    Ok(value) => value,
-                    Err(os_string) => {
-                        return Some(Err(color_eyre::eyre::eyre!(
-                            "Invalid value for {} envvar",
-                            String::from_utf8_lossy(os_string.as_encoded_bytes())
-                        )));
-                    }
-                };
-                Some(Ok((key, value)))
-            })
-            .collect();
-        let vars = vars?;
+                let vars: color_eyre::Result<HashMap<String, String>> = parsed_workflow
+                    .vars
+                    .into_iter()
+                    .filter_map(|var| {
+                        let Some(value) = env_vars.remove(&var) else {
+                            return None;
+                        };
+                        let key = match var.into_string() {
+                            Ok(var) => var,
+                            Err(os_string) => {
+                                return Some(Err(color_eyre::eyre::eyre!(
+                                    "Invalid value for {} envvar",
+                                    String::from_utf8_lossy(os_string.as_encoded_bytes())
+                                )));
+                            }
+                        };
+                        let value = match value.into_string() {
+                            Ok(value) => value,
+                            Err(os_string) => {
+                                return Some(Err(color_eyre::eyre::eyre!(
+                                    "Invalid value for {} envvar",
+                                    String::from_utf8_lossy(os_string.as_encoded_bytes())
+                                )));
+                            }
+                        };
+                        Some(Ok((key, value)))
+                    })
+                    .collect();
+                let vars = vars?;
 
-        Ok(Self {
-            nix_project_source,
-            secrets,
-            vars,
-            jobs: parsed_workflow.jobs,
-            local_env: env_vars,
-            uploads: Default::default(),
-        })
+                Ok(Self {
+                    nix_project_source,
+                    secrets,
+                    vars,
+                    jobs: parsed_workflow.jobs,
+                    local_env: env_vars,
+                    uploads: Default::default(),
+                })
+            },
+        )
+        .await
     }
 
     #[instrument]
-    fn parse_workflow(
+    async fn parse_workflow(
         workflow: &Path,
         nix_project_source: &Path,
         nixpkgs_expr: &str,
@@ -184,7 +195,7 @@ impl NowEnvironment {
             "--impure",
             "--json",
         ]);
-        let output = command.arg("--expr").arg(nix_command).output()?;
+        let output = command.arg("--expr").arg(nix_command).output().await?;
 
         if !output.status.success() {
             let mut stderr = std::io::stderr();

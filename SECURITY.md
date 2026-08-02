@@ -2,6 +2,6 @@
 
 ## Reporting a Vulnerability
 
-Please report vunerabilities using Github's Private Vulnerability Reporting tool, or by sending an e-mail to [security@now.dev.br](mailto:security@now.dev.br).
+Please report vunerabilities by sending an e-mail to [security@now.dev.br](mailto:security@now.dev.br).
 
-Do not use public Github Issues for reporting vulnerabilities.
+Do not use public repository issues for reporting vulnerabilities.

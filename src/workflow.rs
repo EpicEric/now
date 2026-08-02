@@ -29,7 +29,7 @@ use petgraph::{
     visit::EdgeRef,
 };
 use serde::{Deserialize, Serialize};
-use smol::{channel, stream::StreamExt};
+use smol::{channel::Receiver, stream::StreamExt};
 use tracing::{info, instrument};
 
 use crate::{
@@ -102,6 +102,7 @@ pub(crate) struct NowStepDownload {
 
 pub(crate) struct NowWorkflowParams {
     pub(crate) workflow: PathBuf,
+    pub(crate) ctrl_c: Receiver<()>,
     pub(crate) nixpkgs_expr: String,
     pub(crate) use_cache: bool,
     pub(crate) abort: bool,
@@ -122,6 +123,7 @@ impl NowEnvironment {
         &mut self,
         NowWorkflowParams {
             workflow: workflow_path,
+            ctrl_c,
             nixpkgs_expr,
             use_cache,
             abort,
@@ -160,10 +162,6 @@ impl NowEnvironment {
 
         let executor = smol::LocalExecutor::new();
 
-        let (sender, ctrl_c) = channel::bounded(1);
-        ctrlc::set_handler(move || {
-            let _ = sender.try_send(());
-        })?;
         let builder_ref = &builder;
         let abort_task = executor.spawn(async move {
             smol::future::race(

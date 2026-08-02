@@ -106,7 +106,7 @@ impl LocalBuilder {
 
         let (cancellation, cancellation_rx) = channel::bounded(1);
 
-        let hostname = sys_info::hostname()?;
+        let hostname = nix::unistd::gethostname()?.to_string_lossy().into_owned();
 
         Ok(Self {
             cancellation,

@@ -114,7 +114,7 @@ enum Command {
         /// If set, all jobs are run.
         ///
         /// Cannot be used together with the `--job` option.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "jobs")]
         all_jobs: bool,
 
         /// Optional dotenv file to read environment variables from.
@@ -130,7 +130,7 @@ enum Command {
         timeout: Option<Duration>,
 
         /// Evaluate but don't run the workflow.
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["jobs", "all_jobs"])]
         eval: bool,
 
         /// Strategy for checking out the current working directory.
@@ -238,27 +238,6 @@ fn main() -> color_eyre::Result<()> {
                     .init();
             }
 
-            if all_jobs && jobs.is_some() {
-                return Err(color_eyre::eyre::eyre!(
-                    "Conflicting --all-jobs and --job options"
-                ));
-            }
-            if all_jobs && eval {
-                return Err(color_eyre::eyre::eyre!(
-                    "Conflicting --abort and --all-jobs options"
-                ));
-            }
-            if eval && jobs.is_some() {
-                return Err(color_eyre::eyre::eyre!(
-                    "Conflicting --eval and --job options"
-                ));
-            }
-            if abort && eval {
-                return Err(color_eyre::eyre::eyre!(
-                    "Conflicting --abort and --eval options"
-                ));
-            }
-
             if workflow.is_dir() {
                 let now_path = workflow.join("now.nix");
                 if now_path.exists() && !now_path.is_dir() {
@@ -276,19 +255,33 @@ fn main() -> color_eyre::Result<()> {
                 ));
             }
 
-            let mut environment =
-                NowEnvironment::get(&workflow, env_file.as_ref(), &nixpkgs_expr, use_cache)?;
-            environment.run_workflow(NowWorkflowParams {
-                workflow,
-                nixpkgs_expr,
-                use_cache,
-                abort,
-                timeout,
-                eval,
-                jobs,
-                all_jobs,
-                checkout_strategy,
-                builders,
+            let (sender, ctrl_c) = smol::channel::bounded(1);
+            ctrlc::set_handler(move || {
+                let _ = sender.try_send(());
+            })?;
+
+            smol::block_on::<color_eyre::Result<()>>(async {
+                let mut environment = NowEnvironment::get(
+                    &workflow,
+                    ctrl_c.clone(),
+                    env_file.as_ref(),
+                    &nixpkgs_expr,
+                    use_cache,
+                )
+                .await?;
+                environment.run_workflow(NowWorkflowParams {
+                    workflow,
+                    ctrl_c,
+                    nixpkgs_expr,
+                    use_cache,
+                    abort,
+                    timeout,
+                    eval,
+                    jobs,
+                    all_jobs,
+                    checkout_strategy,
+                    builders,
+                })
             })?;
         }
     }
@@ -315,7 +308,18 @@ fn job_completer() -> Vec<CompletionCandidate> {
         return vec![];
     };
 
-    let Ok(environment) = NowEnvironment::get(workflow, None, "<nixpkgs>", false) else {
+    let (sender, ctrl_c) = smol::channel::bounded(1);
+    let _ = ctrlc::set_handler(move || {
+        let _ = sender.try_send(());
+    });
+
+    let Ok(environment) = smol::block_on(NowEnvironment::get(
+        workflow,
+        ctrl_c,
+        None,
+        "<nixpkgs>",
+        false,
+    )) else {
         return vec![];
     };
 

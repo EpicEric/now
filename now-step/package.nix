@@ -50,6 +50,6 @@ stdenv.mkDerivation {
     homepage = "https://now.dev.br";
     license = lib.licenses.agpl3Plus;
     mainProgram = "now-step";
-    platforms = lib.platforms.all;
+    platforms = lib.platforms.unix;
   };
 }
