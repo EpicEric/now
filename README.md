@@ -43,7 +43,7 @@ Here's a full example of `now`'s features:
 { runner, lib, ... }:
 {
   name = "Optional name for the workflow";
-  # Specify default job(s) to run (override with --job or --all-jobs)
+  # Specify default job(s) to run (override with --all-jobs, or by passing jobs explicitly)
   default = [ "job-1" ];
   jobs = {
     # Jobs are a sequence of steps run on a single machine, in parallel with other jobs

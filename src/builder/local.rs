@@ -276,7 +276,7 @@ impl NowBuilder for LocalBuilder {
     async fn copy_derivations(
         &self,
         _job_name: &str,
-        _derivations: &Vec<PathBuf>,
+        _derivations: &[PathBuf],
         _cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         Ok(())

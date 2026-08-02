@@ -62,22 +62,18 @@ static LONG_ABOUT: &str = "now - Nix-based distributed command runner.
   \x1b[2m# Initialize a basic workflow in ./now.nix\x1b[0m
   now init
 
-  \x1b[2m# Load envvars from a dotenv file\x1b[0m
-  now run --env-file .env .now/workflow-with-secrets.nix
+  \x1b[2m# Load envvars from a dotenv file and run the default job(s)\x1b[0m
+  now run --env-file .env
 
-  \x1b[2m# Run the \"deploy\" job (and all dependencies),
+  \x1b[2m# Run the \"deploy\" job (and all dependencies) from the specified workflow,
   # and specify a remote builder for the run\x1b[0m
-  now run \\
-    --job deploy \\
+  now run deploy \\
     --builders \"ssh://mac aarch64-darwin\" \\
-    .now/remote.nix
+    --workflow .now/remote.nix
 
-  \x1b[2m# Abort immediately on first failing job,
+  \x1b[2m# Abort immediately on the first failing job,
   # and don't checkout the current directory\x1b[0m
-  now run \\
-    --abort \\
-    --checkout none \\
-    .now/fresh-dir.nix";
+  now run --abort --checkout none";
 
 #[derive(Parser)]
 #[command(name = "now", version, about, long_about = LONG_ABOUT)]
@@ -90,13 +86,6 @@ enum Command {
 
     /// Run a workflow.
     Run {
-        /// Path to the workflow.
-        #[arg(
-            add = ArgValueCompleter::new(PathCompleter::any().filter(workflow_filter)),
-            default_value_os = "now.nix",
-        )]
-        workflow: PathBuf,
-
         /// Jobs to target in this run.
         ///
         /// If unspecified, the default jobs of the workflow are run.
@@ -104,16 +93,23 @@ enum Command {
         ///
         /// Cannot be used together with the `--all-jobs` option.
         #[arg(
-            short,
-            long = "job",
             value_name = "JOB",
             add = ArgValueCandidates::new(job_completer)
         )]
         jobs: Option<Vec<String>>,
 
+        /// Path to the workflow.
+        #[arg(
+            short,
+            long,
+            add = ArgValueCompleter::new(PathCompleter::any().filter(workflow_filter)),
+            default_value_os = "now.nix",
+        )]
+        workflow: PathBuf,
+
         /// If set, all jobs are run.
         ///
-        /// Cannot be used together with the `--job` option.
+        /// Cannot be used together with the `[JOB]` argument.
         #[arg(long, conflicts_with = "jobs")]
         all_jobs: bool,
 
@@ -141,6 +137,14 @@ enum Command {
             value_name = "STRATEGY",
         )]
         checkout_strategy: CheckoutStrategy,
+
+        /// In which directory to run the workflow.
+        #[arg(
+            short,
+            long,
+            add = ArgValueCompleter::new(PathCompleter::dir()),
+        )]
+        cwdir: Option<PathBuf>,
 
         /// A semicolon-separated list of build machines.
         ///
@@ -216,6 +220,7 @@ fn main() -> color_eyre::Result<()> {
             timeout,
             eval,
             checkout_strategy,
+            cwdir,
             builders,
             nixpkgs_expr,
             use_cache,
@@ -253,6 +258,10 @@ fn main() -> color_eyre::Result<()> {
                     "Workflow '{}' not found",
                     workflow.to_string_lossy()
                 ));
+            }
+
+            if let Some(cwdir) = cwdir {
+                std::env::set_current_dir(cwdir)?;
             }
 
             let (sender, ctrl_c) = smol::channel::bounded(1);

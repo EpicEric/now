@@ -12,6 +12,7 @@ readme = "README.md"
 keywords = ["nix", "runner", "task", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 include = ["/nix", "/now-step", "/src"]
+exclude = ["/now-step/.zig-cache", "/now-step/zig-out", "/now-step/zig-pkg"]
 
 [[bin]]
 name = "now"
@@ -40,7 +41,7 @@ supports-color = "3.0.2"
 tar = "0.4.46"
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-tracing_duper = "0.1.1"
+tracing_duper = "0.2.0"
 
 [build-dependencies]
 flate2 = "1.1.9"

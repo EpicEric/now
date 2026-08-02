@@ -346,7 +346,7 @@ impl NowBuilder for RemoteBuilder {
     async fn copy_derivations(
         &self,
         job_name: &str,
-        derivations: &Vec<PathBuf>,
+        derivations: &[PathBuf],
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         let mut ssh_opts = OsString::new();
@@ -430,7 +430,7 @@ impl NowBuilder for RemoteBuilder {
             },
             async {
                 if child.status().await?.success() {
-                    let mut stdout = child.stdout.take().ok_or(color_eyre::eyre::eyre!(""))?;
+                    let mut stdout = child.stdout.take().expect("stdout is piped");
                     let mut buf = Vec::new();
                     stdout.read_to_end(&mut buf).await?;
                     Ok(PathBuf::from(OsStr::from_bytes(buf.trim_ascii())))
@@ -584,7 +584,10 @@ impl NowBuilder for RemoteBuilder {
             ])
             .arg(&self.ssh_uri)
             .arg(derivation)
-            .env("NIX_SSHOPTS", ssh_opts);
+            .env("NIX_SSHOPTS", ssh_opts)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         let mut child = command.spawn()?;
         let result = smol::future::race(
@@ -623,7 +626,12 @@ impl NowBuilder for RemoteBuilder {
                 for arg in ssh_options(&self.control_path) {
                     command.arg(arg);
                 }
-                command.arg(&self.ssh_uri).arg(rm_command);
+                command
+                    .arg(&self.ssh_uri)
+                    .arg(rm_command)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
 
                 let mut child = command.spawn()?;
                 if child.status().await?.success() {

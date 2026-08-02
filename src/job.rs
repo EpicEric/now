@@ -60,6 +60,9 @@ impl NowEnvironment {
                         step = step.name,
                         r#type = "step-teardown-realize",
                     );
+                    builder
+                        .copy_derivations(&job.name, &[teardown_drv.clone()], &guard)
+                        .await?;
                     let teardown = builder.realize_derivation(teardown_drv, &guard).await?;
                     derivations.push(teardown.clone());
                     builder.fetch_derivation(&teardown, &guard).await?;
@@ -74,6 +77,9 @@ impl NowEnvironment {
                         step = step.name,
                         r#type = "step-run-realize",
                     );
+                    builder
+                        .copy_derivations(&job.name, &[step.run_drv.clone()], &guard)
+                        .await?;
                     let run = builder.realize_derivation(&step.run_drv, &guard).await?;
                     derivations.push(run.clone());
                     builder.fetch_derivation(&run, &guard).await?;

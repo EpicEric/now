@@ -204,7 +204,8 @@ impl NowEnvironment {
                     let node_weight = &tree[node_index];
                     match node_weight {
                         DagNode::Root => {
-                            debug_assert!(tree.node_count() == 0);
+                            debug_assert!(tree.node_count() == 1);
+                            info!(runner, is_remote = false, "Finished.");
                         }
                         DagNode::Job => match nodes.remove(&node_index) {
                             Some(NowJobContainer::Single(job)) => {

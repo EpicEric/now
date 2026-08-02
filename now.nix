@@ -49,7 +49,7 @@ in
               (mkNow pkgs)
             ];
             run = ''
-              now run --abort .now/tests/abort.nix || error_code=$?
+              now run --abort --workflow .now/tests/abort.nix || error_code=$?
               if [ "$error_code" -eq 0 ]; then
                 echo "Test shouldn't have succeeded!"
                 exit 1
@@ -72,7 +72,7 @@ in
               (mkNow pkgs)
             ];
             run = ''
-              now run --abort .now/tests/cycle.nix || error_code=$?
+              now run --abort --workflow .now/tests/cycle.nix || error_code=$?
               if [ "$error_code" -eq 0 ]; then
                 echo "Test shouldn't have succeeded!"
                 exit 1
@@ -116,9 +116,9 @@ in
             ];
             run = ''
               # Ensure the test evaluates just fine
-              now run --eval .now/tests/error.nix
+              now run --eval --workflow .now/tests/error.nix
 
-              now run .now/tests/error.nix || error_code=$?
+              now run --workflow .now/tests/error.nix || error_code=$?
               if [ "$error_code" -eq 0 ]; then
                 echo "Test shouldn't have succeeded!"
                 exit 1
@@ -141,7 +141,7 @@ in
               (mkNow pkgs)
             ];
             run = ''
-              now run --job b --job x .now/tests/jobs.nix
+              now run b x --workflow .now/tests/jobs.nix
             '';
           }
         ];
@@ -163,7 +163,7 @@ in
               if [ -n "$BUILDERS" ]; then
                 now run \
                   --builders "$BUILDERS" \
-                  .now/tests/matrix.nix
+                  --workflow .now/tests/matrix.nix
               else
                 echo "BUILDERS is unset; skipping."
               fi
@@ -183,10 +183,10 @@ in
             ];
             run = ''
               # Your `hello` version
-              now run .now/tests/nixpkgs.nix
+              now run --workflow .now/tests/nixpkgs.nix
 
               # now's `hello` version
-              now run .now/tests/nixpkgs.nix --nixpkgs '(import ./.tack).nixpkgs'
+              now run --workflow .now/tests/nixpkgs.nix --nixpkgs '(import ./.tack).nixpkgs'
             '';
           }
         ];
@@ -202,7 +202,7 @@ in
               (mkNow pkgs)
             ];
             run = ''
-              now run .now/tests/upload.nix
+              now run --workflow .now/tests/upload.nix
             '';
           }
         ];
@@ -224,7 +224,7 @@ in
               (mkNow pkgs)
             ];
             run = ''
-              now run .now/tests/vars.nix
+              now run --workflow .now/tests/vars.nix
             '';
           }
         ];

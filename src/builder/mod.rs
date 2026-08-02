@@ -82,7 +82,7 @@ pub(crate) trait NowBuilder {
     async fn copy_derivations(
         &self,
         job_name: &str,
-        derivations: &Vec<PathBuf>,
+        derivations: &[PathBuf],
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()>;
 
