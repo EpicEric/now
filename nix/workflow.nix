@@ -32,7 +32,7 @@ let
         inherit useCache;
       }).now-step
     else
-      (import ./. { inherit pkgs; }).now-step;
+      (import ./. { inherit pkgs useCache; }).now-step;
 
   normalizeJob =
     {

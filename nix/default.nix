@@ -21,9 +21,11 @@
   useCache ? false,
 }:
 let
+  inherit (pkgs) lib;
+
   now = pkgs.callPackage ../package.nix { };
   now-step = pkgs.callPackage ../now-step/package.nix (
-    pkgs.lib.optionalAttrs useCache { optimizeLevel = "ReleaseSafe"; }
+    lib.optionalAttrs useCache { optimizeLevel = "ReleaseSafe"; }
   );
 in
 {

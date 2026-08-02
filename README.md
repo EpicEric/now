@@ -26,7 +26,7 @@ This creates a `now.nix` file in the current directory. To run it:
 ```bash
 nix run github:EpicEric/now -- run now.nix
 # --- or ---
-nix run github:EpicEric/now -- run .
+nix run github:EpicEric/now -- run
 ```
 
 For options and examples:
@@ -142,5 +142,5 @@ Here's a full example of `now`'s features:
 now is tested with itself. At the root of this repo:
 
 ```bash
-nix run . -- run now.nix
+nix run . -- run
 ```

@@ -87,7 +87,10 @@ enum Command {
     /// Run a workflow.
     Run {
         /// Path to the workflow.
-        #[arg(add = ArgValueCompleter::new(PathCompleter::any().filter(workflow_filter)))]
+        #[arg(
+            add = ArgValueCompleter::new(PathCompleter::any().filter(workflow_filter)),
+            default_value_os = "now.nix",
+        )]
         workflow: PathBuf,
 
         /// Jobs to target in this run.
@@ -253,9 +256,9 @@ fn main() -> color_eyre::Result<()> {
             }
 
             if workflow.is_dir() {
-                let now = workflow.join("now.nix");
-                if now.exists() && !now.is_dir() {
-                    workflow = now;
+                let now_path = workflow.join("now.nix");
+                if now_path.exists() && !now_path.is_dir() {
+                    workflow = now_path;
                 } else {
                     return Err(color_eyre::eyre::eyre!(
                         "Workflow 'now.nix' not found in directory '{}'",
