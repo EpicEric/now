@@ -1,12 +1,22 @@
 { runner, ... }:
 {
   jobs = {
+    build-now = {
+      steps = [ (runner.steps.upload "now" (import ../nix { useCache = true; }).now) ];
+    };
+
+    build-now-step = {
+      steps = [ (runner.steps.upload "now-step" (import ../nix { useCache = true; }).now-step) ];
+    };
+
     push-to-niks3 =
       { pkgs, ... }:
       {
+        needs = [
+          "build-now"
+          "build-now-step"
+        ];
         steps = [
-          (runner.steps.upload "now" (import ../nix { useCache = true; }).now)
-          (runner.steps.upload "now-step" (import ../nix { useCache = true; }).now-step)
           {
             name = "Push to niks3 cache";
             env = {
