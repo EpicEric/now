@@ -23,8 +23,8 @@ use std::{
 
 use clap::{CommandFactory, Parser, ValueEnum};
 use clap_complete::{ArgValueCandidates, ArgValueCompleter, CompletionCandidate, PathCompleter};
-use color_eyre::eyre::Context;
-use tracing::level_filters::LevelFilter;
+use color_eyre::eyre::{Context, OptionExt};
+use tracing::{debug, level_filters::LevelFilter};
 use tracing_duper::DuperLayer;
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -102,12 +102,12 @@ enum Command {
         #[arg(
             short,
             long,
+            value_name = "FILE",
             add = ArgValueCompleter::new(PathCompleter::any().filter(workflow_filter)),
-            default_value_os = "now.nix",
         )]
-        workflow: PathBuf,
+        workflow: Option<PathBuf>,
 
-        /// If set, all jobs are run.
+        /// Run all jobs in the workflow.
         ///
         /// Cannot be used together with the `[JOB]` argument.
         #[arg(long, conflicts_with = "jobs")]
@@ -139,6 +139,9 @@ enum Command {
         checkout_strategy: CheckoutStrategy,
 
         /// In which directory to run the workflow.
+        ///
+        /// Defaults to the current directory if --workflow is set,
+        /// and `now.nix`'s directory otherwise
         #[arg(
             short,
             long,
@@ -154,6 +157,13 @@ enum Command {
         /// <https://nix.dev/manual/nix/latest/command-ref/conf-file#conf-builders>
         #[arg(short, long)]
         builders: Option<String>,
+
+        /// When specified, ignores the remote builders configuration of the host,
+        /// running all jobs in the local builder.
+        ///
+        /// Jobs that cannot run in the local builder will fail.
+        #[arg(long, conflicts_with = "builders")]
+        local_only: bool,
 
         /// Nix expression that evaluates to nixpkgs.
         #[arg(
@@ -184,6 +194,99 @@ fn validate_duration(value: &str) -> color_eyre::Result<Duration> {
         .into())
 }
 
+fn workflow_filter(path: &Path) -> bool {
+    path.is_dir() || path.extension().is_some_and(|extension| extension == "nix")
+}
+
+fn find_workflow(workflow: Option<PathBuf>) -> color_eyre::Result<PathBuf> {
+    if let Some(workflow) = workflow {
+        if workflow.is_dir() {
+            let now_path = workflow.join("now.nix");
+            if now_path.exists() && !now_path.is_dir() {
+                Ok(now_path)
+            } else {
+                Err(color_eyre::eyre::eyre!(
+                    "Workflow 'now.nix' not found in directory '{}'",
+                    workflow.canonicalize()?.to_string_lossy()
+                ))
+            }
+        } else if !workflow.exists() {
+            Err(color_eyre::eyre::eyre!(
+                "Workflow '{}' not found",
+                workflow.to_string_lossy()
+            ))
+        } else {
+            Ok(workflow.canonicalize()?)
+        }
+    } else {
+        let canonical_cwdir = std::env::current_dir()?.canonicalize()?;
+        let mut cwdir = Some(canonical_cwdir.as_path());
+        while let Some(cwdir_path) = cwdir {
+            let now_path = cwdir_path.join("now.nix");
+            if now_path.exists() && !now_path.is_dir() {
+                std::env::set_current_dir(cwdir_path)?;
+                return Ok(now_path);
+            } else {
+                cwdir = cwdir_path.parent();
+            }
+        }
+        Err(color_eyre::eyre::eyre!(
+            "No workflow found recursively from '{}'",
+            canonical_cwdir.to_string_lossy()
+        ))
+    }
+}
+
+fn job_completer() -> Vec<CompletionCandidate> {
+    let result: color_eyre::Result<Vec<CompletionCandidate>> = (|| {
+        let command_matches = match Command::command().try_get_matches_from(std::env::args_os()) {
+            Ok(command_matches) => command_matches,
+            Err(_) => Command::command().try_get_matches_from(std::env::args_os().skip(2))?,
+        };
+
+        let matches = command_matches
+            .subcommand_matches("run")
+            .ok_or_eyre("not run subcommand")?;
+
+        let maybe_workflow = matches.try_get_one::<PathBuf>("workflow")?;
+        let workflow = find_workflow(maybe_workflow.cloned())?;
+
+        let jobs_iter = matches.try_get_many::<String>("jobs")?.unwrap_or_default();
+
+        let (sender, ctrl_c) = smol::channel::bounded(1);
+        let _ = ctrlc::set_handler(move || {
+            let _ = sender.try_send(());
+        });
+
+        let environment = smol::block_on(NowEnvironment::get(
+            &workflow,
+            ctrl_c,
+            None,
+            "<nixpkgs>",
+            false,
+        ))?;
+
+        let mut jobs_iter = jobs_iter.rev();
+        let current_job = jobs_iter.next();
+        let jobs: HashSet<&String> = jobs_iter.collect();
+
+        Ok(environment
+            .jobs
+            .into_iter()
+            .filter_map(|(job, help)| {
+                if current_job.is_none_or(|current_job| job.starts_with(current_job))
+                    && !jobs.contains(&job)
+                {
+                    Some(CompletionCandidate::new(job).help(Some(help.into())))
+                } else {
+                    None
+                }
+            })
+            .collect())
+    })();
+    result.unwrap_or_default()
+}
+
 fn main() -> color_eyre::Result<()> {
     clap_complete::CompleteEnv::with_factory(Command::command).complete();
 
@@ -212,7 +315,7 @@ fn main() -> color_eyre::Result<()> {
         }
 
         Command::Run {
-            mut workflow,
+            workflow,
             jobs,
             all_jobs,
             env_file,
@@ -222,6 +325,7 @@ fn main() -> color_eyre::Result<()> {
             checkout_strategy,
             cwdir,
             builders,
+            local_only,
             nixpkgs_expr,
             use_cache,
             tracing,
@@ -243,24 +347,10 @@ fn main() -> color_eyre::Result<()> {
                     .init();
             }
 
-            if workflow.is_dir() {
-                let now_path = workflow.join("now.nix");
-                if now_path.exists() && !now_path.is_dir() {
-                    workflow = now_path;
-                } else {
-                    return Err(color_eyre::eyre::eyre!(
-                        "Workflow 'now.nix' not found in directory '{}'",
-                        workflow.to_string_lossy()
-                    ));
-                }
-            } else if !workflow.exists() {
-                return Err(color_eyre::eyre::eyre!(
-                    "Workflow '{}' not found",
-                    workflow.to_string_lossy()
-                ));
-            }
+            let workflow = find_workflow(workflow)?;
 
             if let Some(cwdir) = cwdir {
+                debug!("Changing cwdir to '{}'...", cwdir.to_string_lossy());
                 std::env::set_current_dir(cwdir)?;
             }
 
@@ -290,63 +380,10 @@ fn main() -> color_eyre::Result<()> {
                     all_jobs,
                     checkout_strategy,
                     builders,
+                    local_only,
                 })
             })?;
         }
     }
     Ok(())
-}
-
-fn workflow_filter(path: &Path) -> bool {
-    path.is_dir() || path.extension().is_some_and(|extension| extension == "nix")
-}
-
-fn job_completer() -> Vec<CompletionCandidate> {
-    let Ok(command_matches) = Command::command().try_get_matches_from(std::env::args_os().skip(2))
-    else {
-        return vec![];
-    };
-    let Some(matches) = command_matches.subcommand_matches("run") else {
-        return vec![];
-    };
-
-    let Ok(Some(workflow)) = matches.try_get_one::<PathBuf>("workflow") else {
-        return vec![];
-    };
-    let Ok(Some(jobs_iter)) = matches.try_get_many::<String>("jobs") else {
-        return vec![];
-    };
-
-    let (sender, ctrl_c) = smol::channel::bounded(1);
-    let _ = ctrlc::set_handler(move || {
-        let _ = sender.try_send(());
-    });
-
-    let Ok(environment) = smol::block_on(NowEnvironment::get(
-        workflow,
-        ctrl_c,
-        None,
-        "<nixpkgs>",
-        false,
-    )) else {
-        return vec![];
-    };
-
-    let mut jobs_iter = jobs_iter.rev();
-    let current_job = jobs_iter.next();
-    let jobs: HashSet<&String> = jobs_iter.collect();
-
-    environment
-        .jobs
-        .into_iter()
-        .filter_map(|(job, help)| {
-            if current_job.is_none_or(|current_job| job.starts_with(current_job))
-                && !jobs.contains(&job)
-            {
-                Some(CompletionCandidate::new(job).help(Some(help.into())))
-            } else {
-                None
-            }
-        })
-        .collect()
 }

@@ -41,4 +41,4 @@ jobs:
           NIKS3_SERVER_URL: ${{ vars.NIKS3_SERVER_URL }}
           NIKS3_AUTH_TOKEN: ${{ secrets.NIKS3_AUTH_TOKEN }}
         run: |
-          nix run . -- run .now/cache.nix
+          nix run . -- run --workflow .now/cache.nix

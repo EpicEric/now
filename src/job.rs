@@ -41,7 +41,17 @@ impl NowEnvironment {
         let mut derivations = Vec::new();
 
         {
-            let (guard, builder) = local_builder.get_builder(&job).await?;
+            let (guard, builder) = match local_builder.get_builder(&job).await? {
+                Some((guard, builder)) => (guard, builder),
+                None => {
+                    return Err(color_eyre::eyre::eyre!(
+                        "No builders match for job '{}' (buildSystem = {}, requiredSystemFeatures = {:?})",
+                        job.name,
+                        job.build_system,
+                        job.required_system_features,
+                    ));
+                }
+            };
             if matches!(guard.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
                 return Err(color_eyre::eyre::eyre!("Runner aborted"));
             }
@@ -89,7 +99,17 @@ impl NowEnvironment {
             }
         }
 
-        let (guard, runner) = local_builder.get_runner(&job).await?;
+        let (guard, runner) = match local_builder.get_runner(&job).await? {
+            Some((guard, runner)) => (guard, runner),
+            None => {
+                return Err(color_eyre::eyre::eyre!(
+                    "No runners match for job '{}' (hostSystem = {}, requiredSystemFeatures = {:?})",
+                    job.name,
+                    job.build_system,
+                    job.required_system_features,
+                ));
+            }
+        };
         if matches!(guard.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
             return Err(color_eyre::eyre::eyre!("Runner aborted"));
         }

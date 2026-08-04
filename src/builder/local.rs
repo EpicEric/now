@@ -65,6 +65,7 @@ impl LocalBuilder {
         use_cache: bool,
         strategy: CheckoutStrategy,
         builders: Option<String>,
+        local_only: bool,
     ) -> color_eyre::Result<Self> {
         let daemon_socket = {
             let daemon_socket_dir = PathBuf::from("/nix/var/nix/daemon-socket");
@@ -96,13 +97,17 @@ impl LocalBuilder {
 
         let config: NixConfig = serde_json::from_slice(&output.stdout)?;
 
-        let remote_builders = RemoteBuilder::get_remote_builders(
-            &config,
-            use_cache,
-            strategy,
-            builders,
-            environment.nix_project_source.as_ref(),
-        )?;
+        let remote_builders = if local_only {
+            vec![]
+        } else {
+            RemoteBuilder::get_remote_builders(
+                &config,
+                use_cache,
+                strategy,
+                builders,
+                environment.nix_project_source.as_ref(),
+            )?
+        };
 
         let (cancellation, cancellation_rx) = channel::bounded(1);
 
@@ -134,7 +139,7 @@ impl LocalBuilder {
     pub(crate) async fn get_builder(
         &self,
         job: &NowJob,
-    ) -> color_eyre::Result<(MutexGuard<'_, Receiver<()>>, &dyn NowBuilder)> {
+    ) -> color_eyre::Result<Option<(MutexGuard<'_, Receiver<()>>, &dyn NowBuilder)>> {
         let mut builders = vec![];
 
         if job.build_system == self.system
@@ -169,22 +174,13 @@ impl LocalBuilder {
             })
             .collect();
 
-        let Some((guard, builder)) = builders_fut.next().await else {
-            return Err(color_eyre::eyre::eyre!(
-                "No builders match for job '{}' (buildSystem = {}, requiredSystemFeatures = {:?})",
-                job.name,
-                job.build_system,
-                job.required_system_features,
-            ));
-        };
-
-        Ok((guard, builder))
+        Ok(builders_fut.next().await)
     }
 
     pub(crate) async fn get_runner(
         &self,
         job: &NowJob,
-    ) -> color_eyre::Result<(MutexGuard<'_, Receiver<()>>, &dyn NowBuilder)> {
+    ) -> color_eyre::Result<Option<(MutexGuard<'_, Receiver<()>>, &dyn NowBuilder)>> {
         let mut runners = vec![];
 
         if (job.host_system == self.system || self.extra_platforms.contains(&job.host_system))
@@ -219,16 +215,7 @@ impl LocalBuilder {
             })
             .collect();
 
-        let Some((guard, runner)) = runners_fut.next().await else {
-            return Err(color_eyre::eyre::eyre!(
-                "No runners match for job '{}' (hostSystem = {}, requiredSystemFeatures = {:?})",
-                job.name,
-                job.build_system,
-                job.required_system_features,
-            ));
-        };
-
-        Ok((guard, runner))
+        Ok(runners_fut.next().await)
     }
 }
 

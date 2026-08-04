@@ -99,7 +99,7 @@ in
               (mkNow pkgs)
             ];
             run = ''
-              now run .now/tests/env.nix
+              now run --workflow .now/tests/env.nix
             '';
           }
         ];
