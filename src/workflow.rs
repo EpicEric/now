@@ -36,6 +36,7 @@ use crate::{
     builder::{NowBuilder, local::LocalBuilder},
     environment::{EVAL_ID, NowEnvironment},
     job::JobResult,
+    serde::now_job_timeout,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -45,8 +46,7 @@ pub(crate) struct NowWorkflow {
     pub(crate) jobs: HashMap<String, NowJobContainer>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
+#[derive(Debug)]
 pub(crate) enum NowJobContainer {
     Single(NowJob),
     Multiple(Vec<NowJob>),
@@ -70,6 +70,8 @@ pub(crate) struct NowJob {
     #[serde(rename = "requiredSystemFeatures")]
     pub(crate) required_system_features: HashSet<String>,
     pub(crate) checkout: NowCheckout,
+    #[serde(with = "now_job_timeout")]
+    pub(crate) timeout: Option<humantime::Duration>,
     pub(crate) strategy: Option<NowStrategy>,
     pub(crate) needs: Option<Vec<String>>,
     pub(crate) steps: Vec<NowStep>,
@@ -86,6 +88,9 @@ pub(crate) struct NowStrategy {
 pub(crate) struct NowSandbox {
     pub(crate) enable: bool,
     pub(crate) network_access: bool,
+    pub(crate) writable_path: bool,
+    // TODO
+    // pub(crate) use_home: bool,
 }
 
 #[derive(Debug)]

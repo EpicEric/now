@@ -16,6 +16,7 @@ in
         "test-jobs"
         "test-matrix"
         "test-nixpkgs"
+        "test-timeout"
         "test-upload"
         "test-vars"
       ];
@@ -187,6 +188,29 @@ in
 
               # now's `hello` version
               now run --workflow .now/tests/nixpkgs.nix --nixpkgs '(import ./.tack).nixpkgs'
+            '';
+          }
+        ];
+      };
+
+    test-timeout =
+      { pkgs, ... }:
+      {
+        name = "Test job timeout";
+        steps = [
+          {
+            path = [
+              (mkNow pkgs)
+            ];
+            run = ''
+              now run --workflow .now/tests/timeout.nix || error_code=$?
+              if [ "$error_code" -eq 0 ]; then
+                echo "Test shouldn't have succeeded!"
+                exit 1
+              else
+                echo ""
+                echo "=== hint: this means the test works ==="
+              fi
             '';
           }
         ];

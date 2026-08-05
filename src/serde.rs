@@ -20,8 +20,64 @@ use serde::{Deserialize, Serialize, de::Visitor, ser::SerializeStruct};
 
 use crate::{
     environment::EVAL_ID,
-    workflow::{NowSandbox, NowStep, NowStepDownload, NowStepEnvVar, NowStepSecret},
+    workflow::{
+        NowJobContainer, NowSandbox, NowStep, NowStepDownload, NowStepEnvVar, NowStepSecret,
+    },
 };
+
+impl Serialize for NowJobContainer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            NowJobContainer::Single(job) => job.serialize(serializer),
+            NowJobContainer::Multiple(job_vec) => job_vec.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for NowJobContainer {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct NowJobContainerVisitor;
+
+        impl<'de> Visitor<'de> for NowJobContainerVisitor {
+            type Value = NowJobContainer;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a job or list of jobs")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut job_vec = seq
+                    .size_hint()
+                    .map(|capacity| Vec::with_capacity(capacity))
+                    .unwrap_or_default();
+                while let Some(job) = seq.next_element()? {
+                    job_vec.push(job);
+                }
+                Ok(NowJobContainer::Multiple(job_vec))
+            }
+
+            fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                Ok(NowJobContainer::Single(Deserialize::deserialize(
+                    serde::de::value::MapAccessDeserializer::new(map),
+                )?))
+            }
+        }
+
+        deserializer.deserialize_any(NowJobContainerVisitor)
+    }
+}
 
 impl Serialize for NowStep {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -50,7 +106,7 @@ impl<'de> Deserialize<'de> for NowStep {
             type Value = NowStep;
 
             fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("a now step")
+                formatter.write_str("a step")
             }
 
             fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
@@ -74,19 +130,7 @@ impl<'de> Deserialize<'de> for NowStep {
                         _ if matches!(key.split_once(&*EVAL_ID), Some(("__nowUpload_", ""))) => {
                             upload_key = map.next_value()?
                         }
-                        _ => {
-                            return Err(serde::de::Error::unknown_field(
-                                &key,
-                                &[
-                                    "name",
-                                    "runDrv",
-                                    "teardownDrv",
-                                    "env",
-                                    "sandbox",
-                                    "__nowUpload_<EVAL_ID>",
-                                ],
-                            ));
-                        }
+                        _ => {} // Ignore unknown keys
                     }
                 }
 
@@ -211,5 +255,117 @@ impl<'de> Deserialize<'de> for NowStepDownload {
             &["download_name"],
             NowStepDownloadVisitor,
         )
+    }
+}
+
+pub(crate) mod now_job_timeout {
+    use std::str::FromStr;
+
+    use ::humantime::Duration as WrappedType;
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S>(value: &Option<WrappedType>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(value) => serializer.serialize_some(&value.to_string()),
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<WrappedType>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct Visitor;
+
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = Option<WrappedType>;
+
+            fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("an optional duration")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(Some(
+                    WrappedType::from_str(v).map_err(|error| serde::de::Error::custom(error))?,
+                ))
+            }
+
+            fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                deserializer.deserialize_str(self)
+            }
+
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                Ok(None)
+            }
+        }
+
+        deserializer.deserialize_option(Visitor {})
+    }
+}
+
+#[cfg(test)]
+mod serde_tests {
+    use std::str::FromStr;
+
+    use super::*;
+
+    #[test]
+    fn deserialize_job_single() {
+        let json = format!(
+            "{{
+                \"buildSystem\": \"x86_64-linux\",
+                \"checkout\": \"default\",
+                \"env\": {{}},
+                \"hostSystem\": \"x86_64-linux\",
+                \"name\": \"Fix formatting\",
+                \"needs\": null,
+                \"requiredSystemFeatures\": [],
+                \"sandbox\": null,
+                \"steps\": [
+                    {{
+                        \"__nowUpload_{}\": null,
+                        \"env\": {{}},
+                        \"name\": \"format-0\",
+                        \"runDrv\": \"/nix/store/7djw1vhncf4953h80pq7xwvddrq0k88i-now-step.drv\",
+                        \"sandbox\": null,
+                        \"teardownDrv\": null
+                    }}
+                ],
+                \"strategy\": null,
+                \"timeout\": null
+            }}",
+            *EVAL_ID
+        );
+        let job: NowJobContainer = serde_json::from_str(&json).unwrap();
+        assert!(matches!(job, NowJobContainer::Single(_)))
+    }
+
+    #[test]
+    fn serde_now_job_timeout() {
+        #[derive(Serialize, Deserialize)]
+        struct Wrapper(#[serde(with = "now_job_timeout")] Option<humantime::Duration>);
+
+        let value: Wrapper = serde_json::from_str("null").unwrap();
+        assert!(value.0.is_none());
+        assert_eq!(serde_json::to_string(&value).unwrap(), "null");
+
+        let value: Wrapper = serde_json::from_str(r#""1h""#).unwrap();
+        assert_eq!(
+            value.0.unwrap(),
+            humantime::Duration::from_str("1h").unwrap()
+        );
+        assert_eq!(serde_json::to_string(&value).unwrap(), r#""1h""#);
     }
 }

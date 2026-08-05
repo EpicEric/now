@@ -389,9 +389,12 @@ impl NowBuilder for LocalBuilder {
             if !sandbox.network_access {
                 cmd.arg("--unshare-net");
             }
+            if sandbox.writable_path {
+                cmd.arg("--bind").args([cwdir, cwdir]);
+            } else {
+                cmd.arg("--ro-bind").args([cwdir, cwdir]);
+            }
             cmd.arg("--bind")
-                .args([cwdir, cwdir])
-                .arg("--bind")
                 .args([&self.nix_project_source, &self.nix_project_source])
                 .args(["--proc", "/proc"])
                 .args(["--dev", "/dev"])

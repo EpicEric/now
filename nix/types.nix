@@ -35,15 +35,28 @@ let
         enable = lib.mkOption {
           type = types.bool;
           default = true;
-          description = "Whether to use a sandbox for the step.";
+          description = ''
+            Whether to use a sandbox for the step.
+
+            Currently only supports Linux runners via `bubblewrap`.
+          '';
         };
         networkAccess = lib.mkOption {
           type = types.bool;
           default = true;
           description = "Whether the sandboxed step has network access.";
         };
-        # TODO: Writable path
-        # TODO: tmpfs
+        writablePath = lib.mkOption {
+          type = types.bool;
+          default = true;
+          description = "Whether the sandboxed step can write to the checked-out directory.";
+        };
+        # TODO
+        # useHome = lib.mkOption {
+        #   type = types.bool;
+        #   default = false;
+        #   description = "Whether the sandboxed step can use the runner user's HOME directory.";
+        # };
       };
     }
   );
@@ -148,6 +161,16 @@ let
                 only non-ignored files are copied over.
               '';
             };
+            timeout = lib.mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              description = ''
+                How long to run this job for before marking as failed, eg. `"30m"` or `"1h"`.
+                By default, jobs can run indefinitely.
+
+                The timer doesn't take step realizations or teardowns into account.
+              '';
+            };
             strategy = lib.mkOption {
               type = types.nullOr (
                 types.submodule {
@@ -161,6 +184,7 @@ let
                 }
               );
               default = null;
+              description = "How multiple jobs in a matrix should coordinate.";
             };
             needs = lib.mkOption {
               type = types.nullOr (types.listOf types.str);

@@ -17,13 +17,11 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
-    str::FromStr,
-    time::Duration,
 };
 
 use clap::{CommandFactory, Parser};
 use clap_complete::{ArgValueCandidates, ArgValueCompleter, CompletionCandidate, PathCompleter};
-use color_eyre::eyre::{Context, OptionExt};
+use color_eyre::eyre::OptionExt;
 use tracing::{debug, level_filters::LevelFilter};
 use tracing_duper::DuperLayer;
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
@@ -108,8 +106,8 @@ enum Command {
         abort: bool,
 
         /// Timeout for the entire workflow, eg. `1h`.
-        #[arg(long, value_parser = validate_duration, value_name = "DURATION")]
-        timeout: Option<Duration>,
+        #[arg(long, value_name = "DURATION")]
+        timeout: Option<humantime::Duration>,
 
         /// Evaluate but don't run the workflow.
         #[arg(long, conflicts_with_all = ["jobs", "all_jobs"])]
@@ -163,12 +161,6 @@ enum Command {
         #[arg(long)]
         tracing: bool,
     },
-}
-
-fn validate_duration(value: &str) -> color_eyre::Result<Duration> {
-    Ok(humantime::Duration::from_str(value)
-        .with_context(|| "invalid duration")?
-        .into())
 }
 
 fn workflow_filter(path: &Path) -> bool {
@@ -350,7 +342,7 @@ fn main() -> color_eyre::Result<()> {
                     nixpkgs_expr,
                     use_cache,
                     abort,
-                    timeout,
+                    timeout: timeout.map(|timeout| timeout.into()),
                     eval,
                     jobs,
                     all_jobs,

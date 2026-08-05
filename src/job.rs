@@ -124,7 +124,7 @@ impl NowEnvironment {
 
         let mut teardown_stack = Vec::new();
 
-        let mut result = async {
+        let steps_fut = async {
             if let Some(checkout_child) = checkout_child.as_mut() {
                 smol::future::race(
                     async {
@@ -227,7 +227,20 @@ impl NowEnvironment {
                 }
             }
             Ok(())
-        }
+        };
+
+        let mut result = smol::future::or(steps_fut, async {
+            if let Some(timeout) = job.timeout {
+                smol::Timer::after(timeout.into()).await;
+                Err(color_eyre::eyre::eyre!(
+                    "Job '{}' timed out after {}",
+                    job.name,
+                    timeout
+                ))
+            } else {
+                smol::future::pending::<color_eyre::Result<()>>().await
+            }
+        })
         .await;
 
         for (step_name, teardown, step_env, step_sandbox) in teardown_stack.into_iter().rev() {

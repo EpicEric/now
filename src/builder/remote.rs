@@ -491,10 +491,17 @@ impl NowBuilder for RemoteBuilder {
             if !sandbox.network_access {
                 bwrap_cmd.push(" --unshare-net ");
             }
-            bwrap_cmd.push(" --bind ");
-            bwrap_cmd.push(&escaped_cwdir);
-            bwrap_cmd.push(" ");
-            bwrap_cmd.push(&escaped_cwdir);
+            if sandbox.writable_path {
+                bwrap_cmd.push(" --bind ");
+                bwrap_cmd.push(&escaped_cwdir);
+                bwrap_cmd.push(" ");
+                bwrap_cmd.push(&escaped_cwdir);
+            } else {
+                bwrap_cmd.push(" --ro-bind ");
+                bwrap_cmd.push(&escaped_cwdir);
+                bwrap_cmd.push(" ");
+                bwrap_cmd.push(&escaped_cwdir);
+            }
             bwrap_cmd.push(" --proc /proc");
             bwrap_cmd.push(" --dev /dev");
             bwrap_cmd.push(" --tmpfs /tmp");
