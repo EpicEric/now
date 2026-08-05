@@ -34,13 +34,8 @@ let
       options = {
         enable = lib.mkOption {
           type = types.bool;
-          default = true;
-          description = "Whether to use a sandbox for the step.";
-        };
-        writablePath = lib.mkOption {
-          type = types.bool;
           default = false;
-          description = "Whether the sandboxed step can write to the checked-out directory.";
+          description = "Whether to use a sandbox for the step.";
         };
         networkAccess = lib.mkOption {
           type = types.bool;
@@ -51,6 +46,11 @@ let
           type = types.bool;
           default = false;
           description = "Whether the sandboxed step can use the runner user's HOME directory.";
+        };
+        writablePath = lib.mkOption {
+          type = types.bool;
+          default = false;
+          description = "Whether the sandboxed step can write to the checked-out directory.";
         };
       };
     }
