@@ -53,6 +53,7 @@ pub(crate) struct LocalBuilder {
     pub(crate) system: String,
     pub(crate) system_features: HashSet<String>,
     pub(crate) remote_builders: Vec<RemoteBuilder>,
+    pub(crate) remote_only: bool,
 }
 
 impl LocalBuilder {
@@ -61,6 +62,7 @@ impl LocalBuilder {
         use_cache: bool,
         builders: Option<String>,
         local_only: bool,
+        remote_only: bool,
     ) -> color_eyre::Result<Self> {
         let output = std::process::Command::new("nix")
             .args([
@@ -91,6 +93,9 @@ impl LocalBuilder {
                 environment.nix_project_source.as_ref(),
             )?
         };
+        if remote_only && remote_builders.is_empty() {
+            return Err(color_eyre::eyre::eyre!("No remote builders available"));
+        }
 
         let (cancellation, cancellation_rx) = channel::bounded(1);
 
@@ -106,6 +111,7 @@ impl LocalBuilder {
             system: config.system.value,
             system_features: config.system_features.value.into_iter().collect(),
             remote_builders,
+            remote_only,
         })
     }
 
@@ -122,7 +128,8 @@ impl LocalBuilder {
     ) -> color_eyre::Result<Option<(MutexGuard<'_, Receiver<()>>, &dyn NowBuilder)>> {
         let mut builders = vec![];
 
-        if job.build_system == self.system
+        if !self.remote_only
+            && job.build_system == self.system
             && job
                 .required_system_features
                 .iter()
@@ -163,7 +170,8 @@ impl LocalBuilder {
     ) -> color_eyre::Result<Option<(MutexGuard<'_, Receiver<()>>, &dyn NowBuilder)>> {
         let mut runners = vec![];
 
-        if (job.host_system == self.system || self.extra_platforms.contains(&job.host_system))
+        if !self.remote_only
+            && (job.host_system == self.system || self.extra_platforms.contains(&job.host_system))
             && job
                 .required_system_features
                 .iter()

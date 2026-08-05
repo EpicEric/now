@@ -138,9 +138,16 @@ enum Command {
         ///
         /// Jobs that cannot run in the local builder will fail.
         ///
-        /// Cannot be used together with the `--builders` argument.
-        #[arg(long, conflicts_with = "builders")]
+        /// Cannot be used together with either the `--builders` or `--remote-only` arguments.
+        #[arg(long, conflicts_with_all = ["builders", "remote_only"])]
         local_only: bool,
+
+        /// When specified, runs all jobs in remote builders,
+        /// only using the local runner for job orchestration.
+        ///
+        /// Cannot be used together with the `--local-only` argument.
+        #[arg(long)]
+        remote_only: bool,
 
         /// Nix expression that evaluates to `nixpkgs`.
         #[arg(
@@ -296,6 +303,7 @@ fn main() -> color_eyre::Result<()> {
             cwdir,
             builders,
             local_only,
+            remote_only,
             nixpkgs_expr,
             use_cache,
             tracing,
@@ -350,6 +358,7 @@ fn main() -> color_eyre::Result<()> {
                     all_jobs,
                     builders,
                     local_only,
+                    remote_only,
                 })
             })?;
         }

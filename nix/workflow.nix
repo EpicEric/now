@@ -345,9 +345,9 @@ nowConfig {
           inherit secret var;
 
           matrix =
-            variants: job':
+            variants: job:
             map (v: {
-              job = job';
+              inherit job;
               pkgs' = v.pkgs or pkgs;
               specialArgs = removeAttrs v [
                 "pkgs"

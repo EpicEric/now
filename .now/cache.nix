@@ -1,5 +1,7 @@
 { runner, ... }:
 {
+  default = [ "push-to-niks3" ];
+
   jobs = {
     build-now = {
       steps = [ (runner.steps.upload "now" (import ../nix { useCache = true; }).now) ];

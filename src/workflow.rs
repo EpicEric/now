@@ -122,6 +122,7 @@ pub(crate) struct NowWorkflowParams {
     pub(crate) all_jobs: bool,
     pub(crate) builders: Option<String>,
     pub(crate) local_only: bool,
+    pub(crate) remote_only: bool,
 }
 
 impl NowEnvironment {
@@ -155,9 +156,10 @@ impl NowEnvironment {
             all_jobs,
             builders,
             local_only,
+            remote_only,
         }: NowWorkflowParams,
     ) -> color_eyre::Result<()> {
-        let builder = LocalBuilder::new(self, use_cache, builders, local_only)?;
+        let builder = LocalBuilder::new(self, use_cache, builders, local_only, remote_only)?;
         let runner = builder.get_name();
 
         info!(
