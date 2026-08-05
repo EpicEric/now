@@ -32,6 +32,11 @@ let
   sandbox = types.nullOr (
     types.submodule {
       options = {
+        enable = lib.mkOption {
+          type = types.bool;
+          default = true;
+          description = "Whether to use a sandbox for the step.";
+        };
         networkAccess = lib.mkOption {
           type = types.bool;
           default = true;
@@ -131,11 +136,16 @@ let
               type = types.enum [
                 "none"
                 "default"
+                "clone"
               ];
               default = "default";
               description = ''
-                Whether to copy the current directory to the runner ("default")
-                or run in a fresh, empty directory ("none").
+                Whether to use the runner's current directory (`"default"`),
+                always create a fresh copy of the current directory (`"clone"`),
+                or run in an empty directory (`"none"`).
+
+                When using `"default"` with remote builders or `"clone"`,
+                only non-ignored files are copied over.
               '';
             };
             strategy = lib.mkOption {

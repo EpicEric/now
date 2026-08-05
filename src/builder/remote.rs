@@ -19,11 +19,9 @@ use std::{
     ffi::{OsStr, OsString},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
-    pin::Pin,
 };
 
 use async_trait::async_trait;
-use futures::FutureExt;
 use smol::{
     channel,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -34,46 +32,11 @@ use smol::{
 use crate::{
     builder::{
         CACHE_PUBLIC_KEY, CACHE_SUBSTITUTER, CheckoutTask, CommandCheckoutTask, NixConfig,
-        NowBuilder,
+        NowBuilder, RsyncCheckoutTask,
     },
     utils::{escape_os_string, get_random_string, pipe_outputs_to_stderr},
     workflow::{NowCheckout, NowSandbox},
 };
-
-struct RsyncCheckoutTask {
-    builder: String,
-    child: Child,
-    stdin_future: Pin<Box<dyn Future<Output = color_eyre::Result<()>>>>,
-}
-
-impl Drop for RsyncCheckoutTask {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-    }
-}
-
-impl CheckoutTask for RsyncCheckoutTask {
-    fn run<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = color_eyre::Result<()>> + 'a>> {
-        Box::pin(
-            smol::future::zip(
-                async {
-                    let status = self.child.status().await?;
-                    if status.success() {
-                        Ok(())
-                    } else {
-                        pipe_outputs_to_stderr(&mut self.child).await?;
-                        Err(color_eyre::eyre::eyre!(
-                            "Failed to checkout current directory to {}",
-                            self.builder
-                        ))
-                    }
-                },
-                &mut self.stdin_future,
-            )
-            .map(|(first, second)| first.and(second)),
-        )
-    }
-}
 
 pub(crate) struct RemoteBuilder {
     pub(crate) cancellation: channel::Sender<()>,
@@ -259,7 +222,7 @@ impl NowBuilder for RemoteBuilder {
         checkout: NowCheckout,
     ) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)> {
         match checkout {
-            NowCheckout::Default => {
+            NowCheckout::Default | NowCheckout::Clone => {
                 let tmpdir = format!("/tmp/now-{}", get_random_string(10));
                 let mut ssh_command: OsString = "ssh ".into();
                 if let Some(ssh_identity) = self.ssh_identity.as_ref() {
@@ -516,7 +479,9 @@ impl NowBuilder for RemoteBuilder {
             full_command.push(" ");
         }
 
-        if let Some(sandbox) = sandbox {
+        if let Some(sandbox) = sandbox
+            && sandbox.enable
+        {
             let escaped_cwdir = escape_os_string(cwdir.into());
             let mut bwrap_cmd: OsString = "bwrap".into();
             bwrap_cmd.push(" --ro-bind /nix/store /nix/store");
@@ -619,7 +584,7 @@ impl NowBuilder for RemoteBuilder {
 
     async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
         match checkout {
-            NowCheckout::Default | NowCheckout::None => {
+            NowCheckout::Default | NowCheckout::None | NowCheckout::Clone => {
                 let mut rm_command: OsString = "rm -rf ".into();
                 rm_command.push(path);
 

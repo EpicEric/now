@@ -21,6 +21,7 @@ use std::{
     pin::Pin,
 };
 
+use futures::FutureExt;
 use smol::{channel, lock::futures::Lock, process::Child};
 
 use async_trait::async_trait;
@@ -69,6 +70,41 @@ impl CheckoutTask for CommandCheckoutTask {
                 ))
             }
         })
+    }
+}
+
+struct RsyncCheckoutTask {
+    builder: String,
+    child: Child,
+    stdin_future: Pin<Box<dyn Future<Output = color_eyre::Result<()>>>>,
+}
+
+impl Drop for RsyncCheckoutTask {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+    }
+}
+
+impl CheckoutTask for RsyncCheckoutTask {
+    fn run<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = color_eyre::Result<()>> + 'a>> {
+        Box::pin(
+            smol::future::zip(
+                async {
+                    let status = self.child.status().await?;
+                    if status.success() {
+                        Ok(())
+                    } else {
+                        pipe_outputs_to_stderr(&mut self.child).await?;
+                        Err(color_eyre::eyre::eyre!(
+                            "Failed to checkout current directory to {}",
+                            self.builder
+                        ))
+                    }
+                },
+                &mut self.stdin_future,
+            )
+            .map(|(first, second)| first.and(second)),
+        )
     }
 }
 

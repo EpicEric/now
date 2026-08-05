@@ -24,7 +24,7 @@ use std::{
 };
 
 use async_trait::async_trait;
-use futures::stream::FuturesUnordered;
+use futures::{AsyncWriteExt, stream::FuturesUnordered};
 use smol::{
     channel::{self, Receiver},
     io::AsyncReadExt,
@@ -36,7 +36,7 @@ use smol::{
 use crate::{
     builder::{
         CACHE_PUBLIC_KEY, CACHE_SUBSTITUTER, CheckoutTask, CommandCheckoutTask, NixConfig,
-        NowBuilder, remote::RemoteBuilder,
+        NowBuilder, RsyncCheckoutTask, remote::RemoteBuilder,
     },
     environment::NowEnvironment,
     utils::{get_random_string, pipe_outputs_to_stderr},
@@ -253,6 +253,47 @@ impl NowBuilder for LocalBuilder {
                     tmpdir,
                 ))
             }
+            NowCheckout::Clone => {
+                let tmpdir = temp_dir().join(format!("now-{}", get_random_string(10)));
+
+                let mut command = Command::new("rsync");
+                command
+                    .args(["-arz", "--files-from=-", "."])
+                    .arg(&tmpdir)
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+
+                let mut child = command.spawn()?;
+                let mut stdin = child.stdin.take().expect("stdin is piped");
+                let stdin_future = Box::pin(async move {
+                    let cwd = std::env::current_dir()?;
+                    for dir_entry in ignore::Walk::new(std::env::current_dir()?).flatten() {
+                        if dir_entry.file_type().is_some_and(|typ| typ.is_file()) {
+                            let path = dir_entry.path();
+                            stdin
+                                .write_all(
+                                    path.strip_prefix(&cwd)
+                                        .unwrap_or(path)
+                                        .as_os_str()
+                                        .as_bytes(),
+                                )
+                                .await?;
+                            stdin.write_all(b"\n").await?;
+                        }
+                    }
+                    Ok(stdin.flush().await?)
+                });
+
+                Ok((
+                    Some(Box::new(RsyncCheckoutTask {
+                        builder: self.get_name(),
+                        child,
+                        stdin_future,
+                    })),
+                    PathBuf::from(tmpdir),
+                ))
+            }
         }
     }
 
@@ -329,7 +370,9 @@ impl NowBuilder for LocalBuilder {
         sandbox: Option<&NowSandbox>,
         derivation: PathBuf,
     ) -> color_eyre::Result<Child> {
-        let mut command = if let Some(sandbox) = sandbox {
+        let mut command = if let Some(sandbox) = sandbox
+            && sandbox.enable
+        {
             let mut cmd = Command::new("bwrap");
             if let Some(daemon_socket_dir) = self.daemon_socket_dir.as_ref() {
                 cmd.args(["--ro-bind", "/nix/store", "/nix/store"])
@@ -396,7 +439,7 @@ impl NowBuilder for LocalBuilder {
     async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
         match checkout {
             NowCheckout::Default => Ok(()),
-            NowCheckout::None => {
+            NowCheckout::None | NowCheckout::Clone => {
                 let mut command = Command::new("rm");
                 command.arg("-rf").arg(path);
 

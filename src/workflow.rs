@@ -57,6 +57,7 @@ pub(crate) enum NowJobContainer {
 pub(crate) enum NowCheckout {
     None,
     Default,
+    Clone,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -83,6 +84,7 @@ pub(crate) struct NowStrategy {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct NowSandbox {
+    pub(crate) enable: bool,
     pub(crate) network_access: bool,
 }
 
