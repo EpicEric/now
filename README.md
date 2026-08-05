@@ -10,7 +10,7 @@ Nix-based distributed command runner.
 
 ## Status
 
-Still an early work-in-progress. Expect breaking changes and broken functionality.
+Still an early work-in-progress. Expect frequent breaking changes and broken functionality.
 
 ## Quick start
 
@@ -24,8 +24,6 @@ nix run github:EpicEric/now -- init
 This creates a `now.nix` file in the current directory. To run it:
 
 ```bash
-nix run github:EpicEric/now -- run now.nix
-# --- or ---
 nix run github:EpicEric/now -- run
 ```
 

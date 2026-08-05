@@ -11,7 +11,7 @@
     };
 
     x = {
-      needs = [ "a" ];
+      needs = "a";
       steps = [ { run = "echo x"; } ];
     };
     y = {

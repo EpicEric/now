@@ -138,7 +138,19 @@ pub(crate) struct NowWorkflowParams {
 impl NowEnvironment {
     #[instrument(
         skip_all,
-        fields(workflow = ?workflow_path, nixpkgs_expr, use_cache, abort, timeout, eval, jobs, all_jobs, checkout_strategy, builders)
+        fields(
+            workflow = ?workflow_path,
+            nixpkgs_expr,
+            use_cache,
+            abort,
+            timeout,
+            eval,
+            jobs,
+            all_jobs,
+            checkout_strategy,
+            builders,
+            local_only,
+        )
     )]
     pub(crate) fn run_workflow(
         &mut self,
@@ -402,8 +414,16 @@ impl NowWorkflow {
         // Prune non-target jobs
         let jobs = if all_jobs {
             None
+        } else if let Some(target_jobs) = target_jobs
+            && !target_jobs.is_empty()
+        {
+            Some(target_jobs)
+        } else if let Some(default_jobs) = self.default.as_ref()
+            && !default_jobs.is_empty()
+        {
+            Some(default_jobs.clone())
         } else {
-            target_jobs.or_else(|| self.default.clone())
+            return Err(color_eyre::eyre::eyre!("Workflow has no default jobs"));
         };
         if let Some(target_jobs) = jobs {
             let job_nodes = target_jobs

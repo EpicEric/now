@@ -73,7 +73,6 @@ enum Command {
         /// Jobs to target in this run.
         ///
         /// If unspecified, the default jobs of the workflow are run.
-        /// If there are no default jobs in the workflow, all jobs are run.
         ///
         /// Cannot be used together with the `--all-jobs` option.
         #[arg(
@@ -93,7 +92,7 @@ enum Command {
 
         /// Run all jobs in the workflow.
         ///
-        /// Cannot be used together with the `[JOB]` argument.
+        /// Cannot be used together with any `[JOB]` arguments.
         #[arg(long, conflicts_with = "jobs")]
         all_jobs: bool,
 
@@ -116,7 +115,7 @@ enum Command {
         /// In which directory to run the workflow.
         ///
         /// Defaults to the current directory if --workflow is set,
-        /// and `now.nix`'s directory otherwise
+        /// and the directory that `now.nix` is in otherwise
         #[arg(
             short,
             long,
@@ -125,18 +124,21 @@ enum Command {
         cwdir: Option<PathBuf>,
 
         /// A semicolon-separated list of build machines.
-        ///
         /// When specified, overrides the remote builders configuration of the host.
+        ///
+        /// Cannot be used together with the `--local-only` argument.
         ///
         /// For more information on the syntax, see:
         /// <https://nix.dev/manual/nix/latest/command-ref/conf-file#conf-builders>
-        #[arg(short, long)]
+        #[arg(long)]
         builders: Option<String>,
 
         /// When specified, ignores the remote builders configuration of the host,
         /// running all jobs in the local builder.
         ///
         /// Jobs that cannot run in the local builder will fail.
+        ///
+        /// Cannot be used together with the `--builders` argument.
         #[arg(long, conflicts_with = "builders")]
         local_only: bool,
 

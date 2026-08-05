@@ -187,7 +187,7 @@ let
               description = "How multiple jobs in a matrix should coordinate.";
             };
             needs = lib.mkOption {
-              type = types.nullOr (types.listOf types.str);
+              type = types.nullOr (types.either types.str (types.listOf types.str));
               default = null;
               description = "Jobs that must be completed before running this one.";
             };

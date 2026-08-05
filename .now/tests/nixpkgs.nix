@@ -1,4 +1,6 @@
 {
+  default = "nixpkgs";
+
   jobs = {
     nixpkgs =
       { pkgs, ... }:

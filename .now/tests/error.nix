@@ -1,4 +1,6 @@
 {
+  default = [ "error" ];
+
   jobs = {
     error = { ... }: {
       steps = [

@@ -236,6 +236,8 @@ let
     }:
     module.config
     // {
+      default =
+        if lib.isString module.config.default then [ module.config.default ] else module.config.default;
       jobs = builtins.mapAttrs (
         jobKey: job':
         mapMaybeList {
@@ -251,6 +253,7 @@ let
             job
             // {
               name = if (job.name != null && job.name != "") then job.name else jobKey;
+              needs = if lib.isString job.needs then [ job.needs ] else job.needs;
               buildSystem = pkgs'.stdenv.buildPlatform.system;
               hostSystem = pkgs'.stdenv.hostPlatform.system;
               inherit requiredSystemFeatures;
@@ -285,9 +288,9 @@ let
           description = "Name of the workflow";
         };
         default = lib.mkOption {
-          type = types.nullOr (types.listOf types.str);
+          type = types.nullOr (types.either types.str (types.listOf types.str));
           default = null;
-          description = "Default jobs to run for this workflow";
+          description = "Default job(s) to run for this workflow";
         };
         jobs = lib.mkOption {
           type = types.attrsOf (types.nullOr types.raw);

@@ -1,5 +1,10 @@
 { runner, ... }:
 {
+  default = [
+    "first"
+    "second"
+  ];
+
   jobs = {
     first = { pkgs, ... }: {
       steps = [

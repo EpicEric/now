@@ -3,6 +3,8 @@ let
   upload_key = "upload-key";
 in
 {
+  default = [ "read" ];
+
   jobs = {
     write = { pkgs, ... }: {
       steps = [

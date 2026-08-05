@@ -50,7 +50,7 @@ in
               (mkNow pkgs)
             ];
             run = ''
-              now run --abort --workflow .now/tests/abort.nix || error_code=$?
+              now run --abort --workflow .now/tests/abort.nix --all-jobs || error_code=$?
               if [ "$error_code" -eq 0 ]; then
                 echo "Test shouldn't have succeeded!"
                 exit 1
@@ -73,7 +73,7 @@ in
               (mkNow pkgs)
             ];
             run = ''
-              now run --abort --workflow .now/tests/cycle.nix || error_code=$?
+              now run --abort --workflow .now/tests/cycle.nix --all-jobs || error_code=$?
               if [ "$error_code" -eq 0 ]; then
                 echo "Test shouldn't have succeeded!"
                 exit 1
@@ -163,6 +163,7 @@ in
             run = ''
               if [ -n "$BUILDERS" ]; then
                 now run \
+                  --all-jobs \
                   --builders "$BUILDERS" \
                   --workflow .now/tests/matrix.nix
               else

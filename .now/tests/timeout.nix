@@ -1,4 +1,6 @@
 {
+  default = [ "timeout" ];
+
   jobs = {
     timeout = { ... }: {
       timeout = "5s";
