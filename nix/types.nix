@@ -29,6 +29,20 @@ let
       )
     );
 
+  sandbox = types.nullOr (
+    types.submodule {
+      options = {
+        networkAccess = lib.mkOption {
+          type = types.bool;
+          default = true;
+          description = "Whether the sandboxed step has network access.";
+        };
+        # TODO: Writable path
+        # TODO: tmpfs
+      };
+    }
+  );
+
   step =
     {
       evalId,
@@ -79,6 +93,11 @@ let
               default = { };
               description = "Environment values to make available to this step.";
             };
+            sandbox = lib.mkOption {
+              type = sandbox;
+              default = null;
+              description = "Sandbox configuration for this step.";
+            };
             ${"__nowUpload_${evalId}"} = lib.mkOption {
               type = types.nullOr types.str;
               default = null;
@@ -108,11 +127,22 @@ let
               default = null;
               description = "Name of the job.";
             };
+            checkout = lib.mkOption {
+              type = types.enum [
+                "none"
+                "default"
+              ];
+              default = "default";
+              description = ''
+                Whether to copy the current directory to the runner ("default")
+                or run in a fresh, empty directory ("none").
+              '';
+            };
             strategy = lib.mkOption {
               type = types.nullOr (
                 types.submodule {
                   options = {
-                    fail-fast = lib.mkOption {
+                    failFast = lib.mkOption {
                       type = types.bool;
                       default = true;
                       description = "Whether a single failing run should cancel the remaining jobs in the matrix.";
@@ -131,6 +161,11 @@ let
               type = env { inherit evalId; };
               default = { };
               description = "Environment values to make available to steps in this job.";
+            };
+            sandbox = lib.mkOption {
+              type = sandbox;
+              default = null;
+              description = "Default sandbox configuration for the steps in this job.";
             };
             steps = lib.mkOption {
               type = types.listOf (types.nullOr types.raw);

@@ -26,7 +26,10 @@ use smol::{channel, lock::futures::Lock, process::Child};
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::utils::pipe_outputs_to_stderr;
+use crate::{
+    utils::pipe_outputs_to_stderr,
+    workflow::{NowCheckout, NowSandbox},
+};
 
 pub(crate) mod local;
 pub(crate) mod remote;
@@ -77,7 +80,10 @@ pub(crate) trait NowBuilder {
 
     fn is_remote(&self) -> bool;
 
-    fn checkout(&self) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)>;
+    fn checkout(
+        &self,
+        checkout: NowCheckout,
+    ) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)>;
 
     async fn copy_derivations(
         &self,
@@ -101,8 +107,9 @@ pub(crate) trait NowBuilder {
     fn run_derivation(
         &self,
         cwdir: &Path,
-        derivation: PathBuf,
         envs: HashMap<OsString, OsString>,
+        sandbox: Option<&NowSandbox>,
+        derivation: PathBuf,
     ) -> color_eyre::Result<Child>;
 
     async fn fetch_derivation(
@@ -111,7 +118,7 @@ pub(crate) trait NowBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()>;
 
-    async fn undo_checkout(&self, path: &Path) -> color_eyre::Result<()>;
+    async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()>;
 }
 
 #[derive(Deserialize, Debug)]

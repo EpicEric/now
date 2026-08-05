@@ -99,6 +99,7 @@ let
       placeholder_name,
       pkgs,
       jobEnv,
+      jobSandbox,
       step,
       evalId,
       useCache,
@@ -127,6 +128,12 @@ let
           "environment variable '${name}' is not a valid POSIX variable name";
         value
       ) (jobEnv // step.env);
+
+      sandbox =
+        if step.sandbox != null then
+          (if jobSandbox != null then jobSandbox else { }) // step.sandbox
+        else
+          jobSandbox;
     in
     {
       name = if (step.name != null && step.name != "") then step.name else placeholder_name;
@@ -182,7 +189,7 @@ let
             '';
           }).drvPath;
 
-      inherit env;
+      inherit env sandbox;
 
       ${"__nowUpload_${evalId}"} = step."__nowUpload_${evalId}";
     };
@@ -192,6 +199,7 @@ let
       placeholder_name,
       pkgs,
       jobEnv,
+      jobSandbox,
       step,
       evalId,
       useCache,
@@ -213,6 +221,7 @@ let
           placeholder_name
           pkgs
           jobEnv
+          jobSandbox
           evalId
           useCache
           ;
@@ -252,6 +261,7 @@ let
                   placeholder_name = "${jobKey}-${toString i}";
                   pkgs = pkgs';
                   jobEnv = job.env;
+                  jobSandbox = job.sandbox;
                   inherit evalId useCache;
                 }
               ) job.steps;

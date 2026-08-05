@@ -33,7 +33,6 @@ use smol::{channel::Receiver, stream::StreamExt};
 use tracing::{info, instrument};
 
 use crate::{
-    CheckoutStrategy,
     builder::{NowBuilder, local::LocalBuilder},
     environment::{EVAL_ID, NowEnvironment},
     job::JobResult,
@@ -53,6 +52,13 @@ pub(crate) enum NowJobContainer {
     Multiple(Vec<NowJob>),
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) enum NowCheckout {
+    None,
+    Default,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct NowJob {
     pub(crate) name: String,
@@ -62,6 +68,7 @@ pub(crate) struct NowJob {
     pub(crate) host_system: String,
     #[serde(rename = "requiredSystemFeatures")]
     pub(crate) required_system_features: HashSet<String>,
+    pub(crate) checkout: NowCheckout,
     pub(crate) strategy: Option<NowStrategy>,
     pub(crate) needs: Option<Vec<String>>,
     pub(crate) steps: Vec<NowStep>,
@@ -69,8 +76,14 @@ pub(crate) struct NowJob {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct NowStrategy {
-    #[serde(rename = "fail-fast")]
+    #[serde(rename = "failFast")]
     pub(crate) fail_fast: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct NowSandbox {
+    pub(crate) network_access: bool,
 }
 
 #[derive(Debug)]
@@ -79,6 +92,7 @@ pub(crate) struct NowStep {
     pub(crate) run_drv: PathBuf,
     pub(crate) teardown_drv: Option<PathBuf>,
     pub(crate) env: HashMap<String, NowStepEnvVar>,
+    pub(crate) sandbox: Option<NowSandbox>,
     pub(crate) upload_key: Option<String>,
 }
 
@@ -110,7 +124,6 @@ pub(crate) struct NowWorkflowParams {
     pub(crate) eval: bool,
     pub(crate) jobs: Option<Vec<String>>,
     pub(crate) all_jobs: bool,
-    pub(crate) checkout_strategy: CheckoutStrategy,
     pub(crate) builders: Option<String>,
     pub(crate) local_only: bool,
 }
@@ -132,12 +145,11 @@ impl NowEnvironment {
             eval,
             jobs,
             all_jobs,
-            checkout_strategy: strategy,
             builders,
             local_only,
         }: NowWorkflowParams,
     ) -> color_eyre::Result<()> {
-        let builder = LocalBuilder::new(self, use_cache, strategy, builders, local_only)?;
+        let builder = LocalBuilder::new(self, use_cache, builders, local_only)?;
         let runner = builder.get_name();
 
         info!(

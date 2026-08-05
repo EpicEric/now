@@ -21,7 +21,7 @@ use std::{
     time::Duration,
 };
 
-use clap::{CommandFactory, Parser, ValueEnum};
+use clap::{CommandFactory, Parser};
 use clap_complete::{ArgValueCandidates, ArgValueCompleter, CompletionCandidate, PathCompleter};
 use color_eyre::eyre::{Context, OptionExt};
 use tracing::{debug, level_filters::LevelFilter};
@@ -41,20 +41,6 @@ mod serde;
 mod subscriber;
 mod utils;
 mod workflow;
-
-#[doc(hidden)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
-pub(crate) enum CheckoutStrategy {
-    /// Don't checkout; create a fresh directory for every job.
-    None,
-    /// Run commands at the local directory.
-    /// On remote builders, copy non-ignored files from the local directory.
-    Default,
-    /// Experimental - Like `default`, but run each step inside a sandbox.
-    /// On Linux hosts, uses `bubblewrap`.
-    /// Darwin hosts are currently unsupported.
-    Sandbox,
-}
 
 static LONG_ABOUT: &str = "now - Nix-based distributed command runner.
 
@@ -117,7 +103,7 @@ enum Command {
         #[arg(short, long, value_name = "FILE")]
         env_file: Option<PathBuf>,
 
-        /// Immediately abort on job failure.
+        /// Immediately abort on the first job failure.
         #[arg(long)]
         abort: bool,
 
@@ -128,15 +114,6 @@ enum Command {
         /// Evaluate but don't run the workflow.
         #[arg(long, conflicts_with_all = ["jobs", "all_jobs"])]
         eval: bool,
-
-        /// Strategy for checking out the current working directory.
-        #[arg(
-            long = "checkout",
-            value_enum,
-            default_value_t = CheckoutStrategy::Default,
-            value_name = "STRATEGY",
-        )]
-        checkout_strategy: CheckoutStrategy,
 
         /// In which directory to run the workflow.
         ///
@@ -165,7 +142,7 @@ enum Command {
         #[arg(long, conflicts_with = "builders")]
         local_only: bool,
 
-        /// Nix expression that evaluates to nixpkgs.
+        /// Nix expression that evaluates to `nixpkgs`.
         #[arg(
             short,
             long = "nixpkgs",
@@ -322,7 +299,6 @@ fn main() -> color_eyre::Result<()> {
             abort,
             timeout,
             eval,
-            checkout_strategy,
             cwdir,
             builders,
             local_only,
@@ -378,7 +354,6 @@ fn main() -> color_eyre::Result<()> {
                     eval,
                     jobs,
                     all_jobs,
-                    checkout_strategy,
                     builders,
                     local_only,
                 })

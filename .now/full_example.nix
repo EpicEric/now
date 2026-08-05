@@ -73,7 +73,7 @@ in
           { pkgs, name, ... }:
           {
             name = "Run tests on nightly (${name})";
-            strategy.fail-fast = false;
+            strategy.failFast = false;
             steps = [
               {
                 name = "Test";

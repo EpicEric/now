@@ -32,12 +32,12 @@ use smol::{
 };
 
 use crate::{
-    CheckoutStrategy,
     builder::{
         CACHE_PUBLIC_KEY, CACHE_SUBSTITUTER, CheckoutTask, CommandCheckoutTask, NixConfig,
         NowBuilder,
     },
     utils::{escape_os_string, get_random_string, pipe_outputs_to_stderr},
+    workflow::{NowCheckout, NowSandbox},
 };
 
 struct RsyncCheckoutTask {
@@ -80,7 +80,6 @@ pub(crate) struct RemoteBuilder {
     pub(crate) cancellation_rx: Mutex<channel::Receiver<()>>,
     pub(crate) control_path: PathBuf,
     pub(crate) use_cache: bool,
-    pub(crate) strategy: CheckoutStrategy,
     pub(crate) ssh_uri: String,
     pub(crate) ssh_identity: Option<String>,
     pub(crate) host_system: String,
@@ -109,7 +108,6 @@ impl RemoteBuilder {
     pub(crate) fn get_remote_builders(
         config: &NixConfig,
         use_cache: bool,
-        strategy: CheckoutStrategy,
         builders: Option<String>,
         project_source: &Path,
     ) -> color_eyre::Result<Vec<Self>> {
@@ -228,7 +226,6 @@ impl RemoteBuilder {
                 cancellation,
                 cancellation_rx: Mutex::new(cancellation_rx),
                 use_cache,
-                strategy,
                 control_path,
                 ssh_uri,
                 ssh_identity,
@@ -257,10 +254,13 @@ impl NowBuilder for RemoteBuilder {
         true
     }
 
-    fn checkout(&self) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)> {
-        match self.strategy {
-            CheckoutStrategy::Default | CheckoutStrategy::Sandbox => {
-                let tmpdir = format!("now-{}", get_random_string(10));
+    fn checkout(
+        &self,
+        checkout: NowCheckout,
+    ) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)> {
+        match checkout {
+            NowCheckout::Default => {
+                let tmpdir = format!("/tmp/now-{}", get_random_string(10));
                 let mut ssh_command: OsString = "ssh ".into();
                 if let Some(ssh_identity) = self.ssh_identity.as_ref() {
                     ssh_command.push("-i ");
@@ -316,8 +316,8 @@ impl NowBuilder for RemoteBuilder {
                     PathBuf::from(tmpdir),
                 ))
             }
-            CheckoutStrategy::None => {
-                let tmpdir = format!("now-{}", get_random_string(10));
+            NowCheckout::None => {
+                let tmpdir = format!("/tmp/now-{}", get_random_string(10));
 
                 let mut command = Command::new("ssh");
                 if let Some(ssh_identity) = self.ssh_identity.as_ref() {
@@ -501,8 +501,9 @@ impl NowBuilder for RemoteBuilder {
     fn run_derivation(
         &self,
         cwdir: &Path,
-        derivation: PathBuf,
         envs: HashMap<OsString, OsString>,
+        sandbox: Option<&NowSandbox>,
+        derivation: PathBuf,
     ) -> color_eyre::Result<Child> {
         let mut full_command: OsString = "cd ".into();
         full_command.push(cwdir);
@@ -515,13 +516,16 @@ impl NowBuilder for RemoteBuilder {
             full_command.push(" ");
         }
 
-        if matches!(self.strategy, CheckoutStrategy::Sandbox) {
+        if let Some(sandbox) = sandbox {
             let escaped_cwdir = escape_os_string(cwdir.into());
             let mut bwrap_cmd: OsString = "bwrap".into();
             bwrap_cmd.push(" --ro-bind /nix/store /nix/store");
             bwrap_cmd.push(" --bind-try /nix/var/nix/daemon-socket");
             bwrap_cmd.push(" /nix/var/nix/daemon-socket");
             bwrap_cmd.push(" --setenv NIX_REMOTE daemon");
+            if !sandbox.network_access {
+                bwrap_cmd.push(" --unshare-net ");
+            }
             bwrap_cmd.push(" --bind ");
             bwrap_cmd.push(&escaped_cwdir);
             bwrap_cmd.push(" ");
@@ -613,9 +617,9 @@ impl NowBuilder for RemoteBuilder {
         result
     }
 
-    async fn undo_checkout(&self, path: &Path) -> color_eyre::Result<()> {
-        match self.strategy {
-            CheckoutStrategy::Default | CheckoutStrategy::None | CheckoutStrategy::Sandbox => {
+    async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
+        match checkout {
+            NowCheckout::Default | NowCheckout::None => {
                 let mut rm_command: OsString = "rm -rf ".into();
                 rm_command.push(path);
 

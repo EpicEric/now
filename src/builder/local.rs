@@ -34,21 +34,19 @@ use smol::{
 };
 
 use crate::{
-    CheckoutStrategy,
     builder::{
         CACHE_PUBLIC_KEY, CACHE_SUBSTITUTER, CheckoutTask, CommandCheckoutTask, NixConfig,
         NowBuilder, remote::RemoteBuilder,
     },
     environment::NowEnvironment,
     utils::{get_random_string, pipe_outputs_to_stderr},
-    workflow::NowJob,
+    workflow::{NowCheckout, NowJob, NowSandbox},
 };
 
 pub(crate) struct LocalBuilder {
     pub(crate) cancellation: channel::Sender<()>,
     pub(crate) cancellation_rx: Mutex<channel::Receiver<()>>,
     pub(crate) env: HashMap<OsString, OsString>,
-    pub(crate) strategy: CheckoutStrategy,
     pub(crate) use_cache: bool,
     pub(crate) hostname: String,
     pub(crate) extra_platforms: Vec<String>,
@@ -63,7 +61,6 @@ impl LocalBuilder {
     pub(crate) fn new(
         environment: &NowEnvironment,
         use_cache: bool,
-        strategy: CheckoutStrategy,
         builders: Option<String>,
         local_only: bool,
     ) -> color_eyre::Result<Self> {
@@ -103,7 +100,6 @@ impl LocalBuilder {
             RemoteBuilder::get_remote_builders(
                 &config,
                 use_cache,
-                strategy,
                 builders,
                 environment.nix_project_source.as_ref(),
             )?
@@ -118,7 +114,6 @@ impl LocalBuilder {
             cancellation_rx: Mutex::new(cancellation_rx),
             env: environment.local_env.clone(),
             use_cache,
-            strategy,
             hostname,
             extra_platforms: config.extra_platforms.value,
             system: config.system.value,
@@ -233,12 +228,13 @@ impl NowBuilder for LocalBuilder {
         false
     }
 
-    fn checkout(&self) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)> {
-        match self.strategy {
-            CheckoutStrategy::Default | CheckoutStrategy::Sandbox => {
-                Ok((None, std::env::current_dir()?))
-            }
-            CheckoutStrategy::None => {
+    fn checkout(
+        &self,
+        checkout: NowCheckout,
+    ) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)> {
+        match checkout {
+            NowCheckout::Default => Ok((None, std::env::current_dir()?)),
+            NowCheckout::None => {
                 let tmpdir = temp_dir().join(format!("now-{}", get_random_string(10)));
 
                 let mut command = Command::new("mkdir");
@@ -329,52 +325,53 @@ impl NowBuilder for LocalBuilder {
     fn run_derivation(
         &self,
         cwdir: &Path,
-        derivation: PathBuf,
         envs: HashMap<OsString, OsString>,
+        sandbox: Option<&NowSandbox>,
+        derivation: PathBuf,
     ) -> color_eyre::Result<Child> {
-        let mut command = match self.strategy {
-            CheckoutStrategy::None | CheckoutStrategy::Default => {
-                Command::new(derivation.join("bin/now-step"))
+        let mut command = if let Some(sandbox) = sandbox {
+            let mut cmd = Command::new("bwrap");
+            if let Some(daemon_socket_dir) = self.daemon_socket_dir.as_ref() {
+                cmd.args(["--ro-bind", "/nix/store", "/nix/store"])
+                    .arg("--bind-try")
+                    .args([daemon_socket_dir, daemon_socket_dir])
+                    .args(["--setenv", "NIX_REMOTE", "daemon"]);
+            } else {
+                cmd.args(["--bind", "/nix/store", "/nix/store"]).args([
+                    "--bind",
+                    "/nix/var/nix",
+                    "/nix/var/nix",
+                ]);
             }
-            CheckoutStrategy::Sandbox => {
-                let mut cmd = Command::new("bwrap");
-                if let Some(daemon_socket_dir) = self.daemon_socket_dir.as_ref() {
-                    cmd.args(["--ro-bind", "/nix/store", "/nix/store"])
-                        .arg("--bind-try")
-                        .args([daemon_socket_dir, daemon_socket_dir])
-                        .args(["--setenv", "NIX_REMOTE", "daemon"]);
-                } else {
-                    cmd.args(["--bind", "/nix/store", "/nix/store"]).args([
-                        "--bind",
-                        "/nix/var/nix",
-                        "/nix/var/nix",
-                    ]);
-                }
-                cmd.arg("--bind")
-                    .args([cwdir, cwdir])
-                    .arg("--bind")
-                    .args([&self.nix_project_source, &self.nix_project_source])
-                    .args(["--proc", "/proc"])
-                    .args(["--dev", "/dev"])
-                    .args(["--tmpfs", "/tmp"])
-                    .args(["--ro-bind-try", "/etc/resolv.conf", "/etc/resolv.conf"])
-                    .args(["--ro-bind-try", "/etc/nsswitch.conf", "/etc/nsswitch.conf"])
-                    .args(["--ro-bind-try", "/etc/ssl/certs", "/etc/ssl/certs"])
-                    .args(["--ro-bind-try", "/etc/passwd", "/etc/passwd"])
-                    .args(["--ro-bind-try", "/etc/group", "/etc/group"])
-                    .args(["--ro-bind-try", "/etc/nix/nix.conf", "/etc/nix/nix.conf"])
-                    .args(["--dir", "/homeless-shelter"])
-                    .args(["--setenv", "HOME", "/homeless-shelter"])
-                    .args([
-                        "--setenv",
-                        "NIX_CONFIG",
-                        "experimental-features = nix-command flakes",
-                    ])
-                    .arg("--die-with-parent")
-                    .arg("--")
-                    .arg(derivation.join("bin/now-step"));
-                cmd
+            if !sandbox.network_access {
+                cmd.arg("--unshare-net");
             }
+            cmd.arg("--bind")
+                .args([cwdir, cwdir])
+                .arg("--bind")
+                .args([&self.nix_project_source, &self.nix_project_source])
+                .args(["--proc", "/proc"])
+                .args(["--dev", "/dev"])
+                .args(["--tmpfs", "/tmp"])
+                .args(["--ro-bind-try", "/etc/resolv.conf", "/etc/resolv.conf"])
+                .args(["--ro-bind-try", "/etc/nsswitch.conf", "/etc/nsswitch.conf"])
+                .args(["--ro-bind-try", "/etc/ssl/certs", "/etc/ssl/certs"])
+                .args(["--ro-bind-try", "/etc/passwd", "/etc/passwd"])
+                .args(["--ro-bind-try", "/etc/group", "/etc/group"])
+                .args(["--ro-bind-try", "/etc/nix/nix.conf", "/etc/nix/nix.conf"])
+                .args(["--dir", "/homeless-shelter"])
+                .args(["--setenv", "HOME", "/homeless-shelter"])
+                .args([
+                    "--setenv",
+                    "NIX_CONFIG",
+                    "experimental-features = nix-command flakes",
+                ])
+                .arg("--die-with-parent")
+                .arg("--")
+                .arg(derivation.join("bin/now-step"));
+            cmd
+        } else {
+            Command::new(derivation.join("bin/now-step"))
         };
 
         command
@@ -396,10 +393,10 @@ impl NowBuilder for LocalBuilder {
         Ok(())
     }
 
-    async fn undo_checkout(&self, path: &Path) -> color_eyre::Result<()> {
-        match self.strategy {
-            CheckoutStrategy::Default | CheckoutStrategy::Sandbox => Ok(()),
-            CheckoutStrategy::None => {
+    async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
+        match checkout {
+            NowCheckout::Default => Ok(()),
+            NowCheckout::None => {
                 let mut command = Command::new("rm");
                 command.arg("-rf").arg(path);
 

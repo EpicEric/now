@@ -120,7 +120,7 @@ impl NowEnvironment {
             is_remote, "Running job '{}'...", &job.name
         );
 
-        let (mut checkout_child, cwdir) = runner.checkout()?;
+        let (mut checkout_child, cwdir) = runner.checkout(job.checkout)?;
 
         let mut teardown_stack = Vec::new();
 
@@ -165,14 +165,17 @@ impl NowEnvironment {
                 }
                 runner.download(&downloads, &guard).await?;
 
+                let sandbox = step.sandbox.as_ref();
+
                 if let Some(teardown) = teardown {
-                    teardown_stack.push((&step.name, teardown, &step.env));
+                    teardown_stack.push((&step.name, teardown, &step.env, sandbox));
                 }
 
                 let mut child = runner.run_derivation(
                     &cwdir,
-                    run,
                     self.generate_env_vars_for_step(&step.env)?,
+                    sandbox,
+                    run,
                 )?;
                 let mut stdout = child.stdout.take().expect("stdout is piped");
                 let stderr = child.stderr.take().expect("stderr is piped");
@@ -227,7 +230,7 @@ impl NowEnvironment {
         }
         .await;
 
-        for (step_name, teardown, step_env) in teardown_stack.into_iter().rev() {
+        for (step_name, teardown, step_env, step_sandbox) in teardown_stack.into_iter().rev() {
             let _span = tracing::info_span!(
                 "step-teardown",
                 job = job.name,
@@ -256,7 +259,7 @@ impl NowEnvironment {
                     continue;
                 }
             };
-            let mut child = runner.run_derivation(&cwdir, teardown, env_vars)?;
+            let mut child = runner.run_derivation(&cwdir, env_vars, step_sandbox, teardown)?;
             let stderr = child.stderr.take().expect("stderr is piped");
 
             let mut lines = BufReader::new(stderr).lines();
@@ -316,7 +319,7 @@ impl NowEnvironment {
         }
 
         drop(checkout_child.take());
-        result.and(runner.undo_checkout(&cwdir).await)
+        result.and(runner.undo_checkout(job.checkout, &cwdir).await)
     }
 
     pub(crate) fn run_job_single<'a>(

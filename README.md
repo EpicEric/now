@@ -118,8 +118,8 @@ Here's a full example of `now`'s features:
         { pkgs, spam ? null, ... }:
         {
           name = "Matrix job (${if spam != null then spam else pkgs.stdenv.hostPlatform.system})";
-          # If fail-fast = true (default), the first failing matrix terminates the job
-          strategy.fail-fast = false;
+          # If failFast = true (default), the first failing matrix terminates the job
+          strategy.failFast = false;
           # Establish that this job must run after another
           needs = [ "job-1" ];
           # Downloads the previous upload with the same name into the runner's Nix store
