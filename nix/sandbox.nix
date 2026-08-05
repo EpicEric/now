@@ -22,8 +22,10 @@
   lib,
   stdenvNoCC,
   writeShellScript,
+  writeTextFile,
 }:
 if sandbox.enable or false then
+
   if stdenvNoCC.hostPlatform.isLinux then
     writeShellScript script.name ''
       set -euo pipefail
@@ -31,16 +33,13 @@ if sandbox.enable or false then
         --ro-bind /nix/store /nix/store \
         --bind-try /nix/var/nix/daemon-socket /nix/var/nix/daemon-socket \
         --setenv NIX_REMOTE daemon \
-        ${
-          if sandbox.networkAccess then
-            ''
-              --ro-bind-try /etc/resolv.conf /etc/resolv.conf \
-              --ro-bind-try /etc/nsswitch.conf /etc/nsswitch.conf \
-              --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
-            ''
-          else
-            "--unshare-net"
-        } \
+        --unshare-all \
+        ${lib.optionalString sandbox.networkAccess ''
+          --share-net \
+          --ro-bind-try /etc/resolv.conf /etc/resolv.conf \
+          --ro-bind-try /etc/nsswitch.conf /etc/nsswitch.conf \
+          --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
+        ''} \
         ${
           if sandbox.writablePath then
             ''--bind "$PWD" "$PWD" --chdir "$PWD"''
@@ -63,7 +62,83 @@ if sandbox.enable or false then
         --die-with-parent \
         -- ${script} "$@"
     ''
+
+  else if stdenvNoCC.hostPlatform.isDarwin then
+    let
+      profile = writeTextFile {
+        name = "now-seatbelt-profile.sb";
+        text = ''
+          (version 1)
+          (deny default)
+
+          (allow process-exec)
+          (allow process-fork)
+          (allow signal (target self))
+          (allow sysctl-read)
+
+          (allow file-read* (subpath "/nix/store"))
+          (allow file-read* file-write* (subpath "/nix/var/nix"))
+
+          (allow file-read* file-write* (subpath "/tmp"))
+          (allow file-read* file-write* (subpath (param "TMPDIR")))
+
+          (allow file-read*
+            (literal "/etc/passwd")
+            (literal "/etc/group")
+            (literal "/etc/nix/nix.conf")
+            (literal "/etc/hosts")
+            (literal "/etc/resolv.conf"))
+          (allow file-read* (subpath "/etc/ssl/certs"))
+
+          (allow file-read*
+            (literal "/dev/null")
+            (literal "/dev/zero")
+            (literal "/dev/random")
+            (literal "/dev/urandom"))
+
+          (allow file-read*
+            (subpath "/usr/lib")
+            (subpath "/System/Library"))
+
+          (allow mach-lookup
+            (global-name "com.apple.system.opendirectoryd.libinfo")
+            (global-name "com.apple.trustd"))
+
+          ${lib.optionalString sandbox.networkAccess ''
+            (allow network-outbound)
+            (allow network-inbound)
+            (allow mach-lookup
+              (global-name "com.apple.mDNSResponder"))
+          ''}
+
+          ${lib.optionalString sandbox.useHome ''
+            (allow file-read* file-write* (subpath (param "HOME")))
+          ''}
+
+          ${
+            if sandbox.writablePath then
+              ''
+                (allow file-read* file-write* (subpath (param "PWD")))
+              ''
+            else
+              ''
+                (allow file-read* (subpath (param "PWD")))
+              ''
+          }
+        '';
+      };
+    in
+    writeShellScript script.name ''
+      set -euo pipefail
+      exec /usr/bin/sandbox-exec \
+        -D HOME="$HOME" \
+        -D PWD="$PWD" \
+        -D TMPDIR="''${TMPDIR:-/tmp}" \
+        -f ${profile} -- ${script} "$@"
+    ''
+
   else
-    throw "sandboxing is currently only supported on Linux"
+    throw "sandboxing is currently only supported on Linux and macOS"
+
 else
   script
