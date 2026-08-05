@@ -20,9 +20,7 @@ use serde::{Deserialize, Serialize, de::Visitor, ser::SerializeStruct};
 
 use crate::{
     environment::EVAL_ID,
-    workflow::{
-        NowJobContainer, NowSandbox, NowStep, NowStepDownload, NowStepEnvVar, NowStepSecret,
-    },
+    workflow::{NowJobContainer, NowStep, NowStepDownload, NowStepEnvVar, NowStepSecret},
 };
 
 impl Serialize for NowJobContainer {
@@ -89,7 +87,6 @@ impl Serialize for NowStep {
         strct.serialize_field("runDrv", &self.run_drv)?;
         strct.serialize_field("teardownDrv", &self.teardown_drv)?;
         strct.serialize_field("env", &self.env)?;
-        strct.serialize_field("sandbox", &self.sandbox)?;
         strct.serialize_field("uploadKey", &self.upload_key)?;
         strct.end()
     }
@@ -117,7 +114,6 @@ impl<'de> Deserialize<'de> for NowStep {
                 let mut run_drv: Option<PathBuf> = None;
                 let mut teardown_drv: Option<PathBuf> = None;
                 let mut env: Option<HashMap<String, NowStepEnvVar>> = None;
-                let mut sandbox: Option<NowSandbox> = None;
                 let mut upload_key: Option<String> = None;
 
                 while let Some(key) = map.next_key::<String>()? {
@@ -126,7 +122,6 @@ impl<'de> Deserialize<'de> for NowStep {
                         "runDrv" => run_drv = Some(map.next_value()?),
                         "teardownDrv" => teardown_drv = map.next_value()?,
                         "env" => env = Some(map.next_value()?),
-                        "sandbox" => sandbox = map.next_value()?,
                         _ if matches!(key.split_once(&*EVAL_ID), Some(("__nowUpload_", ""))) => {
                             upload_key = map.next_value()?
                         }
@@ -143,7 +138,6 @@ impl<'de> Deserialize<'de> for NowStep {
                     run_drv,
                     teardown_drv,
                     env,
-                    sandbox,
                     upload_key,
                 })
             }
@@ -151,14 +145,7 @@ impl<'de> Deserialize<'de> for NowStep {
 
         deserializer.deserialize_struct(
             "NowStep",
-            &[
-                "name",
-                "run_drv",
-                "teardown_drv",
-                "env",
-                "sandbox",
-                "upload_key",
-            ],
+            &["name", "run_drv", "teardown_drv", "env", "upload_key"],
             NowStepVisitor,
         )
     }

@@ -40,7 +40,7 @@ use crate::{
     },
     environment::NowEnvironment,
     utils::{get_random_string, pipe_outputs_to_stderr},
-    workflow::{NowCheckout, NowJob, NowSandbox},
+    workflow::{NowCheckout, NowJob},
 };
 
 pub(crate) struct LocalBuilder {
@@ -53,8 +53,6 @@ pub(crate) struct LocalBuilder {
     pub(crate) system: String,
     pub(crate) system_features: HashSet<String>,
     pub(crate) remote_builders: Vec<RemoteBuilder>,
-    pub(crate) nix_project_source: PathBuf,
-    pub(crate) daemon_socket_dir: Option<PathBuf>,
 }
 
 impl LocalBuilder {
@@ -64,17 +62,6 @@ impl LocalBuilder {
         builders: Option<String>,
         local_only: bool,
     ) -> color_eyre::Result<Self> {
-        let daemon_socket = {
-            let daemon_socket_dir = PathBuf::from("/nix/var/nix/daemon-socket");
-            if daemon_socket_dir.join("socket").exists() {
-                Some(daemon_socket_dir)
-            } else {
-                None
-            }
-        };
-
-        let nix_project_source = environment.nix_project_source.as_ref().to_path_buf();
-
         let output = std::process::Command::new("nix")
             .args([
                 "--extra-experimental-features",
@@ -119,8 +106,6 @@ impl LocalBuilder {
             system: config.system.value,
             system_features: config.system_features.value.into_iter().collect(),
             remote_builders,
-            nix_project_source,
-            daemon_socket_dir: daemon_socket,
         })
     }
 
@@ -367,59 +352,9 @@ impl NowBuilder for LocalBuilder {
         &self,
         cwdir: &Path,
         envs: HashMap<OsString, OsString>,
-        sandbox: Option<&NowSandbox>,
         derivation: PathBuf,
     ) -> color_eyre::Result<Child> {
-        let mut command = if let Some(sandbox) = sandbox
-            && sandbox.enable
-        {
-            let mut cmd = Command::new("bwrap");
-            if let Some(daemon_socket_dir) = self.daemon_socket_dir.as_ref() {
-                cmd.args(["--ro-bind", "/nix/store", "/nix/store"])
-                    .arg("--bind-try")
-                    .args([daemon_socket_dir, daemon_socket_dir])
-                    .args(["--setenv", "NIX_REMOTE", "daemon"]);
-            } else {
-                cmd.args(["--bind", "/nix/store", "/nix/store"]).args([
-                    "--bind",
-                    "/nix/var/nix",
-                    "/nix/var/nix",
-                ]);
-            }
-            if !sandbox.network_access {
-                cmd.arg("--unshare-net");
-            }
-            if sandbox.writable_path {
-                cmd.arg("--bind").args([cwdir, cwdir]);
-            } else {
-                cmd.arg("--ro-bind").args([cwdir, cwdir]);
-            }
-            cmd.arg("--bind")
-                .args([&self.nix_project_source, &self.nix_project_source])
-                .args(["--proc", "/proc"])
-                .args(["--dev", "/dev"])
-                .args(["--tmpfs", "/tmp"])
-                .args(["--ro-bind-try", "/etc/resolv.conf", "/etc/resolv.conf"])
-                .args(["--ro-bind-try", "/etc/nsswitch.conf", "/etc/nsswitch.conf"])
-                .args(["--ro-bind-try", "/etc/ssl/certs", "/etc/ssl/certs"])
-                .args(["--ro-bind-try", "/etc/passwd", "/etc/passwd"])
-                .args(["--ro-bind-try", "/etc/group", "/etc/group"])
-                .args(["--ro-bind-try", "/etc/nix/nix.conf", "/etc/nix/nix.conf"])
-                .args(["--dir", "/homeless-shelter"])
-                .args(["--setenv", "HOME", "/homeless-shelter"])
-                .args([
-                    "--setenv",
-                    "NIX_CONFIG",
-                    "experimental-features = nix-command flakes",
-                ])
-                .arg("--die-with-parent")
-                .arg("--")
-                .arg(derivation.join("bin/now-step"));
-            cmd
-        } else {
-            Command::new(derivation.join("bin/now-step"))
-        };
-
+        let mut command = Command::new(derivation.join("bin/now-step"));
         command
             .current_dir(cwdir)
             .stdin(Stdio::null())

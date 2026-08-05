@@ -83,23 +83,12 @@ pub(crate) struct NowStrategy {
     pub(crate) fail_fast: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct NowSandbox {
-    pub(crate) enable: bool,
-    pub(crate) network_access: bool,
-    pub(crate) writable_path: bool,
-    // TODO
-    // pub(crate) use_home: bool,
-}
-
 #[derive(Debug)]
 pub(crate) struct NowStep {
     pub(crate) name: String,
     pub(crate) run_drv: PathBuf,
     pub(crate) teardown_drv: Option<PathBuf>,
     pub(crate) env: HashMap<String, NowStepEnvVar>,
-    pub(crate) sandbox: Option<NowSandbox>,
     pub(crate) upload_key: Option<String>,
 }
 

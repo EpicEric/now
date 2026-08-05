@@ -35,7 +35,7 @@ use crate::{
         NowBuilder, RsyncCheckoutTask,
     },
     utils::{escape_os_string, get_random_string, pipe_outputs_to_stderr},
-    workflow::{NowCheckout, NowSandbox},
+    workflow::NowCheckout,
 };
 
 pub(crate) struct RemoteBuilder {
@@ -465,7 +465,6 @@ impl NowBuilder for RemoteBuilder {
         &self,
         cwdir: &Path,
         envs: HashMap<OsString, OsString>,
-        sandbox: Option<&NowSandbox>,
         derivation: PathBuf,
     ) -> color_eyre::Result<Child> {
         let mut full_command: OsString = "cd ".into();
@@ -479,48 +478,7 @@ impl NowBuilder for RemoteBuilder {
             full_command.push(" ");
         }
 
-        if let Some(sandbox) = sandbox
-            && sandbox.enable
-        {
-            let escaped_cwdir = escape_os_string(cwdir.into());
-            let mut bwrap_cmd: OsString = "bwrap".into();
-            bwrap_cmd.push(" --ro-bind /nix/store /nix/store");
-            bwrap_cmd.push(" --bind-try /nix/var/nix/daemon-socket");
-            bwrap_cmd.push(" /nix/var/nix/daemon-socket");
-            bwrap_cmd.push(" --setenv NIX_REMOTE daemon");
-            if !sandbox.network_access {
-                bwrap_cmd.push(" --unshare-net ");
-            }
-            if sandbox.writable_path {
-                bwrap_cmd.push(" --bind ");
-                bwrap_cmd.push(&escaped_cwdir);
-                bwrap_cmd.push(" ");
-                bwrap_cmd.push(&escaped_cwdir);
-            } else {
-                bwrap_cmd.push(" --ro-bind ");
-                bwrap_cmd.push(&escaped_cwdir);
-                bwrap_cmd.push(" ");
-                bwrap_cmd.push(&escaped_cwdir);
-            }
-            bwrap_cmd.push(" --proc /proc");
-            bwrap_cmd.push(" --dev /dev");
-            bwrap_cmd.push(" --tmpfs /tmp");
-            bwrap_cmd.push(" --ro-bind-try /etc/resolv.conf /etc/resolv.conf");
-            bwrap_cmd.push(" --ro-bind-try /etc/nsswitch.conf /etc/nsswitch.conf");
-            bwrap_cmd.push(" --ro-bind-try /etc/ssl/certs /etc/ssl/certs");
-            bwrap_cmd.push(" --ro-bind-try /etc/passwd /etc/passwd");
-            bwrap_cmd.push(" --ro-bind-try /etc/group /etc/group");
-            bwrap_cmd.push(" --ro-bind-try /etc/nix/nix.conf /etc/nix/nix.conf");
-            bwrap_cmd.push(" --dir /homeless-shelter");
-            bwrap_cmd.push(" --setenv HOME /homeless-shelter");
-            bwrap_cmd.push(" --setenv NIX_CONFIG \"experimental-features = nix-command flakes\"");
-            bwrap_cmd.push(" --die-with-parent -- ");
-            bwrap_cmd.push(derivation.join("bin/now-step"));
-            full_command.push("nix-shell -p bubblewrap --run ");
-            full_command.push(escape_os_string(bwrap_cmd));
-        } else {
-            full_command.push(derivation.join("bin/now-step"));
-        }
+        full_command.push(derivation.join("bin/now-step"));
 
         let mut command = Command::new("ssh");
         if let Some(ssh_identity) = self.ssh_identity.as_ref() {

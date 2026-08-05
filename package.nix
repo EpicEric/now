@@ -57,14 +57,11 @@ rustPlatform.buildRustPackage {
   postInstall = ''
     wrapProgram $out/bin/now \
       --suffix PATH : ${
-        lib.makeBinPath (
-          [
-            nix
-            openssh
-            rsync
-          ]
-          ++ lib.optionals stdenv.hostPlatform.isLinux [ bubblewrap ]
-        )
+        lib.makeBinPath [
+          nix
+          openssh
+          rsync
+        ]
       }
   ''
   + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''

@@ -27,10 +27,7 @@ use smol::{channel, lock::futures::Lock, process::Child};
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::{
-    utils::pipe_outputs_to_stderr,
-    workflow::{NowCheckout, NowSandbox},
-};
+use crate::{utils::pipe_outputs_to_stderr, workflow::NowCheckout};
 
 pub(crate) mod local;
 pub(crate) mod remote;
@@ -144,7 +141,6 @@ pub(crate) trait NowBuilder {
         &self,
         cwdir: &Path,
         envs: HashMap<OsString, OsString>,
-        sandbox: Option<&NowSandbox>,
         derivation: PathBuf,
     ) -> color_eyre::Result<Child>;
 

@@ -165,16 +165,13 @@ impl NowEnvironment {
                 }
                 runner.download(&downloads, &guard).await?;
 
-                let sandbox = step.sandbox.as_ref();
-
                 if let Some(teardown) = teardown {
-                    teardown_stack.push((&step.name, teardown, &step.env, sandbox));
+                    teardown_stack.push((&step.name, teardown, &step.env));
                 }
 
                 let mut child = runner.run_derivation(
                     &cwdir,
                     self.generate_env_vars_for_step(&step.env)?,
-                    sandbox,
                     run,
                 )?;
                 let mut stdout = child.stdout.take().expect("stdout is piped");
@@ -243,7 +240,7 @@ impl NowEnvironment {
         })
         .await;
 
-        for (step_name, teardown, step_env, step_sandbox) in teardown_stack.into_iter().rev() {
+        for (step_name, teardown, step_env) in teardown_stack.into_iter().rev() {
             let _span = tracing::info_span!(
                 "step-teardown",
                 job = job.name,
@@ -272,7 +269,7 @@ impl NowEnvironment {
                     continue;
                 }
             };
-            let mut child = runner.run_derivation(&cwdir, env_vars, step_sandbox, teardown)?;
+            let mut child = runner.run_derivation(&cwdir, env_vars, teardown)?;
             let stderr = child.stderr.take().expect("stderr is piped");
 
             let mut lines = BufReader::new(stderr).lines();

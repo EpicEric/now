@@ -25,6 +25,7 @@ in
 
     format = { pkgs, ... }: {
       name = "Fix formatting";
+      sandbox.enable = true;
       steps = [
         {
           run = ''
@@ -36,6 +37,7 @@ in
             pkgs.rustfmt
             pkgs.nixfmt-tree
           ];
+          sandbox.writablePath = true;
         }
       ];
     };

@@ -35,28 +35,23 @@ let
         enable = lib.mkOption {
           type = types.bool;
           default = true;
-          description = ''
-            Whether to use a sandbox for the step.
-
-            Currently only supports Linux runners via `bubblewrap`.
-          '';
-        };
-        networkAccess = lib.mkOption {
-          type = types.bool;
-          default = true;
-          description = "Whether the sandboxed step has network access.";
+          description = "Whether to use a sandbox for the step.";
         };
         writablePath = lib.mkOption {
           type = types.bool;
-          default = true;
+          default = false;
           description = "Whether the sandboxed step can write to the checked-out directory.";
         };
-        # TODO
-        # useHome = lib.mkOption {
-        #   type = types.bool;
-        #   default = false;
-        #   description = "Whether the sandboxed step can use the runner user's HOME directory.";
-        # };
+        networkAccess = lib.mkOption {
+          type = types.bool;
+          default = false;
+          description = "Whether the sandboxed step has network access.";
+        };
+        useHome = lib.mkOption {
+          type = types.bool;
+          default = false;
+          description = "Whether the sandboxed step can use the runner user's HOME directory.";
+        };
       };
     }
   );
