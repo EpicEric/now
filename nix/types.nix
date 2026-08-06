@@ -29,7 +29,7 @@ let
       )
     );
 
-  sandbox = types.nullOr (
+  sandbox = types.either types.bool (
     types.submodule {
       options = {
         enable = lib.mkOption {
@@ -108,7 +108,7 @@ let
             };
             sandbox = lib.mkOption {
               type = sandbox;
-              default = null;
+              default = { };
               description = "Sandbox configuration for this step.";
             };
             ${"__nowUpload_${evalId}"} = lib.mkOption {
@@ -193,7 +193,7 @@ let
             };
             sandbox = lib.mkOption {
               type = sandbox;
-              default = null;
+              default = { };
               description = "Default sandbox configuration for the steps in this job.";
             };
             steps = lib.mkOption {

@@ -15,8 +15,8 @@
 # with this program. If not, see <https://www.gnu.org/licenses/>.
 
 {
-  sandbox,
-  script,
+  nowSandbox,
+  nowScript,
 
   bubblewrap,
   lib,
@@ -24,24 +24,24 @@
   writeShellScript,
   writeTextFile,
 }:
-if sandbox.enable or false then
+if nowSandbox.enable then
 
   if stdenvNoCC.hostPlatform.isLinux then
-    writeShellScript script.name ''
+    writeShellScript nowScript.name ''
       set -euo pipefail
       exec ${lib.getExe bubblewrap} \
         --ro-bind /nix/store /nix/store \
         --bind-try /nix/var/nix/daemon-socket /nix/var/nix/daemon-socket \
         --setenv NIX_REMOTE daemon \
         --unshare-all \
-        ${lib.optionalString sandbox.networkAccess ''
+        ${lib.optionalString nowSandbox.networkAccess ''
           --share-net \
           --ro-bind-try /etc/resolv.conf /etc/resolv.conf \
           --ro-bind-try /etc/nsswitch.conf /etc/nsswitch.conf \
           --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
         ''} \
         ${
-          if sandbox.writablePath then
+          if nowSandbox.writablePath then
             ''--bind "$PWD" "$PWD" --chdir "$PWD"''
           else
             ''--ro-bind "$PWD" "$PWD" --chdir "$PWD"''
@@ -53,14 +53,14 @@ if sandbox.enable or false then
         --ro-bind-try /etc/group /etc/group \
         --ro-bind-try /etc/nix/nix.conf /etc/nix/nix.conf \
         ${
-          if sandbox.useHome then
+          if nowSandbox.useHome then
             ''--bind "$HOME" "$HOME"''
           else
             "--dir /homeless-shelter --setenv HOME /homeless-shelter"
         } \
         --setenv NIX_CONFIG "experimental-features = nix-command flakes" \
         --die-with-parent \
-        -- ${script} "$@"
+        -- ${nowScript} "$@"
     ''
 
   else if stdenvNoCC.hostPlatform.isDarwin then
@@ -104,19 +104,19 @@ if sandbox.enable or false then
             (global-name "com.apple.system.opendirectoryd.libinfo")
             (global-name "com.apple.trustd"))
 
-          ${lib.optionalString sandbox.networkAccess ''
+          ${lib.optionalString nowSandbox.networkAccess ''
             (allow network-outbound)
             (allow network-inbound)
             (allow mach-lookup
               (global-name "com.apple.mDNSResponder"))
           ''}
 
-          ${lib.optionalString sandbox.useHome ''
+          ${lib.optionalString nowSandbox.useHome ''
             (allow file-read* file-write* (subpath (param "HOME")))
           ''}
 
           ${
-            if sandbox.writablePath then
+            if nowSandbox.writablePath then
               ''
                 (allow file-read* file-write* (subpath (param "PWD")))
               ''
@@ -128,17 +128,17 @@ if sandbox.enable or false then
         '';
       };
     in
-    writeShellScript script.name ''
+    writeShellScript nowScript.name ''
       set -euo pipefail
       exec /usr/bin/sandbox-exec \
         -D HOME="$HOME" \
         -D PWD="$PWD" \
         -D TMPDIR="''${TMPDIR:-/tmp}" \
-        -f ${profile} -- ${script} "$@"
+        -f ${profile} -- ${nowScript} "$@"
     ''
 
   else
     throw "sandboxing is currently only supported on Linux and macOS"
 
 else
-  script
+  nowScript

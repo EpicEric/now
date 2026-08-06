@@ -68,7 +68,7 @@ enum Command {
         workflow: Option<PathBuf>,
     },
 
-    /// Run a workflow.
+    /// Run one or more jobs.
     Run {
         /// Jobs to target in this run.
         ///
@@ -126,7 +126,7 @@ enum Command {
         /// A semicolon-separated list of build machines.
         /// When specified, overrides the remote builders configuration of the host.
         ///
-        /// Cannot be used together with the `--local-only` argument.
+        /// Cannot be used together with the `--local-only` option.
         ///
         /// For more information on the syntax, see:
         /// <https://nix.dev/manual/nix/latest/command-ref/conf-file#conf-builders>
@@ -138,14 +138,14 @@ enum Command {
         ///
         /// Jobs that cannot run in the local builder will fail.
         ///
-        /// Cannot be used together with either the `--builders` or `--remote-only` arguments.
+        /// Cannot be used together with either the `--builders` or `--remote-only` options.
         #[arg(long, conflicts_with_all = ["builders", "remote_only"])]
         local_only: bool,
 
         /// When specified, runs all jobs in remote builders,
         /// only using the local runner for job orchestration.
         ///
-        /// Cannot be used together with the `--local-only` argument.
+        /// Cannot be used together with the `--local-only` option.
         #[arg(long)]
         remote_only: bool,
 
@@ -216,7 +216,7 @@ fn find_workflow(workflow: Option<PathBuf>) -> color_eyre::Result<PathBuf> {
 }
 
 fn job_completer() -> Vec<CompletionCandidate> {
-    let result: color_eyre::Result<Vec<CompletionCandidate>> = (|| {
+    let result: color_eyre::Result<_> = (|| {
         let command_matches = match Command::command().try_get_matches_from(std::env::args_os()) {
             Ok(command_matches) => command_matches,
             Err(_) => Command::command().try_get_matches_from(std::env::args_os().skip(2))?,

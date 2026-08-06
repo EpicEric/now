@@ -129,13 +129,11 @@ let
         value
       ) (jobEnv // step.env);
 
-      sandbox =
-        if step.sandbox != null then
-          (if jobSandbox != null then jobSandbox else { }) // step.sandbox
-        else if jobSandbox != null then
-          jobSandbox
+      nowSandbox =
+        if lib.isBool step.sandbox then
+          (if lib.isBool jobSandbox then { } else jobSandbox) // { enable = step.sandbox; }
         else
-          { };
+          (if lib.isBool jobSandbox then { enable = jobSandbox; } else jobSandbox) // step.sandbox;
     in
     {
       name = if (step.name != null && step.name != "") then step.name else placeholder_name;
@@ -143,6 +141,7 @@ let
       runDrv =
         (writeShellApplication {
           name = "now-step";
+          checkPhase = "";
           runtimeInputs = step.path ++ [
             (mkNowStep {
               inherit useCache pkgs;
@@ -151,18 +150,12 @@ let
           text = ''
             now-step ${if step."__nowUpload_${evalId}" == null then "" else "--preserve-stdout"} ${
               pkgs.callPackage ./sandbox.nix {
-                inherit sandbox;
-                script = script step.run;
+                inherit nowSandbox;
+                nowScript = script step.run;
               }
             } ${
-              builtins.concatStringsSep " " (
-                map lib.strings.escapeShellArg (
-                  builtins.attrNames (
-                    builtins.mapAttrs (_: value: value."__nowSecret_${evalId}") (
-                      lib.filterAttrs (_: value: value ? "__nowSecret_${evalId}") env
-                    )
-                  )
-                )
+              lib.escapeShellArgs (
+                builtins.attrNames (lib.filterAttrs (_: value: value ? "__nowSecret_${evalId}") env)
               )
             }
           '';
@@ -174,6 +167,7 @@ let
         else
           (writeShellApplication {
             name = "now-step";
+            checkPhase = "";
             runtimeInputs = step.path ++ [
               (mkNowStep {
                 inherit useCache pkgs;
@@ -182,18 +176,12 @@ let
             text = ''
               now-step ${
                 pkgs.callPackage ./sandbox.nix {
-                  inherit sandbox;
-                  script = script step.teardown;
+                  inherit nowSandbox;
+                  nowScript = script step.teardown;
                 }
               } ${
-                builtins.concatStringsSep " " (
-                  map lib.strings.escapeShellArg (
-                    builtins.attrNames (
-                      builtins.mapAttrs (_: value: value."__nowSecret_${evalId}") (
-                        lib.filterAttrs (_: value: value ? "__nowSecret_${evalId}") env
-                      )
-                    )
-                  )
+                lib.escapeShellArgs (
+                  builtins.attrNames (lib.filterAttrs (_: value: value ? "__nowSecret_${evalId}") env)
                 )
               }
             '';
