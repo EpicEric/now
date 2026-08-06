@@ -4,13 +4,14 @@
 
 ---
 
-# now
-
 Nix-based distributed command runner.
 
 ## Status
 
 Still an early work-in-progress. Expect frequent breaking changes and broken functionality.
+
+> [!Note]
+> LLM disclaimer: This repo includes minor contributions from large language models.
 
 ## Quick start
 
@@ -41,8 +42,7 @@ Here's a full example of `now`'s features:
 { runner, lib, ... }:
 {
   name = "Optional name for the workflow";
-  # Specify default job(s) to run (override with --all-jobs, or by passing jobs explicitly)
-  default = [ "job-1" ];
+  default = [ "job-1" ]; # Default jobs to run when jobs aren't specified
   jobs = {
     # Jobs are a sequence of steps run on a single machine, in parallel with other jobs
     job-1 =
