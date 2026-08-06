@@ -11,7 +11,7 @@ Nix-based distributed command runner.
 Still an early work-in-progress. Expect frequent breaking changes and broken functionality.
 
 > [!Note]
-> LLM disclaimer: This repo includes minor contributions from large language models.
+> LLM disclaimer: This repo includes minor contributions from large language models, all of them thoroughly reviewed by a human.
 
 ## Quick start
 

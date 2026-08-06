@@ -13,6 +13,7 @@ in
         "test-cycle"
         "test-env"
         "test-error"
+        "test-flake"
         "test-jobs"
         "test-matrix"
         "test-nixpkgs"
@@ -129,6 +130,22 @@ in
                 echo ""
                 echo "=== hint: this means the test works ==="
               fi
+            '';
+          }
+        ];
+      };
+
+    test-flake =
+      { pkgs, ... }:
+      {
+        name = "Test flake";
+        steps = [
+          {
+            path = [
+              (mkNow pkgs)
+            ];
+            run = ''
+              now run --flake .now/tests
             '';
           }
         ];

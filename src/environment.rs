@@ -30,7 +30,7 @@ use crate::{
     project::{ProjectSource, create_nix_project_source},
     secret::SecretString,
     utils::get_random_string,
-    workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow},
+    workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow, WorkflowSource},
 };
 
 pub(crate) static EVAL_ID: LazyLock<String> = LazyLock::new(|| get_random_string(10));
@@ -53,7 +53,7 @@ struct ParsedWorkflow {
 impl NowEnvironment {
     #[instrument]
     pub(crate) async fn get(
-        workflow: &Path,
+        workflow: &WorkflowSource,
         ctrl_c: Receiver<()>,
         env_file: Option<&PathBuf>,
         use_cache: bool,
@@ -154,15 +154,11 @@ impl NowEnvironment {
 
     #[instrument]
     async fn parse_workflow(
-        workflow: &Path,
+        workflow: &WorkflowSource,
         nix_project_source: &Path,
         use_cache: bool,
     ) -> color_eyre::Result<ParsedWorkflow> {
-        let workflow_canonical = std::fs::canonicalize(workflow)?;
-        let workflow_str = workflow_canonical
-            .to_str()
-            .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
-        let workflow_path = format!("(/. + {})", serde_json::to_string(&workflow_str)?);
+        let workflow_path = workflow.nix_expression()?;
 
         let nix_env = nix_project_source.join("nix/env.nix");
         let nix_env_canonical = std::fs::canonicalize(&nix_env)?;

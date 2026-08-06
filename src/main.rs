@@ -27,7 +27,9 @@ use tracing_duper::DuperLayer;
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
-    environment::NowEnvironment, subscriber::NowSubscriberLayer, workflow::NowWorkflowParams,
+    environment::NowEnvironment,
+    subscriber::NowSubscriberLayer,
+    workflow::{NowWorkflowParams, WorkflowSource},
 };
 
 mod builder;
@@ -82,6 +84,8 @@ enum Command {
         jobs: Option<Vec<String>>,
 
         /// Path to the workflow.
+        ///
+        /// Cannot be used together with the `--flake` option.
         #[arg(
             short,
             long,
@@ -89,6 +93,12 @@ enum Command {
             add = ArgValueCompleter::new(PathCompleter::any().filter(workflow_filter)),
         )]
         workflow: Option<PathBuf>,
+
+        /// Path to the flake and an optional attribute (defaults to the `now` output).
+        ///
+        /// Cannot be used together with the `--workflow` option.
+        #[arg(short, long, value_name = "FLAKE[#ATTR]", conflicts_with = "workflow")]
+        flake: Option<String>,
 
         /// Run all jobs in the workflow.
         ///
@@ -167,12 +177,15 @@ fn workflow_filter(path: &Path) -> bool {
     path.is_dir() || path.extension().is_some_and(|extension| extension == "nix")
 }
 
-fn find_workflow(workflow: Option<PathBuf>) -> color_eyre::Result<PathBuf> {
+fn find_workflow(
+    workflow: Option<PathBuf>,
+    flake: Option<String>,
+) -> color_eyre::Result<WorkflowSource> {
     if let Some(workflow) = workflow {
         if workflow.is_dir() {
             let now_path = workflow.join("now.nix");
             if now_path.exists() && !now_path.is_dir() {
-                Ok(now_path)
+                Ok(WorkflowSource::Path(now_path.canonicalize()?))
             } else {
                 Err(color_eyre::eyre::eyre!(
                     "Workflow 'now.nix' not found in directory '{}'",
@@ -185,8 +198,77 @@ fn find_workflow(workflow: Option<PathBuf>) -> color_eyre::Result<PathBuf> {
                 workflow.to_string_lossy()
             ))
         } else {
-            Ok(workflow.canonicalize()?)
+            Ok(WorkflowSource::Path(workflow.canonicalize()?))
         }
+    } else if let Some(flake) = flake {
+        let (path, attribute) = flake.trim().split_once('#').unwrap_or((&flake, "now"));
+
+        // Validate that each segment is between double-quotes, isn't empty, or doesn't have invalid characters
+        let mut quoted = false;
+        let mut attribute_chars = attribute.chars().enumerate().peekable();
+        while let Some((i, char)) = attribute_chars.next() {
+            match char {
+                '"' => {
+                    if quoted {
+                        if attribute_chars.peek().is_some_and(|(_, next)| *next != '.') {
+                            return Err(color_eyre::eyre::eyre!("Invalid quoted attribute"));
+                        }
+                        quoted = false;
+                    } else if i > 0 {
+                        return Err(color_eyre::eyre::eyre!("Invalid quoted attribute"));
+                    } else {
+                        quoted = true;
+                    }
+                }
+                '.' => {
+                    if !quoted {
+                        let Some((_, next)) = attribute_chars.peek() else {
+                            return Err(color_eyre::eyre::eyre!("Empty attribute name"));
+                        };
+                        if *next == '.' {
+                            return Err(color_eyre::eyre::eyre!("Empty attribute name"));
+                        }
+                        if *next == '"' {
+                            quoted = true;
+                            let _ = attribute_chars.next();
+                        }
+                    }
+                }
+                '\\' if quoted => match attribute_chars.next() {
+                    Some((_, '\\' | '"' | '$' | 'n' | 'r' | 't')) => {}
+                    Some((_, c)) => {
+                        return Err(color_eyre::eyre::eyre!("Invalid escape sequence: \\{}", c));
+                    }
+                    None => return Err(color_eyre::eyre::eyre!("Invalid escape")),
+                },
+                _ if quoted => {}
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => {}
+                _ => return Err(color_eyre::eyre::eyre!("Invalid character")),
+            }
+        }
+        if quoted {
+            return Err(color_eyre::eyre::eyre!("Unclosed quoted attribute"));
+        }
+
+        // If path is a filesystem path, convert to an absolute path
+        let path = if path.contains(':') {
+            path.to_string()
+        } else {
+            let path = Path::new(path).canonicalize()?;
+            std::env::set_current_dir(if path.is_dir() {
+                &path
+            } else {
+                path.parent().expect("flake has parent directory")
+            })?;
+            path.to_str()
+                .ok_or_eyre("Flake path is not UTF-8")?
+                .to_string()
+        };
+
+        Ok(WorkflowSource::Flake {
+            path,
+            attribute: attribute.to_string(),
+        })
     } else {
         let canonical_cwdir = std::env::current_dir()?.canonicalize()?;
         let mut cwdir = Some(canonical_cwdir.as_path());
@@ -194,7 +276,7 @@ fn find_workflow(workflow: Option<PathBuf>) -> color_eyre::Result<PathBuf> {
             let now_path = cwdir_path.join("now.nix");
             if now_path.exists() && !now_path.is_dir() {
                 std::env::set_current_dir(cwdir_path)?;
-                return Ok(now_path);
+                return Ok(WorkflowSource::Path(now_path));
             } else {
                 cwdir = cwdir_path.parent();
             }
@@ -218,7 +300,8 @@ fn job_completer() -> Vec<CompletionCandidate> {
             .ok_or_eyre("not run subcommand")?;
 
         let maybe_workflow = matches.try_get_one::<PathBuf>("workflow")?;
-        let workflow = find_workflow(maybe_workflow.cloned())?;
+        let maybe_flake = matches.try_get_one::<String>("flake")?;
+        let workflow = find_workflow(maybe_workflow.cloned(), maybe_flake.cloned())?;
 
         let jobs_iter = matches.try_get_many::<String>("jobs")?.unwrap_or_default();
 
@@ -278,8 +361,9 @@ fn main() -> color_eyre::Result<()> {
         }
 
         Command::Run {
-            workflow,
             jobs,
+            workflow,
+            flake,
             all_jobs,
             env_file,
             abort,
@@ -309,7 +393,7 @@ fn main() -> color_eyre::Result<()> {
                     .init();
             }
 
-            let workflow = find_workflow(workflow)?;
+            let workflow = find_workflow(workflow, flake)?;
 
             if let Some(cwdir) = cwdir {
                 debug!("Changing cwdir to '{}'...", cwdir.to_string_lossy());

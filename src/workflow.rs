@@ -17,7 +17,7 @@
 use std::{
     collections::{HashMap, HashSet},
     io::Write,
-    path::{Path, PathBuf},
+    path::PathBuf,
     pin::Pin,
     process::Command,
     time::Duration,
@@ -110,8 +110,40 @@ pub(crate) struct NowStepDownload {
     pub(crate) download_name: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) enum WorkflowSource {
+    Path(PathBuf),
+    Flake { path: String, attribute: String },
+}
+
+impl WorkflowSource {
+    pub(crate) fn nix_expression(&self) -> color_eyre::Result<String> {
+        match self {
+            WorkflowSource::Path(path) => {
+                debug_assert!(path.is_absolute());
+                let workflow_str = path
+                    .to_str()
+                    .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
+                Ok(format!("(/. + {})", serde_json::to_string(&workflow_str)?))
+            }
+            WorkflowSource::Flake { path, attribute } => {
+                Ok(format!("(builtins.getFlake \"{path}\").{attribute}"))
+            }
+        }
+    }
+}
+
+impl From<&WorkflowSource> for String {
+    fn from(value: &WorkflowSource) -> Self {
+        match value {
+            WorkflowSource::Path(path) => path.to_string_lossy().into_owned(),
+            WorkflowSource::Flake { path, attribute } => format!("{}#{}", path, attribute),
+        }
+    }
+}
+
 pub(crate) struct NowWorkflowParams {
-    pub(crate) workflow: PathBuf,
+    pub(crate) workflow: WorkflowSource,
     pub(crate) ctrl_c: Receiver<()>,
     pub(crate) use_cache: bool,
     pub(crate) abort: bool,
@@ -128,7 +160,7 @@ impl NowEnvironment {
     #[instrument(
         skip_all,
         fields(
-            workflow = ?workflow_path,
+            workflow,
             use_cache,
             abort,
             timeout,
@@ -143,7 +175,7 @@ impl NowEnvironment {
     pub(crate) fn run_workflow(
         &mut self,
         NowWorkflowParams {
-            workflow: workflow_path,
+            workflow,
             ctrl_c,
             use_cache,
             abort,
@@ -163,9 +195,9 @@ impl NowEnvironment {
             runner,
             is_remote = false,
             "Evaluating workflow '{}'...",
-            workflow_path.to_string_lossy()
+            String::from(&workflow)
         );
-        let workflow = self.evaluate_workflow(&workflow_path, use_cache)?;
+        let workflow = self.evaluate_workflow(&workflow, use_cache)?;
         if eval {
             println!("{}", serde_json::to_string(&workflow)?);
             return Ok(());
@@ -282,14 +314,10 @@ impl NowEnvironment {
     #[instrument(skip(self))]
     fn evaluate_workflow(
         &self,
-        workflow: &Path,
+        workflow: &WorkflowSource,
         use_cache: bool,
     ) -> color_eyre::Result<NowWorkflow> {
-        let workflow_canonical = std::fs::canonicalize(workflow)?;
-        let workflow_str = workflow_canonical
-            .to_str()
-            .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
-        let workflow_path = format!("(/. + {})", serde_json::to_string(&workflow_str)?);
+        let workflow_path = workflow.nix_expression()?;
 
         let nix_workflow = self.nix_project_source.as_ref().join("nix/workflow.nix");
         let nix_workflow_canonical = std::fs::canonicalize(&nix_workflow)?;
