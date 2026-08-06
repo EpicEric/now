@@ -186,11 +186,7 @@ in
               (mkNow pkgs)
             ];
             run = ''
-              # Your `hello` version
               now run --workflow .now/tests/nixpkgs.nix
-
-              # now's `hello` version
-              now run --workflow .now/tests/nixpkgs.nix --nixpkgs '(import ./.tack).nixpkgs'
             '';
           }
         ];

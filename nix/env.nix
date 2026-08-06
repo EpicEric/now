@@ -16,8 +16,6 @@
 
 {
   system ? builtins.currentSystem,
-  nixpkgs ? <nixpkgs>,
-  pkgs ? import nixpkgs { inherit system; },
 }:
 
 {
@@ -26,7 +24,7 @@
   useCache,
   gcrootDir,
 }:
-import ./workflow.nix { inherit system nixpkgs pkgs; } {
+import ./workflow.nix { inherit system; } {
   inherit
     workflow
     evalId

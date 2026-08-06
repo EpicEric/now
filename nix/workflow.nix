@@ -16,14 +16,9 @@
 
 {
   system ? builtins.currentSystem,
-  nixpkgs ? <nixpkgs>,
-  pkgs ? import nixpkgs { inherit system; },
 }:
 
 let
-  inherit (pkgs) lib;
-  types = import ./types.nix { inherit lib; };
-
   mkNowStep =
     { useCache, pkgs }:
     if useCache then
@@ -41,10 +36,14 @@ let
       pkgs',
       specialArgs ? { },
     }:
-    (lib.evalModules {
+    let
+      inherit (pkgs') lib;
+      types = import ./types.nix { inherit lib; };
+    in
+    (pkgs'.lib.evalModules {
       modules = [
         {
-          options.__job = lib.mkOption {
+          options.__job = pkgs'.lib.mkOption {
             type = types.job {
               inherit evalId specialArgs;
               pkgs = pkgs';
@@ -58,6 +57,7 @@ let
   mapMaybeList =
     {
       fn,
+      pkgs,
       job',
       evalId,
     }:
@@ -106,6 +106,7 @@ let
     }:
     let
       inherit (pkgs)
+        lib
         writeShellApplication
         writeTextFile
         ;
@@ -206,6 +207,8 @@ let
       null
     else
       let
+        inherit (pkgs) lib;
+        types = import ./types.nix { inherit lib; };
         step' =
           (lib.evalModules {
             modules = [
@@ -230,8 +233,12 @@ let
     {
       evalId,
       useCache,
+      pkgs,
       module,
     }:
+    let
+      inherit (pkgs) lib;
+    in
     module.config
     // {
       default =
@@ -268,7 +275,7 @@ let
               ) job.steps;
             }
           );
-          inherit job' evalId;
+          inherit pkgs job' evalId;
         }
       ) module.config.jobs;
     };
@@ -290,6 +297,12 @@ let
           default = null;
           description = "Default job(s) to run for this workflow";
         };
+        nixpkgs = lib.mkOption {
+          type = types.raw;
+          default = <nixpkgs>;
+          defaultText = "<nixpkgs>";
+          description = "Expression that evaluates to nixpkgs.";
+        };
         jobs = lib.mkOption {
           type = types.attrsOf (types.nullOr types.raw);
           description = "Jobs in the workflow.";
@@ -303,91 +316,112 @@ in
   evalId,
   useCache,
   gcrootDir,
+  lib' ? import <nixpkgs/lib>,
   vars ? { },
   var ?
     name:
-    assert lib.assertMsg (lib.isValidPosixName name)
+    assert lib'.assertMsg (lib'.isValidPosixName name)
       "environment variable '${name}' is not a valid POSIX variable name";
     vars.${name} or "",
 }:
 let
   secret =
     name:
-    assert lib.assertMsg (lib.isValidPosixName name)
+    assert lib'.assertMsg (lib'.isValidPosixName name)
       "environment variable '${name}' is not a valid POSIX variable name";
     {
       ${"__nowSecret_${evalId}"} = name;
     };
+
+  runnerFn =
+    { pkgs }:
+    let
+      inherit (pkgs) lib;
+    in
+    {
+      inherit secret var;
+
+      matrix =
+        variants: job:
+        map (v: {
+          inherit job;
+          pkgs' = v.pkgs or pkgs;
+          specialArgs = removeAttrs v [
+            "pkgs"
+            "requiredSystemFeatures"
+          ];
+          requiredSystemFeatures = v.requiredSystemFeatures or [ ];
+        }) variants;
+
+      steps = {
+        build =
+          name: deriv:
+          assert lib.assertMsg (lib.isDerivation deriv)
+            "derivation argument to runner.steps.build must be a derivation";
+          { pkgs, ... }: {
+            name = "build ${if name == "" then deriv.name else name}";
+            path = [
+              pkgs.nix
+              pkgs.mktemp
+            ];
+            run = ''
+              drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
+              tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
+              nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
+              printf 'now: Built %s\n' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
+            '';
+          };
+
+        upload =
+          name: deriv:
+          assert lib.assertMsg (name != "") "name argument to runner.steps.upload must not be empty";
+          assert lib.assertMsg (lib.isDerivation deriv)
+            "derivation argument to runner.steps.upload must be a derivation";
+          { pkgs, ... }: {
+            name = "upload ${name}";
+            path = [
+              pkgs.nix
+              pkgs.mktemp
+            ];
+            run = ''
+              drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
+              tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
+              nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
+              printf '%s' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
+            '';
+            ${"__nowUpload_${evalId}"} = name;
+          };
+      };
+
+      download = name: {
+        ${"__nowDownload_${evalId}"} = name;
+      };
+    };
+
+  bootstrap = lib'.evalModules {
+    class = "now";
+    modules = [
+      nowModule
+      workflow
+    ];
+    specialArgs = {
+      runner = runnerFn { pkgs = import <nixpkgs> { inherit system; }; };
+    };
+  };
+
+  pkgs = import bootstrap.config.nixpkgs { inherit system; };
 in
 nowConfig {
-  inherit evalId useCache;
+  inherit evalId useCache pkgs;
   module = (
-    lib.evalModules {
+    pkgs.lib.evalModules {
       class = "now";
       modules = [
         nowModule
         workflow
       ];
       specialArgs = {
-        runner = {
-          inherit secret var;
-
-          matrix =
-            variants: job:
-            map (v: {
-              inherit job;
-              pkgs' = v.pkgs or pkgs;
-              specialArgs = removeAttrs v [
-                "pkgs"
-                "requiredSystemFeatures"
-              ];
-              requiredSystemFeatures = v.requiredSystemFeatures or [ ];
-            }) variants;
-
-          steps = {
-            build =
-              name: deriv:
-              assert lib.assertMsg (lib.isDerivation deriv)
-                "derivation argument to runner.steps.build must be a derivation";
-              { pkgs, ... }: {
-                name = "build ${if name == "" then deriv.name else name}";
-                path = [
-                  pkgs.nix
-                  pkgs.mktemp
-                ];
-                run = ''
-                  drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
-                  tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
-                  nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
-                  printf 'now: Built %s\n' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
-                '';
-              };
-
-            upload =
-              name: deriv:
-              assert lib.assertMsg (name != "") "name argument to runner.steps.upload must not be empty";
-              assert lib.assertMsg (lib.isDerivation deriv)
-                "derivation argument to runner.steps.upload must be a derivation";
-              { pkgs, ... }: {
-                name = "upload ${name}";
-                path = [
-                  pkgs.nix
-                  pkgs.mktemp
-                ];
-                run = ''
-                  drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
-                  tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
-                  nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
-                  printf '%s' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
-                '';
-                ${"__nowUpload_${evalId}"} = name;
-              };
-          };
-
-          download = name: {
-            ${"__nowDownload_${evalId}"} = name;
-          };
-        };
+        runner = runnerFn { inherit pkgs; };
       };
     }
   );

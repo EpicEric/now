@@ -149,15 +149,6 @@ enum Command {
         #[arg(long)]
         remote_only: bool,
 
-        /// Nix expression that evaluates to `nixpkgs`.
-        #[arg(
-            short,
-            long = "nixpkgs",
-            default_value = "<nixpkgs>",
-            value_name = "EXPRESSION"
-        )]
-        nixpkgs_expr: String,
-
         /// Whether to use now's binary cache and pinned nixpkgs when building the step runner.
         ///
         /// This avoids having to download and run the compiler toolchain on local and remote builds.
@@ -236,13 +227,7 @@ fn job_completer() -> Vec<CompletionCandidate> {
             let _ = sender.try_send(());
         });
 
-        let environment = smol::block_on(NowEnvironment::get(
-            &workflow,
-            ctrl_c,
-            None,
-            "<nixpkgs>",
-            false,
-        ))?;
+        let environment = smol::block_on(NowEnvironment::get(&workflow, ctrl_c, None, false))?;
 
         let mut jobs_iter = jobs_iter.rev();
         let current_job = jobs_iter.next();
@@ -304,7 +289,6 @@ fn main() -> color_eyre::Result<()> {
             builders,
             local_only,
             remote_only,
-            nixpkgs_expr,
             use_cache,
             tracing,
         } => {
@@ -338,18 +322,12 @@ fn main() -> color_eyre::Result<()> {
             })?;
 
             smol::block_on::<color_eyre::Result<()>>(async {
-                let mut environment = NowEnvironment::get(
-                    &workflow,
-                    ctrl_c.clone(),
-                    env_file.as_ref(),
-                    &nixpkgs_expr,
-                    use_cache,
-                )
-                .await?;
+                let mut environment =
+                    NowEnvironment::get(&workflow, ctrl_c.clone(), env_file.as_ref(), use_cache)
+                        .await?;
                 environment.run_workflow(NowWorkflowParams {
                     workflow,
                     ctrl_c,
-                    nixpkgs_expr,
                     use_cache,
                     abort,
                     timeout: timeout.map(|timeout| timeout.into()),

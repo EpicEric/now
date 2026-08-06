@@ -113,7 +113,6 @@ pub(crate) struct NowStepDownload {
 pub(crate) struct NowWorkflowParams {
     pub(crate) workflow: PathBuf,
     pub(crate) ctrl_c: Receiver<()>,
-    pub(crate) nixpkgs_expr: String,
     pub(crate) use_cache: bool,
     pub(crate) abort: bool,
     pub(crate) timeout: Option<Duration>,
@@ -130,7 +129,6 @@ impl NowEnvironment {
         skip_all,
         fields(
             workflow = ?workflow_path,
-            nixpkgs_expr,
             use_cache,
             abort,
             timeout,
@@ -147,7 +145,6 @@ impl NowEnvironment {
         NowWorkflowParams {
             workflow: workflow_path,
             ctrl_c,
-            nixpkgs_expr,
             use_cache,
             abort,
             timeout,
@@ -168,7 +165,7 @@ impl NowEnvironment {
             "Evaluating workflow '{}'...",
             workflow_path.to_string_lossy()
         );
-        let workflow = self.evaluate_workflow(&workflow_path, nixpkgs_expr, use_cache)?;
+        let workflow = self.evaluate_workflow(&workflow_path, use_cache)?;
         if eval {
             println!("{}", serde_json::to_string(&workflow)?);
             return Ok(());
@@ -286,7 +283,6 @@ impl NowEnvironment {
     fn evaluate_workflow(
         &self,
         workflow: &Path,
-        nixpkgs_expr: String,
         use_cache: bool,
     ) -> color_eyre::Result<NowWorkflow> {
         let workflow_canonical = std::fs::canonicalize(workflow)?;
@@ -302,14 +298,12 @@ impl NowEnvironment {
             .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
         let nix_workflow_path = format!("(/. + {})", serde_json::to_string(&nix_workflow_str)?);
 
-        let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
-
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;
         let eval_id = serde_json::to_string(&*EVAL_ID)?;
         let nix_project_path = serde_json::to_string(self.nix_project_source.as_ref())?;
 
         let nix_command = format!(
-            "(import {nix_workflow_path} {workflow_args}) {{ workflow = {workflow_path}; vars = builtins.fromJSON {vars_json}; evalId = {eval_id}; useCache = {use_cache}; gcrootDir = {nix_project_path}; }}"
+            "(import {nix_workflow_path} {{ }}) {{ workflow = {workflow_path}; vars = builtins.fromJSON {vars_json}; evalId = {eval_id}; useCache = {use_cache}; gcrootDir = {nix_project_path}; }}"
         );
 
         let mut command = Command::new("nix");

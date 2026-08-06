@@ -56,7 +56,6 @@ impl NowEnvironment {
         workflow: &Path,
         ctrl_c: Receiver<()>,
         env_file: Option<&PathBuf>,
-        nixpkgs_expr: &str,
         use_cache: bool,
     ) -> color_eyre::Result<NowEnvironment> {
         let mut env_vars: HashMap<OsString, OsString> = HashMap::new();
@@ -77,13 +76,8 @@ impl NowEnvironment {
             async {
                 let nix_project_source = smol::unblock(create_nix_project_source).await?;
 
-                let parsed_workflow = Self::parse_workflow(
-                    workflow,
-                    nix_project_source.as_ref(),
-                    nixpkgs_expr,
-                    use_cache,
-                )
-                .await?;
+                let parsed_workflow =
+                    Self::parse_workflow(workflow, nix_project_source.as_ref(), use_cache).await?;
 
                 let secrets: color_eyre::Result<HashMap<String, SecretString>> = parsed_workflow
                     .secrets
@@ -162,7 +156,6 @@ impl NowEnvironment {
     async fn parse_workflow(
         workflow: &Path,
         nix_project_source: &Path,
-        nixpkgs_expr: &str,
         use_cache: bool,
     ) -> color_eyre::Result<ParsedWorkflow> {
         let workflow_canonical = std::fs::canonicalize(workflow)?;
@@ -178,13 +171,11 @@ impl NowEnvironment {
             .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
         let nix_env_path = format!("(/. + {})", serde_json::to_string(&nix_env_str)?);
 
-        let workflow_args = format!("{{ nixpkgs = ({}); }}", nixpkgs_expr);
-
         let eval_id = serde_json::to_string(&*EVAL_ID)?;
         let nix_project_path = serde_json::to_string(nix_project_source)?;
 
         let nix_command = format!(
-            "import {nix_env_path} {workflow_args} {{ workflow = {workflow_path}; evalId = {eval_id}; useCache = {use_cache}; gcrootDir = {nix_project_path}; }}"
+            "import {nix_env_path} {{ }} {{ workflow = {workflow_path}; evalId = {eval_id}; useCache = {use_cache}; gcrootDir = {nix_project_path}; }}"
         );
 
         let mut command = Command::new("nix");

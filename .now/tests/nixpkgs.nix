@@ -1,6 +1,8 @@
 {
   default = "nixpkgs";
 
+  nixpkgs = (import ../../.tack).nixpkgs;
+
   jobs = {
     nixpkgs =
       { pkgs, ... }:
