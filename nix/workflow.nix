@@ -33,20 +33,19 @@ let
     {
       job,
       evalId,
-      pkgs',
+      pkgs,
       specialArgs ? { },
     }:
     let
-      inherit (pkgs') lib;
+      inherit (pkgs) lib;
       types = import ./types.nix { inherit lib; };
     in
-    (pkgs'.lib.evalModules {
+    (pkgs.lib.evalModules {
       modules = [
         {
-          options.__job = pkgs'.lib.mkOption {
+          options.__job = pkgs.lib.mkOption {
             type = types.job {
-              inherit evalId specialArgs;
-              pkgs = pkgs';
+              inherit evalId specialArgs pkgs;
             };
           };
         }
@@ -62,10 +61,11 @@ let
       evalId,
     }:
     let
+      pkgs' = pkgs;
       normalize =
         {
           job,
-          pkgs' ? pkgs,
+          pkgs ? pkgs',
           specialArgs ? { },
           requiredSystemFeatures ? [ ],
         }:
@@ -74,11 +74,12 @@ let
             inherit
               job
               evalId
-              pkgs'
+              pkgs
               specialArgs
               ;
           };
-          inherit pkgs' requiredSystemFeatures;
+          inherit requiredSystemFeatures;
+          inherit pkgs;
         };
     in
     if builtins.isList job' then
@@ -86,7 +87,7 @@ let
         e:
         normalize {
           inherit (e) job;
-          pkgs' = e.pkgs' or pkgs;
+          pkgs = e.pkgs or pkgs;
           specialArgs = e.specialArgs or { };
           requiredSystemFeatures = e.requiredSystemFeatures or [ ];
         }
@@ -249,7 +250,7 @@ let
           fn = (
             {
               job,
-              pkgs',
+              pkgs,
               requiredSystemFeatures,
             }:
             assert lib.assertMsg (builtins.all (
@@ -259,15 +260,14 @@ let
             // {
               name = if (job.name != null && job.name != "") then job.name else jobKey;
               needs = if lib.isString job.needs then [ job.needs ] else job.needs;
-              buildSystem = pkgs'.stdenv.buildPlatform.system;
-              hostSystem = pkgs'.stdenv.hostPlatform.system;
+              buildSystem = pkgs.stdenv.buildPlatform.system;
+              hostSystem = pkgs.stdenv.hostPlatform.system;
               inherit requiredSystemFeatures;
               steps = lib.imap0 (
                 i: step:
                 stepFn {
-                  inherit step;
+                  inherit step pkgs;
                   placeholder_name = "${jobKey}-${toString i}";
-                  pkgs = pkgs';
                   jobEnv = job.env;
                   jobSandbox = job.sandbox;
                   inherit evalId useCache;
@@ -345,7 +345,7 @@ let
         variants: job:
         map (v: {
           inherit job;
-          pkgs' = v.pkgs or pkgs;
+          pkgs = v.pkgs or pkgs;
           specialArgs = removeAttrs v [
             "pkgs"
             "requiredSystemFeatures"

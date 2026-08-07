@@ -1086,6 +1086,7 @@ dependencies = [
  "smol",
  "supports-color 3.0.2",
  "tar",
+ "thiserror",
  "tracing",
  "tracing-subscriber",
  "tracing_duper",

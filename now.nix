@@ -5,6 +5,8 @@ in
 {
   default = [ "test" ];
 
+  inherit (import ./.tack) nixpkgs;
+
   jobs = {
     test = {
       name = "Run tests";
@@ -204,6 +206,22 @@ in
             ];
             run = ''
               now run --workflow .now/tests/nixpkgs.nix
+            '';
+          }
+        ];
+      };
+
+    test-skip =
+      { pkgs, ... }:
+      {
+        name = "Test skip non-runnable jobs";
+        steps = [
+          {
+            path = [
+              (mkNow pkgs)
+            ];
+            run = ''
+              now run --builders "" --skip --all-jobs --workflow .now/tests/skip.nix
             '';
           }
         ];

@@ -15,7 +15,7 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     io::Write,
     path::PathBuf,
     pin::Pin,
@@ -23,6 +23,7 @@ use std::{
     time::Duration,
 };
 
+use color_eyre::Section;
 use futures::stream::FuturesUnordered;
 use petgraph::{
     acyclic::Acyclic, algo::Cycle, matrix_graph::NodeIndex, stable_graph::StableDiGraph,
@@ -30,12 +31,12 @@ use petgraph::{
 };
 use serde::{Deserialize, Serialize};
 use smol::{channel::Receiver, stream::StreamExt};
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 
 use crate::{
     builder::{NowBuilder, local::LocalBuilder},
     environment::{EVAL_ID, NowEnvironment},
-    job::JobResult,
+    job::{JobError, JobResult},
     serde::now_job_timeout,
 };
 
@@ -154,6 +155,7 @@ pub(crate) struct NowWorkflowParams {
     pub(crate) builders: Option<String>,
     pub(crate) local_only: bool,
     pub(crate) remote_only: bool,
+    pub(crate) skip: bool,
 }
 
 impl NowEnvironment {
@@ -186,6 +188,7 @@ impl NowEnvironment {
             builders,
             local_only,
             remote_only,
+            skip,
         }: NowWorkflowParams,
     ) -> color_eyre::Result<()> {
         let builder = LocalBuilder::new(self, use_cache, builders, local_only, remote_only)?;
@@ -265,8 +268,7 @@ impl NowEnvironment {
                                 futures.push(self.run_job_single(&builder, job, node_index))
                             }
                             Some(NowJobContainer::Multiple(job_vec)) => {
-                                futures
-                                    .push(self.run_jobs_multiple(&builder, job_vec, node_index)?);
+                                futures.push(self.run_jobs_multiple(&builder, job_vec, node_index));
                             }
                             None => (),
                         },
@@ -274,9 +276,9 @@ impl NowEnvironment {
                 }
 
                 loop {
-                    if let Some(future) = futures.next().await {
+                    if let Some((node_index, future)) = futures.next().await {
                         match future {
-                            Ok(node_index) => {
+                            Ok(()) => {
                                 current_nodes = HashSet::new();
                                 let possible_next_nodes: Vec<_> = tree
                                     .edges_directed(node_index, petgraph::Direction::Outgoing)
@@ -294,11 +296,60 @@ impl NowEnvironment {
                                 }
                                 break;
                             }
+                            Err(error @ JobError::NoMatchingBuilders { .. } | error @ JobError::NoMatchingRunners { .. }) if skip => {
+                                let skip_log = match error {
+                                    JobError::NoMatchingBuilders {
+                                        job_name,
+                                        build_system,
+                                        required_system_features,
+                                    } => format!("No builders match for job '{job_name}' (buildSystem = {build_system}, requiredSystemFeatures = {required_system_features:?}); skipping."),
+                                    JobError::NoMatchingRunners {
+                                        job_name,
+                                        host_system,
+                                        required_system_features,
+                                    } => format!("No runners match for job '{job_name}' (hostSystem = {host_system}, requiredSystemFeatures = {required_system_features:?}); skipping."),
+                                    _ => unreachable!(),
+                                };
+                                warn!("{}", skip_log);
+                                let mut nodes_to_skip: Vec<_> =
+                                    vec![node_index].into_iter().collect();
+                                while !nodes_to_skip.is_empty() {
+                                    while let Some(node_index) = nodes_to_skip.pop() {
+                                        let new_nodes_to_skip: Vec<_> = tree
+                                            .edges_directed(
+                                                node_index,
+                                                petgraph::Direction::Outgoing,
+                                            )
+                                            .map(|edge| edge.target())
+                                            .collect();
+                                        match tree.remove_node(node_index) {
+                                            Some(DagNode::Job) => {
+                                                match nodes.remove(&node_index) {
+                                                    Some(NowJobContainer::Single(job)) => {
+                                                        warn!("... also skipping dependent job '{}'.", job.name);
+                                                    }
+                                                    Some(NowJobContainer::Multiple(job_vec)) => {
+                                                        let job_names: BTreeSet<_> = job_vec.iter().map(|job| &job.name).collect();
+                                                        warn!("... also skipping dependent job set '{:?}'.", job_names);
+                                                    }
+                                                    None => (),
+                                                }
+
+                                            }
+                                            Some(DagNode::Root) | None => {}
+                                        }
+                                        nodes_to_skip.extend(new_nodes_to_skip);
+                                    }
+                                }
+                            }
                             Err(error) => {
                                 if abort {
                                     builder.cancel_builders();
                                 }
-                                result = result.and(Err(error));
+                                result = match result {
+                                    Ok(_) => Err(color_eyre::Report::from(error)),
+                                    Err(report) => Err(report.error(error)),
+                                }
                             }
                         }
                     } else {
@@ -335,7 +386,7 @@ impl NowEnvironment {
         );
 
         let mut command = Command::new("nix");
-        command.args([
+        command.env("NIXPKGS_ALLOW_UNSUPPORTED_SYSTEM", "1").args([
             "--extra-experimental-features",
             "nix-command flakes",
             "eval",

@@ -175,7 +175,7 @@ impl NowEnvironment {
         );
 
         let mut command = Command::new("nix");
-        command.args([
+        command.env("NIXPKGS_ALLOW_UNSUPPORTED_SYSTEM", "1").args([
             "--extra-experimental-features",
             "nix-command flakes",
             "eval",

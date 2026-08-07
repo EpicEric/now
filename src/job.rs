@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf, pin::Pin};
+use std::{collections::HashSet, ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf, pin::Pin};
 
 use futures::{AsyncReadExt, stream::FuturesUnordered};
 use petgraph::matrix_graph::NodeIndex;
@@ -31,12 +31,40 @@ use crate::{
     workflow::{NowJob, NowStepEnvVar},
 };
 
-pub(crate) type JobResult = color_eyre::Result<NodeIndex<u32>>;
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum JobError {
+    #[error(
+        "No builders match for job '{job_name}' (buildSystem = {build_system}, requiredSystemFeatures = {required_system_features:?})"
+    )]
+    NoMatchingBuilders {
+        job_name: String,
+        build_system: String,
+        required_system_features: HashSet<String>,
+    },
+    #[error(
+        "No runners match for job '{job_name}' (hostSystem = {host_system}, requiredSystemFeatures = {required_system_features:?})"
+    )]
+    NoMatchingRunners {
+        job_name: String,
+        host_system: String,
+        required_system_features: HashSet<String>,
+    },
+    #[error("{0}")]
+    Other(color_eyre::Report),
+}
+
+impl From<color_eyre::Report> for JobError {
+    fn from(value: color_eyre::Report) -> Self {
+        JobError::Other(value)
+    }
+}
+
+pub(crate) type JobResult = (NodeIndex<u32>, Result<(), JobError>);
 type JobFut<'a> = Pin<Box<dyn Future<Output = JobResult> + 'a>>;
 
 impl NowEnvironment {
     #[instrument(skip_all, fields(job = job.name))]
-    async fn run_job(&self, local_builder: &LocalBuilder, job: NowJob) -> color_eyre::Result<()> {
+    async fn run_job(&self, local_builder: &LocalBuilder, job: NowJob) -> Result<(), JobError> {
         let mut steps = Vec::with_capacity(job.steps.len());
         let mut derivations = Vec::new();
 
@@ -44,16 +72,15 @@ impl NowEnvironment {
             let (guard, builder) = match local_builder.get_builder(&job).await? {
                 Some((guard, builder)) => (guard, builder),
                 None => {
-                    return Err(color_eyre::eyre::eyre!(
-                        "No builders match for job '{}' (buildSystem = {}, requiredSystemFeatures = {:?})",
-                        job.name,
-                        job.build_system,
-                        job.required_system_features,
-                    ));
+                    return Err(JobError::NoMatchingBuilders {
+                        job_name: job.name,
+                        build_system: job.build_system,
+                        required_system_features: job.required_system_features,
+                    });
                 }
             };
             if matches!(guard.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
-                return Err(color_eyre::eyre::eyre!("Runner aborted"));
+                return Err(color_eyre::eyre::eyre!("Runner aborted").into());
             }
             info!(
                 runner = builder.get_name(),
@@ -102,16 +129,15 @@ impl NowEnvironment {
         let (guard, runner) = match local_builder.get_runner(&job).await? {
             Some((guard, runner)) => (guard, runner),
             None => {
-                return Err(color_eyre::eyre::eyre!(
-                    "No runners match for job '{}' (hostSystem = {}, requiredSystemFeatures = {:?})",
-                    job.name,
-                    job.build_system,
-                    job.required_system_features,
-                ));
+                return Err(JobError::NoMatchingRunners {
+                    job_name: job.name,
+                    host_system: job.host_system,
+                    required_system_features: job.required_system_features,
+                });
             }
         };
         if matches!(guard.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
-            return Err(color_eyre::eyre::eyre!("Runner aborted"));
+            return Err(color_eyre::eyre::eyre!("Runner aborted").into());
         }
         let runner_name = runner.get_name();
         let is_remote = runner.is_remote();
@@ -226,7 +252,7 @@ impl NowEnvironment {
             Ok(())
         };
 
-        let mut result = smol::future::or(steps_fut, async {
+        let mut result: Result<(), JobError> = smol::future::or(steps_fut, async {
             if let Some(timeout) = job.timeout {
                 smol::Timer::after(timeout.into()).await;
                 Err(color_eyre::eyre::eyre!(
@@ -238,7 +264,8 @@ impl NowEnvironment {
                 smol::future::pending::<color_eyre::Result<()>>().await
             }
         })
-        .await;
+        .await
+        .map_err(Into::into);
 
         for (step_name, teardown, step_env) in teardown_stack.into_iter().rev() {
             let _span = tracing::info_span!(
@@ -264,7 +291,8 @@ impl NowEnvironment {
                             "Teardown for step '{}' failed ({})",
                             step_name,
                             error,
-                        ))
+                        )
+                        .into())
                     });
                     continue;
                 }
@@ -304,7 +332,8 @@ impl NowEnvironment {
                             "Teardown for step '{}' failed ({})",
                             step_name,
                             error,
-                        ))
+                        )
+                        .into())
                     });
                     continue;
                 }
@@ -323,13 +352,19 @@ impl NowEnvironment {
                         "Teardown for step '{}' failed ({})",
                         step_name,
                         exit_status
-                    ))
+                    )
+                    .into())
                 });
             }
         }
 
         drop(checkout_child.take());
-        result.and(runner.undo_checkout(job.checkout, &cwdir).await)
+        result.and(
+            runner
+                .undo_checkout(job.checkout, &cwdir)
+                .await
+                .map_err(Into::into),
+        )
     }
 
     pub(crate) fn run_job_single<'a>(
@@ -340,7 +375,7 @@ impl NowEnvironment {
     ) -> JobFut<'a> {
         Box::pin(async move {
             let result = self.run_job(local_builder, job).await;
-            result.map(|_| node_index)
+            (node_index, result)
         })
     }
 
@@ -349,7 +384,7 @@ impl NowEnvironment {
         local_builder: &'a LocalBuilder,
         jobs: Vec<NowJob>,
         node_index: NodeIndex<u32>,
-    ) -> color_eyre::Result<JobFut<'a>> {
+    ) -> JobFut<'a> {
         let mut fail_fast = FuturesUnordered::new();
         let mut no_fail_fast = FuturesUnordered::new();
 
@@ -365,7 +400,7 @@ impl NowEnvironment {
             }
         }
 
-        Ok(Box::pin(async move {
+        Box::pin(async move {
             let (fail_fast, no_fail_fast) = smol::future::zip(
                 async move {
                     while let Some(future) = fail_fast.next().await {
@@ -384,7 +419,7 @@ impl NowEnvironment {
                 },
             )
             .await;
-            fail_fast.and(no_fail_fast).map(|_| node_index)
-        }))
+            (node_index, fail_fast.and(no_fail_fast))
+        })
     }
 }

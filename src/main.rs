@@ -159,6 +159,11 @@ enum Command {
         #[arg(long)]
         remote_only: bool,
 
+        /// When specified, skips jobs that don't match any builders or runners
+        /// and their dependencies.
+        #[arg(long)]
+        skip: bool,
+
         /// Whether to use now's binary cache and pinned nixpkgs when building the step runner.
         ///
         /// This avoids having to download and run the compiler toolchain on local and remote builds.
@@ -373,6 +378,7 @@ fn main() -> color_eyre::Result<()> {
             builders,
             local_only,
             remote_only,
+            skip,
             use_cache,
             tracing,
         } => {
@@ -421,6 +427,7 @@ fn main() -> color_eyre::Result<()> {
                     builders,
                     local_only,
                     remote_only,
+                    skip,
                 })
             })?;
         }
