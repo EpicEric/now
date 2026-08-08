@@ -226,7 +226,7 @@ impl NowBuilder for LocalBuilder {
         checkout: NowCheckout,
     ) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)> {
         match checkout {
-            NowCheckout::Default => Ok((None, std::env::current_dir()?)),
+            NowCheckout::Default | NowCheckout::All => Ok((None, std::env::current_dir()?)),
             NowCheckout::None => {
                 let tmpdir = temp_dir().join(format!("now-{}", get_random_string(10)));
 
@@ -285,6 +285,25 @@ impl NowBuilder for LocalBuilder {
                         stdin_future,
                     })),
                     PathBuf::from(tmpdir),
+                ))
+            }
+            NowCheckout::CloneAll => {
+                let tmpdir = temp_dir().join(format!("now-{}", get_random_string(10)));
+
+                let mut command = Command::new("rsync");
+                command
+                    .args(["-arz", "."])
+                    .arg(&tmpdir)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+
+                Ok((
+                    Some(Box::new(CommandCheckoutTask {
+                        builder: self.get_name(),
+                        child: command.spawn()?,
+                    })),
+                    tmpdir,
                 ))
             }
         }
@@ -384,8 +403,8 @@ impl NowBuilder for LocalBuilder {
 
     async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
         match checkout {
-            NowCheckout::Default => Ok(()),
-            NowCheckout::None | NowCheckout::Clone => {
+            NowCheckout::Default | NowCheckout::All => Ok(()),
+            NowCheckout::None | NowCheckout::Clone | NowCheckout::CloneAll => {
                 let mut command = Command::new("rm");
                 command.arg("-rf").arg(path);
 

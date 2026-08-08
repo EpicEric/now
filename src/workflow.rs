@@ -54,11 +54,13 @@ pub(crate) enum NowJobContainer {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "kebab-case")]
 pub(crate) enum NowCheckout {
     None,
     Default,
     Clone,
+    All,
+    CloneAll,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

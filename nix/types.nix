@@ -145,15 +145,21 @@ let
                 "none"
                 "default"
                 "clone"
+                "all"
+                "clone-all"
               ];
               default = "default";
               description = ''
-                Whether to use the runner's current directory (`"default"`),
-                always create a fresh copy of the current directory (`"clone"`),
-                or run in an empty directory (`"none"`).
+                Strategy for checking out the directory that the job runs on.
+                Options are:
 
-                When using `"default"` with remote builders or `"clone"`,
-                only non-ignored files are copied over.
+                - `"default"`- use the runner's current directory;
+                - `"clone"` - always create a fresh copy of the current directory;
+                - `"none"` - run in an empty directory.
+                - `"all"` - same as `"default"`, but ignored files are also copied
+                over to remote builders.
+                - `"clone-all"` - same as `"clone"`, but ignored files are also copied
+                over.
               '';
             };
             timeout = lib.mkOption {

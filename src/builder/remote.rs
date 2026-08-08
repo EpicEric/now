@@ -279,6 +279,41 @@ impl NowBuilder for RemoteBuilder {
                     PathBuf::from(tmpdir),
                 ))
             }
+            NowCheckout::All | NowCheckout::CloneAll => {
+                let tmpdir = format!("/tmp/now-{}", get_random_string(10));
+                let mut ssh_command: OsString = "ssh ".into();
+                if let Some(ssh_identity) = self.ssh_identity.as_ref() {
+                    ssh_command.push("-i ");
+                    ssh_command.push(ssh_identity);
+                    ssh_command.push(" ");
+                }
+                for arg in ssh_options(&self.control_path) {
+                    ssh_command.push(arg);
+                    ssh_command.push(" ");
+                }
+
+                let mut command = Command::new("rsync");
+                command
+                    .arg("-e")
+                    .arg(ssh_command)
+                    .args(["-arz", "."])
+                    .arg(format!(
+                        "{}:{}",
+                        self.ssh_uri.strip_prefix("ssh://").unwrap_or(&self.ssh_uri),
+                        tmpdir
+                    ))
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+
+                Ok((
+                    Some(Box::new(CommandCheckoutTask {
+                        builder: self.get_name(),
+                        child: command.spawn()?,
+                    })),
+                    PathBuf::from(tmpdir),
+                ))
+            }
             NowCheckout::None => {
                 let tmpdir = format!("/tmp/now-{}", get_random_string(10));
 
@@ -549,7 +584,11 @@ impl NowBuilder for RemoteBuilder {
 
     async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
         match checkout {
-            NowCheckout::Default | NowCheckout::None | NowCheckout::Clone => {
+            NowCheckout::Default
+            | NowCheckout::None
+            | NowCheckout::Clone
+            | NowCheckout::All
+            | NowCheckout::CloneAll => {
                 let mut rm_command: OsString = "rm -rf ".into();
                 rm_command.push(path);
 
