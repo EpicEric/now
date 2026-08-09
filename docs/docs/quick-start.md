@@ -6,13 +6,13 @@ icon: lucide/rocket
 
 ## Installation
 
-The recommended way to install now is via Nix, although it's also available on [crates.io](https://crates.io/crates/now-runner/).
+The recommended way to install now is via Nix (`nix profile add github:EpicEric/now`) or via [crates.io](https://crates.io/crates/now-runner/).
 
 !!! tip
 
     To try it out without installing, you can use `nix run github:EpicEric/now`.
 
-now comes with a binary cache as well. If using a multi-user Nix installation, add the following to `/etc/nix/nix.conf`:
+now comes with a binary cache as well. If you have a multi-user Nix installation, add the following to `/etc/nix/nix.conf`:
 
 ```
 extra-substituters = https://cache.eric.dev.br
@@ -160,7 +160,7 @@ extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+
     }
     ```
 
-    When you run now, specify the flake reference, and an optional attribute with `#path.to.workflow` (defaults to `#now`):
+    When you run now, specify the flake reference, and an optional attribute path `#path.to.workflow` (defaults to `#now`):
 
     ```bash
     now run --flake .

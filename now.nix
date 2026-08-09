@@ -139,7 +139,7 @@ in
           (runner.steps.upload "docs-sandbox" (moduleDocs {
             options.sandbox = pkgs.lib.mkOption {
               description = ''
-                The sandbox module allows you to specify extra restrictions at
+                The sandbox submodule allows you to specify extra restrictions at
                 a job or step level.
 
                 Any step settings override job settings. For example, this allows you to configure

@@ -45,9 +45,14 @@ let
         description = "Whether the sandboxed step has network access.";
       };
       useHome = lib.mkOption {
-        type = types.bool;
+        type = types.either types.bool (types.listOf types.str);
         default = false;
-        description = "Whether the sandboxed step can use the runner user's HOME directory.";
+        description = ''
+          Whether the sandboxed step can use the runner user's HOME directory.
+
+          You can also pass a list of specific directories to mount as writable
+          (eg. `[ ".config/application" ]`).
+        '';
       };
       writablePath = lib.mkOption {
         type = types.bool;
@@ -94,7 +99,7 @@ let
             shellArgs = lib.mkOption {
               type = types.nullOr (types.listOf types.str);
               default = null;
-              description = "Args passed to the shell used in this step's scripts.";
+              description = "Arguments passed to the shell used in this step's scripts.";
             };
             run = lib.mkOption {
               type = types.str;

@@ -51,7 +51,7 @@ struct ParsedWorkflow {
 }
 
 impl NowEnvironment {
-    #[instrument]
+    #[instrument(skip(ctrl_c))]
     pub(crate) async fn get(
         workflow: &WorkflowSource,
         ctrl_c: Receiver<()>,

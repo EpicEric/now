@@ -31,7 +31,7 @@ use petgraph::{
 };
 use serde::{Deserialize, Serialize};
 use smol::{channel::Receiver, stream::StreamExt};
-use tracing::{info, instrument, warn};
+use tracing::{debug, info, instrument, warn};
 
 use crate::{
     builder::{NowBuilder, local::LocalBuilder},
@@ -171,9 +171,10 @@ impl NowEnvironment {
             eval,
             jobs,
             all_jobs,
-            checkout_strategy,
             builders,
             local_only,
+            remote_only,
+            skip,
         )
     )]
     pub(crate) fn run_workflow(
@@ -206,6 +207,8 @@ impl NowEnvironment {
         if eval {
             println!("{}", serde_json::to_string(&workflow)?);
             return Ok(());
+        } else {
+            debug!("$duper.workflow" = duper::serde::ser::to_string_compact(&workflow)?);
         }
 
         if let Some(name) = workflow.name.as_ref() {
@@ -217,6 +220,7 @@ impl NowEnvironment {
             dag: mut tree,
             mut nodes,
         } = workflow.build_graph(jobs, all_jobs)?;
+        debug!("$duper.graph" = duper::serde::ser::to_string_compact(tree.inner())?);
 
         let executor = smol::LocalExecutor::new();
 
@@ -263,9 +267,8 @@ impl NowEnvironment {
                     match node_weight {
                         DagNode::Root => {
                             debug_assert!(tree.node_count() == 1);
-                            info!(runner, is_remote = false, "Finished.");
                         }
-                        DagNode::Job => match nodes.remove(&node_index) {
+                        DagNode::Job(_) => match nodes.remove(&node_index) {
                             Some(NowJobContainer::Single(job)) => {
                                 futures.push(self.run_job_single(&builder, job, node_index))
                             }
@@ -312,7 +315,7 @@ impl NowEnvironment {
                                     } => format!("No runners match for job '{job_name}' (hostSystem = {host_system}, requiredSystemFeatures = {required_system_features:?}); skipping."),
                                     _ => unreachable!(),
                                 };
-                                warn!("{}", skip_log);
+                                warn!(runner, is_remote = false, "{}", skip_log);
                                 let mut nodes_to_skip: Vec<_> =
                                     vec![node_index].into_iter().collect();
                                 while !nodes_to_skip.is_empty() {
@@ -325,14 +328,24 @@ impl NowEnvironment {
                                             .map(|edge| edge.target())
                                             .collect();
                                         match tree.remove_node(node_index) {
-                                            Some(DagNode::Job) => {
+                                            Some(DagNode::Job(_)) => {
                                                 match nodes.remove(&node_index) {
                                                     Some(NowJobContainer::Single(job)) => {
-                                                        warn!("... also skipping dependent job '{}'.", job.name);
+                                                        warn!(
+                                                            runner,
+                                                            is_remote = false,
+                                                            "... also skipping dependent job '{}'.",
+                                                            job.name
+                                                        );
                                                     }
                                                     Some(NowJobContainer::Multiple(job_vec)) => {
                                                         let job_names: BTreeSet<_> = job_vec.iter().map(|job| &job.name).collect();
-                                                        warn!("... also skipping dependent job set '{:?}'.", job_names);
+                                                        warn!(
+                                                            runner,
+                                                            is_remote = false,
+                                                            "... also skipping dependent job set '{:?}'.",
+                                                            job_names
+                                                        );
                                                     }
                                                     None => (),
                                                 }
@@ -355,6 +368,9 @@ impl NowEnvironment {
                             }
                         }
                     } else {
+                        if result.is_ok() {
+                            info!(runner, is_remote = false, "Done.");
+                        }
                         return result;
                     };
                 }
@@ -409,10 +425,10 @@ impl NowEnvironment {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 enum DagNode {
     Root,
-    Job,
+    Job(String),
 }
 
 struct NowWorkflowGraph {
@@ -452,7 +468,7 @@ impl NowWorkflow {
                             .or_default()
                             .insert(need.clone());
                     }
-                    let node = graph.add_node(DagNode::Job);
+                    let node = graph.add_node(DagNode::Job(job_id.clone()));
                     nodes.insert(node, NowJobContainer::Single(job));
                     graph_nodes.insert(job_id, node);
                     graph.add_edge(node, root, ());
@@ -464,7 +480,7 @@ impl NowWorkflow {
                             .or_default()
                             .insert(need.clone());
                     }
-                    let node = graph.add_node(DagNode::Job);
+                    let node = graph.add_node(DagNode::Job(job_id.clone()));
                     nodes.insert(node, NowJobContainer::Multiple(job_vec));
                     graph_nodes.insert(job_id, node);
                     graph.add_edge(node, root, ());

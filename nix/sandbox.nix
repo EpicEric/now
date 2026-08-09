@@ -55,7 +55,13 @@ if nowSandbox.enable then
         --ro-bind-try /etc/group /etc/group \
         --ro-bind-try /etc/nix/nix.conf /etc/nix/nix.conf \
         ${
-          if nowSandbox.useHome then
+          if lib.isList nowSandbox.useHome then
+            builtins.concatStringsSep " " (
+              map (
+                dir: ''--bind "$HOME/${lib.removePrefix "/" dir}" "$HOME/${lib.removePrefix "/" dir}"''
+              ) nowSandbox.useHome
+            )
+          else if nowSandbox.useHome then
             ''--bind "$HOME" "$HOME"''
           else
             "--dir /homeless-shelter --setenv HOME /homeless-shelter"
@@ -116,9 +122,20 @@ if nowSandbox.enable then
               (global-name "com.apple.mDNSResponder"))
           ''}
 
-          ${lib.optionalString nowSandbox.useHome ''
-            (allow file-read* file-write* (subpath (param "HOME")))
-          ''}
+          ${
+            if lib.isList nowSandbox.useHome then
+              "(allow file-read* file-write* ${
+                builtins.concatStringsSep "\n" (
+                  map (
+                    dir: ''(subpath (string-append (param "HOME") "/${lib.removePrefix "/" dir}"))''
+                  ) nowSandbox.useHome
+                )
+              })"
+            else if nowSandbox.useHome then
+              ''(allow file-read* file-write* (subpath (param "HOME")))''
+            else
+              ""
+          }
 
           ${
             if nowSandbox.writablePath then

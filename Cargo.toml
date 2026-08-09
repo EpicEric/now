@@ -23,13 +23,14 @@ clap_complete = { version = "4.6.8", features = ["unstable-dynamic"] }
 color-eyre = "0.6.5"
 ctrlc = { version = "3.5.2", features = ["termination"] }
 dotenvy = "0.15.7"
+duper = { version = "0.6.3", features = ["serde"] }
 flate2 = "1.1.9"
 futures = "0.3.33"
 humantime = "2.4.0"
 ignore = "0.4.30"
 nix = { version = "0.31.3", features = ["hostname"] }
 owo-colors = { version = "4.3.0", features = ["supports-colors"] }
-petgraph = "0.8.3"
+petgraph = { version = "0.8.3", features = ["serde-1"] }
 rand = "0.10.2"
 regex = "1.13.1"
 serde = { version = "1.0.228", features = ["derive"] }

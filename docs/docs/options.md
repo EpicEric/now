@@ -452,7 +452,7 @@ null
 
 
 
-Args passed to the shell used in this step’s scripts\.
+Arguments passed to the shell used in this step’s scripts\.
 
 
 
@@ -494,7 +494,7 @@ null
 ## Sandbox
 ### sandbox
 
-The sandbox module allows you to specify extra restrictions at
+The sandbox submodule allows you to specify extra restrictions at
 a job or step level\.
 
 Any step settings override job settings\. For example, this allows you to configure
@@ -559,10 +559,13 @@ false
 
 Whether the sandboxed step can use the runner user’s HOME directory\.
 
+You can also pass a list of specific directories to mount as writable
+(eg\. ` [ ".config/application" ] `)\.
+
 
 
 *Type:*
-boolean
+boolean or list of string
 
 
 
