@@ -34,24 +34,6 @@ in
     #                              Docs
     # ============================================================
 
-    docs = { pkgs, ... }: {
-      name = "Build docs";
-      needs = [
-        "generate-nix-docs"
-        "generate-cli-docs"
-      ];
-      steps = [
-        {
-          path = [
-            pkgs.zensical
-          ];
-          run = ''
-            zensical build -f docs/zensical.toml
-          '';
-        }
-      ];
-    };
-
     serve-docs = { pkgs, ... }: {
       name = "Serve docs";
       steps = [
@@ -67,6 +49,39 @@ in
             watchexec -w now.nix -w src -r now run generate-cli-docs &
             zensical serve -f docs/zensical.toml
           '';
+        }
+      ];
+    };
+
+    publish-docs = { pkgs, ... }: {
+      name = "Build and publish docs";
+      needs = [
+        "generate-nix-docs"
+        "generate-cli-docs"
+      ];
+      steps = [
+        {
+          sandbox = {
+            enable = true;
+            writablePath = true;
+          };
+          path = [
+            pkgs.zensical
+          ];
+          run = ''
+            zensical build -f docs/zensical.toml
+          '';
+        }
+        {
+          env = {
+            DOCS_HOST = runner.secret "DOCS_HOST";
+          };
+          run = ''
+            rsync --delete-after -acP docs/site/ $DOCS_HOST:www
+          '';
+          path = [
+            pkgs.rsync
+          ];
         }
       ];
     };

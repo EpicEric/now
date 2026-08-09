@@ -4,7 +4,7 @@ icon: lucide/rectangle-ellipsis
 
 # now
 
-![now logo](./assets/logo.png)
+![now logo](./images/logo.png)
 
 now is a command runner based on [Nix](https://nixos.org/). It allows for distributed builds, reproducible scripts, and control over how/when they should run.
 
