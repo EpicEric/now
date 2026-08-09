@@ -27,34 +27,40 @@ let
           ${"__nowDownload_${evalId}"} = lib.mkOption { type = types.str; };
         }
       )
-    );
+    )
+    // {
+      description = "attribute set of (string, a call to runner.secret, or a call to runner.download)";
+    };
 
-  sandbox = types.either types.bool (
-    types.submodule {
-      options = {
-        enable = lib.mkOption {
-          type = types.bool;
-          default = false;
-          description = "Whether to use a sandbox for the step.";
-        };
-        networkAccess = lib.mkOption {
-          type = types.bool;
-          default = false;
-          description = "Whether the sandboxed step has network access.";
-        };
-        useHome = lib.mkOption {
-          type = types.bool;
-          default = false;
-          description = "Whether the sandboxed step can use the runner user's HOME directory.";
-        };
-        writablePath = lib.mkOption {
-          type = types.bool;
-          default = false;
-          description = "Whether the sandboxed step can write to the checked-out directory.";
-        };
+  sandbox = types.submodule {
+    options = {
+      enable = lib.mkOption {
+        type = types.bool;
+        default = false;
+        description = "Whether to use a sandbox for the step.";
       };
-    }
-  );
+      networkAccess = lib.mkOption {
+        type = types.bool;
+        default = false;
+        description = "Whether the sandboxed step has network access.";
+      };
+      useHome = lib.mkOption {
+        type = types.bool;
+        default = false;
+        description = "Whether the sandboxed step can use the runner user's HOME directory.";
+      };
+      writablePath = lib.mkOption {
+        type = types.bool;
+        default = false;
+        description = "Whether the sandboxed step can write to the checked-out directory.";
+      };
+      writableNixStore = lib.mkOption {
+        type = types.bool;
+        default = false;
+        description = "Whether the sandboxed step can write to the Nix store.";
+      };
+    };
+  };
 
   step =
     {
@@ -79,12 +85,16 @@ let
             shell = lib.mkOption {
               type = types.nullOr types.package;
               default = null;
-              description = "The shell to use for this step.";
+              description = ''
+                The shell to use for this step's scripts.
+
+                By default, `bash` will be used.
+              '';
             };
             shellArgs = lib.mkOption {
               type = types.nullOr (types.listOf types.str);
               default = null;
-              description = "Args passed to the shell used in this step.";
+              description = "Args passed to the shell used in this step's scripts.";
             };
             run = lib.mkOption {
               type = types.str;
@@ -94,7 +104,11 @@ let
             teardown = lib.mkOption {
               type = types.nullOr types.str;
               default = null;
-              description = "Shell script to run when tearing down this step, after every step, in reverse order.";
+              description = ''
+                Shell script to run when tearing down this step.
+
+                Jobs always run these, after every step concludes, in reverse order.
+              '';
             };
             path = lib.mkOption {
               type = types.listOf types.package;
@@ -107,13 +121,17 @@ let
               description = "Environment values to make available to this step.";
             };
             sandbox = lib.mkOption {
-              type = sandbox;
+              type = types.either types.bool sandbox;
               default = { };
-              description = "Sandbox configuration for this step.";
+              description = ''
+                Sandbox configuration for this step.
+                See [the submodule documentation](#sandbox).
+              '';
             };
             ${"__nowUpload_${evalId}"} = lib.mkOption {
               type = types.nullOr types.str;
               default = null;
+              internal = true;
             };
           };
         }
@@ -198,20 +216,65 @@ let
               description = "Environment values to make available to steps in this job.";
             };
             sandbox = lib.mkOption {
-              type = sandbox;
+              type = types.either types.bool sandbox;
               default = { };
-              description = "Default sandbox configuration for the steps in this job.";
+              description = ''
+                Default sandbox configuration for the steps in this job.
+                See [the submodule documentation](#sandbox).
+              '';
             };
             steps = lib.mkOption {
-              type = types.listOf (types.nullOr types.raw);
+              type = types.listOf (types.nullOr types.raw) // {
+                description = "list of (null or step submodule)";
+              };
               default = [ ];
-              description = "Steps to run in this job.";
+              description = ''
+                Steps to run in this job.
+                See the [submodule documentation](#step).
+              '';
             };
           };
         }
       ];
     };
+
+  workflow = {
+    options = {
+      name = lib.mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "Name of the workflow.";
+      };
+      default = lib.mkOption {
+        type = types.nullOr (types.either types.str (types.listOf types.str));
+        default = null;
+        description = "Default job(s) to run for this workflow.";
+      };
+      nixpkgs = lib.mkOption {
+        type = types.raw // {
+          description = "path to nixpkgs";
+        };
+        default = <nixpkgs>;
+        defaultText = "<nixpkgs>";
+        description = "Expression that evaluates to nixpkgs.";
+      };
+      jobs = lib.mkOption {
+        type = types.attrsOf (types.nullOr types.raw) // {
+          description = "attribute set of (null or job submodule)";
+        };
+        description = ''
+          Jobs in the workflow.
+          See the [submodule documentation](#job).
+        '';
+      };
+    };
+  };
 in
 {
-  inherit step job;
+  inherit
+    sandbox
+    step
+    job
+    workflow
+    ;
 }

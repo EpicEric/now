@@ -280,35 +280,6 @@ let
       ) module.config.jobs;
     };
 
-  nowModule =
-    { lib, ... }:
-    let
-      inherit (lib) types;
-    in
-    {
-      options = {
-        name = lib.mkOption {
-          type = types.nullOr types.str;
-          default = null;
-          description = "Name of the workflow";
-        };
-        default = lib.mkOption {
-          type = types.nullOr (types.either types.str (types.listOf types.str));
-          default = null;
-          description = "Default job(s) to run for this workflow";
-        };
-        nixpkgs = lib.mkOption {
-          type = types.raw;
-          default = <nixpkgs>;
-          defaultText = "<nixpkgs>";
-          description = "Expression that evaluates to nixpkgs.";
-        };
-        jobs = lib.mkOption {
-          type = types.attrsOf (types.nullOr types.raw);
-          description = "Jobs in the workflow.";
-        };
-      };
-    };
 in
 
 {
@@ -364,7 +335,9 @@ let
               pkgs.nix
               pkgs.mktemp
             ];
+            sandbox.writableNixStore = true;
             run = ''
+              set -euo pipefail
               drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
               tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
               nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
@@ -383,7 +356,9 @@ let
               pkgs.nix
               pkgs.mktemp
             ];
+            sandbox.writableNixStore = true;
             run = ''
+              set -euo pipefail
               drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
               tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
               nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
@@ -401,7 +376,7 @@ let
   bootstrap = lib'.evalModules {
     class = "now";
     modules = [
-      nowModule
+      ((import ./types.nix { lib = lib'; }).workflow)
       workflow
     ];
     specialArgs = {
@@ -417,7 +392,7 @@ nowConfig {
     pkgs.lib.evalModules {
       class = "now";
       modules = [
-        nowModule
+        ((import ./types.nix { inherit (pkgs) lib; }).workflow)
         workflow
       ];
       specialArgs = {

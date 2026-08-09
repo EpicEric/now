@@ -3,28 +3,13 @@ let
   mkNow = pkgs: import ./. { inherit pkgs; };
 in
 {
-  default = [ "test" ];
-
   inherit (import ./.tack) nixpkgs;
 
   jobs = {
-    test = {
-      name = "Run tests";
-      needs = [
-        "test-abort"
-        "test-cycle"
-        "test-env"
-        "test-error"
-        "test-flake"
-        "test-jobs"
-        "test-matrix"
-        "test-nixpkgs"
-        "test-timeout"
-        "test-upload"
-        "test-vars"
-      ];
-      steps = [ { run = "echo Good to go! ^u^"; } ];
-    };
+
+    # ============================================================
+    #                             Utils
+    # ============================================================
 
     format = { pkgs, ... }: {
       name = "Fix formatting";
@@ -43,6 +28,225 @@ in
           sandbox.writablePath = true;
         }
       ];
+    };
+
+    # ============================================================
+    #                              Docs
+    # ============================================================
+
+    docs = { pkgs, ... }: {
+      name = "Build docs";
+      needs = [
+        "generate-nix-docs"
+        "generate-cli-docs"
+      ];
+      steps = [
+        {
+          path = [
+            pkgs.zensical
+          ];
+          run = ''
+            zensical build -f docs/zensical.toml
+          '';
+        }
+      ];
+    };
+
+    serve-docs = { pkgs, ... }: {
+      name = "Serve docs";
+      steps = [
+        {
+          path = [
+            (mkNow pkgs)
+            pkgs.watchexec
+            pkgs.zensical
+          ];
+          run = ''
+            trap 'kill 0' EXIT
+            watchexec -w now.nix -w nix/types.nix -r now run generate-nix-docs &
+            watchexec -w now.nix -w src -r now run generate-cli-docs &
+            zensical serve -f docs/zensical.toml
+          '';
+        }
+      ];
+    };
+
+    generate-nix-docs = { pkgs, ... }: {
+      name = "Generate Nix docs";
+      sandbox.enable = true;
+      steps =
+        let
+          evalOptions =
+            type:
+            pkgs.lib.evalModules {
+              modules = [
+                type
+              ];
+              specialArgs = { inherit pkgs; };
+            };
+
+          moduleDocs =
+            type:
+            (pkgs.nixosOptionsDoc {
+              options = removeAttrs (evalOptions type).options [ "_module" ];
+            }).optionsCommonMark;
+
+          types = import ./nix/types.nix { inherit (pkgs) lib; };
+        in
+        [
+          (runner.steps.upload "docs-workflow" (moduleDocs types.workflow))
+          (runner.steps.upload "docs-job" (moduleDocs {
+            options.job = pkgs.lib.mkOption {
+              description = ''
+                A job is a set of tasks built and run on a single local or remote runner,
+                made from any number of sequential steps.
+
+                When defined via `runner.matrix`, you can specify several versions of the same job,
+                which may run concurrently on multiple builders and runners.
+              '';
+              type = types.job {
+                evalId = "";
+                inherit pkgs;
+              };
+            };
+          }))
+          (runner.steps.upload "docs-step" (moduleDocs {
+            options.step = pkgs.lib.mkOption {
+              description = ''
+                A step is a single, atomic task that's run as part of a job.
+              '';
+              type = types.step {
+                evalId = "";
+                inherit pkgs;
+              };
+            };
+          }))
+          (runner.steps.upload "docs-sandbox" (moduleDocs {
+            options.sandbox = pkgs.lib.mkOption {
+              description = ''
+                The sandbox module allows you to specify extra restrictions at
+                a job or step level.
+
+                Any step settings override job settings. For example, this allows you to configure
+                sandboxing for all steps in a job with `sandbox.enable = true;`, then loosen
+                permissions on individual steps that have to write to the filesystem.
+
+                On Linux, [`bubblewrap`](https://github.com/containers/bubblewrap) is used;
+                on macOS, `sandbox-exec` is used.
+              '';
+              type = types.sandbox;
+            };
+          }))
+          {
+            sandbox.writablePath = true;
+            env = {
+              DOCS_WORKFLOW = runner.download "docs-workflow";
+              DOCS_JOB = runner.download "docs-job";
+              DOCS_STEP = runner.download "docs-step";
+              DOCS_SANDBOX = runner.download "docs-sandbox";
+              OUT = "docs/docs/options.md";
+            };
+            run = ''
+              set -euo pipefail
+
+              echo "---" > $OUT
+              echo "icon: lucide/square-menu" >> $OUT
+              echo "---" >> $OUT
+              echo "# Options reference" >> $OUT
+              echo "!!! note" >> $OUT
+              echo "" >> $OUT
+              echo "    This documentation is auto-generated from the workflow definitions." >> $OUT
+              echo "## Workflow" >> $OUT
+              echo "A workflow is the main definition of your now commands. \
+              It allows you to specify multiple scripts (jobs) in a single source of truth via Nix." >> $OUT
+              cat $DOCS_WORKFLOW | sed 's/## /### /g' >> $OUT
+              echo "## Job" >> $OUT
+              cat $DOCS_JOB | sed 's/## /### /g' >> $OUT
+              echo "## Step" >> $OUT
+              cat $DOCS_STEP | sed 's/## /### /g' >> $OUT
+              echo "## Sandbox" >> $OUT
+              cat $DOCS_SANDBOX | sed 's/## /### /g' >> $OUT
+
+              echo "Updated Nix docs."
+            '';
+          }
+        ];
+    };
+
+    generate-cli-docs = { pkgs, ... }: {
+      name = "Generate CLI docs";
+      sandbox.enable = true;
+      steps = [
+        (runner.steps.upload "docs-cli" (
+          pkgs.runCommand "now-cli"
+            {
+              nativeBuildInputs = [
+                pkgs.to-html
+                (mkNow pkgs)
+              ];
+            }
+            ''
+              mkdir $out
+              to-html --no-prompt "now help" > $out/index.html
+              to-html --no-prompt "now help init" > $out/init.html
+              to-html --no-prompt "now help run" > $out/run.html
+            ''
+        ))
+        {
+          sandbox.writablePath = true;
+          env = {
+            DOCS_CLI = runner.download "docs-cli";
+            OUT = "docs/docs/cli.md";
+          };
+          run = ''
+            set -euo pipefail
+
+            echo "---" > $OUT
+            echo "icon: lucide/terminal" >> $OUT
+            echo "---" >> $OUT
+            echo "# CLI reference" >> $OUT
+            echo "!!! note" >> $OUT
+            echo "" >> $OUT
+            echo "    This documentation is auto-generated from the command line." >> $OUT
+            echo "## now" >> $OUT
+            echo "" >> $OUT
+            cat $DOCS_CLI/index.html >> $OUT
+            echo "" >> $OUT
+            echo "## now init" >> $OUT
+            echo "" >> $OUT
+            cat $DOCS_CLI/init.html >> $OUT
+            echo "" >> $OUT
+            echo "## now run" >> $OUT
+            echo "" >> $OUT
+            cat $DOCS_CLI/run.html >> $OUT
+            echo "" >> $OUT
+
+            echo "Updated CLI docs."
+          '';
+        }
+      ];
+    };
+
+    # ============================================================
+    #                             Tests
+    # ============================================================
+
+    test = {
+      name = "Run tests";
+      needs = [
+        "test-abort"
+        "test-cycle"
+        "test-env"
+        "test-error"
+        "test-flake"
+        "test-jobs"
+        "test-matrix"
+        "test-nixpkgs"
+        "test-timeout"
+        "test-upload"
+        "test-vars"
+      ];
+      steps = [ { run = "echo Good to go! ^u^"; } ];
     };
 
     test-abort =
@@ -188,7 +392,10 @@ in
                   --builders "$BUILDERS" \
                   --workflow .now/tests/matrix.nix
               else
-                echo "BUILDERS is unset; skipping."
+                echo "BUILDERS is unset; skipping"
+                echo ""
+                echo "=== hint: to run this, pass an envvar like ==="
+                echo "    BUILDERS='ssh://user@host x86_64-linux - 1 1 now now -'"
               fi
             '';
           }

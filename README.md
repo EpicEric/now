@@ -1,10 +1,12 @@
 <p align="center">
-    <img src="./images/logo.png" alt="now logo" /> <br>
+    <a href="https://now.dev.br" target="_blank"><img src="./images/logo.png" alt="now logo" /></a> <br>
 </p>
 
 ---
 
 Nix-based distributed command runner.
+
+Check out <https://now.dev.br> for full documentation.
 
 ## Status
 
@@ -89,7 +91,7 @@ Here's a full example of `now`'s features:
             '';
           }
           # Special step to build and upload the provided derivation to the Nix store of other runners
-          (runner.upload "my-derivation" (
+          (runner.steps.upload "my-derivation" (
             pkgs.writeText "my-derivation.txt" pkgs.stdenv.hostPlatform.system
           ))
         ];
@@ -124,7 +126,7 @@ Here's a full example of `now`'s features:
           env.DRV = runner.download "my-derivation";
           steps = [
             # Special step that simply builds the provided derivation
-            (runner.build "some-name" pkgs.hello)
+            (runner.steps.build "some-name" pkgs.hello)
             {
               run = "echo $DRV";
             }
@@ -140,5 +142,5 @@ Here's a full example of `now`'s features:
 now is tested with itself. At the root of this repo:
 
 ```bash
-nix run . -- run
+nix run . -- run test
 ```

@@ -1,0 +1,7 @@
+pre.terminal {
+    background: var(--md-code-bg-color);
+    color: var(--md-code-fg-color);
+    padding: 1em;
+    border-radius: 0.4rem;
+    overflow-x: auto;
+}

@@ -427,6 +427,10 @@ impl NowWorkflow {
         target_jobs: Option<Vec<String>>,
         all_jobs: bool,
     ) -> color_eyre::Result<NowWorkflowGraph> {
+        if self.jobs.is_empty() {
+            return Err(color_eyre::eyre::eyre!("No jobs in workflow"));
+        }
+
         let mut graph = StableDiGraph::new();
         let root = graph.add_node(DagNode::Root);
 
@@ -434,7 +438,12 @@ impl NowWorkflow {
         let mut graph_nodes: HashMap<String, NodeIndex<u32>> = HashMap::new();
         let mut edges: HashMap<String, HashSet<String>> = HashMap::new();
 
+        let mut joined_jobs = String::new();
         for (job_id, job) in self.jobs.into_iter() {
+            if !joined_jobs.is_empty() {
+                joined_jobs.push_str(", ");
+            }
+            joined_jobs.push_str(&job_id);
             match job {
                 NowJobContainer::Single(job) => {
                     for need in job.needs.iter().flatten() {
@@ -489,7 +498,9 @@ impl NowWorkflow {
         {
             Some(default_jobs.clone())
         } else {
-            return Err(color_eyre::eyre::eyre!("Workflow has no default jobs"));
+            return Err(color_eyre::eyre::eyre!(
+                "No job specified. Available options: {joined_jobs}"
+            ));
         };
         if let Some(target_jobs) = jobs {
             let job_nodes = target_jobs

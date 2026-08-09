@@ -31,8 +31,10 @@ if nowSandbox.enable then
       set -euo pipefail
       exec ${lib.getExe bubblewrap} \
         --ro-bind /nix/store /nix/store \
-        --bind-try /nix/var/nix/daemon-socket /nix/var/nix/daemon-socket \
-        --setenv NIX_REMOTE daemon \
+        ${lib.optionalString nowSandbox.writableNixStore ''
+          --bind-try /nix/var/nix/daemon-socket /nix/var/nix/daemon-socket \
+          --setenv NIX_REMOTE daemon \
+        ''} \
         --unshare-all \
         ${lib.optionalString nowSandbox.networkAccess ''
           --share-net \
@@ -77,7 +79,10 @@ if nowSandbox.enable then
           (allow sysctl-read)
 
           (allow file-read* (subpath "/nix/store"))
-          (allow file-read* file-write* (subpath "/nix/var/nix"))
+
+          ${lib.optionalString nowSandbox.writableNixStore ''
+            (allow file-read* file-write* (subpath "/nix/var/nix"))
+          ''}
 
           (allow file-read* file-write* (subpath "/tmp"))
           (allow file-read* file-write* (subpath (param "TMPDIR")))

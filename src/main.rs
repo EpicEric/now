@@ -160,7 +160,7 @@ enum Command {
         remote_only: bool,
 
         /// When specified, skips jobs that don't match any builders or runners
-        /// and their dependencies.
+        /// and their dependencies, instead of failing.
         #[arg(long)]
         skip: bool,
 
@@ -172,7 +172,7 @@ enum Command {
 
         /// Whether to emit traces in Duper instead of colored logs.
         ///
-        /// For more information on Duper: <https://duper.dev.br/>
+        /// For more information on Duper: <https://duper.dev.br>
         #[arg(long)]
         tracing: bool,
     },

@@ -36,7 +36,15 @@
       system:
       let
         pkgs = import inputs.nixpkgs { inherit system; };
-        inherit (import ./nix { inherit system pkgs; }) now now-step shell;
+        inherit
+          (import ./nix {
+            inherit system pkgs;
+            useCache = true;
+          })
+          now
+          now-step
+          shell
+          ;
       in
       {
         packages.${system} = {

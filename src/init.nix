@@ -1,9 +1,9 @@
 { runner, lib, ... }:
 {
   # name = "My workflow";
-  default = [ "default-job" ];
+  default = [ "default" ];
   jobs = {
-    default-job =
+    default =
       { pkgs, ... }:
       {
         # name = "My job";

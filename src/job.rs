@@ -239,7 +239,7 @@ impl NowEnvironment {
                         runner = runner_name,
                         is_remote,
                         step = step.name,
-                        "Uploaded '{}', ({})",
+                        "Uploaded '{}' ({})",
                         upload_key,
                         upload_path.to_string_lossy()
                     );

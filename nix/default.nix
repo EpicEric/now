@@ -38,6 +38,7 @@ in
       pkgs.rust-analyzer
       pkgs.rustc
       pkgs.rustfmt
+      pkgs.zensical
       pkgs.zig_0_16
     ];
   };
