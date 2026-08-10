@@ -312,9 +312,10 @@ impl NowBuilder for LocalBuilder {
     async fn copy_derivations(
         &self,
         _job_name: &str,
-        _derivations: &[PathBuf],
+        derivations: &[PathBuf],
         _cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
+        debug_assert!(derivations.iter().all(|path| path.exists()));
         Ok(())
     }
 
@@ -369,9 +370,10 @@ impl NowBuilder for LocalBuilder {
 
     async fn download(
         &self,
-        _downloads: &[PathBuf],
+        downloads: &[PathBuf],
         _cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
+        debug_assert!(downloads.iter().all(|path| path.exists()));
         Ok(())
     }
 
@@ -395,16 +397,22 @@ impl NowBuilder for LocalBuilder {
 
     async fn fetch_derivation(
         &self,
-        _derivation: &Path,
+        derivation: &Path,
         _cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
+        debug_assert!(derivation.exists());
         Ok(())
     }
 
     async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
         match checkout {
-            NowCheckout::Default | NowCheckout::All => Ok(()),
+            NowCheckout::Default | NowCheckout::All => {
+                debug_assert!(path.canonicalize()? == std::env::current_dir()?.canonicalize()?);
+                Ok(())
+            }
             NowCheckout::None | NowCheckout::Clone | NowCheckout::CloneAll => {
+                assert!(path.canonicalize()? != std::env::current_dir()?.canonicalize()?);
+                assert!(path.starts_with(temp_dir()));
                 let mut command = Command::new("rm");
                 command.arg("-rf").arg(path);
 

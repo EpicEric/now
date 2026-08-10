@@ -6,7 +6,7 @@ icon: lucide/rectangle-ellipsis
 
 ![now logo](./images/logo.png)
 
-now is a command runner based on [Nix](https://nixos.org/). It allows for distributed builds, reproducible scripts, and control over how/when they should run.
+now is a command runner based on [Nix](https://nixos.org/). It allows for distributed builds of reproducible scripts, with control over how and where they should run.
 
 ## Core concepts
 

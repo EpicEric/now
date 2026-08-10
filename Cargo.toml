@@ -9,7 +9,7 @@ homepage = "https://now.dev.br"
 license = "AGPL-3.0-or-later"
 authors = ["Eric Rodrigues Pires <eric@eric.dev.br>"]
 readme = "README.md"
-keywords = ["nix", "runner", "task", "cli"]
+keywords = ["nix", "command", "runner", "task", "cli"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]

@@ -21,9 +21,9 @@ Using separate builder and runner machines is useful, for example, in the follow
 - Feature isolation: build on a machine without KVM and run on one that has it.
 - Resource constraints: build tests on a beefy server and run on a lightweight VM.
 
-## How runners are discovered and configured
+## Configuration
 
-Runners are discovered from the Nix builder settings. By default, now reads `nix config show` to find the `builders` setting, which follows the same format as Nix's [`remote-builders`](https://nixos.org/manual/nix/stable/command-ref/conf-file#conf-remote-builders) configuration:
+Runners are discovered from the Nix builder settings. By default, now reads `nix config show` to find the `builders` setting, which follows the same format as Nix's [`builders`](https://nix.dev/manual/nix/latest/command-ref/conf-file#conf-builders) configuration:
 
 ```
 ssh://user@host system-features max-jobs speed-factor features mandatory-features public-host-key
@@ -33,7 +33,7 @@ If the `builders` setting starts with `@`, it's treated as a path to a file cont
 
 You can also pass builders explicitly via the `--builders` CLI flag, which accepts the same format and overrides the Nix configuration.
 
-### How remote builders are parsed
+### Parsing
 
 Each builder line is parsed as a space-separated tuple:
 
@@ -53,9 +53,9 @@ Each builder line is parsed as a space-separated tuple:
 - `--local-only` skips discovery of remote builders entirely, ensuring jobs only get built/run on the local machine.
 - `--remote-only` builds and runs jobs on remote builders only, which is useful if the local machine is only used for coordination.
 
-## How builders and runners are selected
+## Using runners
 
-When a job is ready to run, now iterates over all available builders (local + remote) and selects the first available one that matches the job's requirements.
+When a job is ready to run, now automatically iterates over all available builders (local + remote) and selects the first available one that matches the job's requirements.
 
 The selection algorithm races all qualifying builders/runners for a job, and the first one who becomes available is used.
 
