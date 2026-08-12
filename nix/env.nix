@@ -21,14 +21,12 @@
 {
   workflow,
   evalId,
-  useCache,
   gcrootDir,
 }:
 import ./workflow.nix { inherit system; } {
   inherit
     workflow
     evalId
-    useCache
     gcrootDir
     ;
   var = name: "@@__nowVar_${evalId}_${name}@@";

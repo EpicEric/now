@@ -30,10 +30,7 @@ use smol::{
 };
 
 use crate::{
-    builder::{
-        CACHE_PUBLIC_KEY, CACHE_SUBSTITUTER, CheckoutTask, CommandCheckoutTask, NixConfig,
-        NowBuilder, RsyncCheckoutTask,
-    },
+    builder::{CheckoutTask, CommandCheckoutTask, NixConfig, NowBuilder, RsyncCheckoutTask},
     utils::{escape_os_string, get_random_string, pipe_outputs_to_stderr},
     workflow::NowCheckout,
 };
@@ -42,7 +39,6 @@ pub(crate) struct RemoteBuilder {
     pub(crate) cancellation: channel::Sender<()>,
     pub(crate) cancellation_rx: Mutex<channel::Receiver<()>>,
     pub(crate) control_path: PathBuf,
-    pub(crate) use_cache: bool,
     pub(crate) ssh_uri: String,
     pub(crate) ssh_identity: Option<String>,
     pub(crate) host_system: String,
@@ -70,7 +66,6 @@ pub(crate) fn ssh_options(control_path: &Path) -> impl Iterator<Item = OsString>
 impl RemoteBuilder {
     pub(crate) fn get_remote_builders(
         config: &NixConfig,
-        use_cache: bool,
         builders: Option<String>,
         project_source: &Path,
     ) -> color_eyre::Result<Vec<Self>> {
@@ -188,7 +183,6 @@ impl RemoteBuilder {
             vec.push(RemoteBuilder {
                 cancellation,
                 cancellation_rx: Mutex::new(cancellation_rx),
-                use_cache,
                 control_path,
                 ssh_uri,
                 ssh_identity,
@@ -398,12 +392,6 @@ impl NowBuilder for RemoteBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<PathBuf> {
         let mut full_command: OsString = "nix-store".into();
-        if self.use_cache {
-            full_command.push(" --option extra-substituters ");
-            full_command.push(CACHE_SUBSTITUTER);
-            full_command.push(" --option extra-trusted-public-keys ");
-            full_command.push(CACHE_PUBLIC_KEY);
-        }
         full_command.push(" --realise ");
         full_command.push(derivation);
 

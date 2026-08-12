@@ -38,7 +38,10 @@
         jobs.flake = { pkgs, ... }: {
           steps = [
             { run = "pwd"; }
-            (runner.steps.build "hello" self.packages.${pkgs.stdenv.hostPlatform.system}.default)
+            (runner.steps.build {
+              name = "hello";
+              deriv = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
+            })
           ];
         };
       };

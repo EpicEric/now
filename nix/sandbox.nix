@@ -66,7 +66,6 @@ if nowSandbox.enable then
           else
             "--dir /homeless-shelter --setenv HOME /homeless-shelter"
         } \
-        --setenv NIX_CONFIG "experimental-features = nix-command flakes" \
         --die-with-parent \
         -- ${nowScript} "$@"
     ''

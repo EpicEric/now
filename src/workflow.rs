@@ -148,7 +148,6 @@ impl From<&WorkflowSource> for String {
 pub(crate) struct NowWorkflowParams {
     pub(crate) workflow: WorkflowSource,
     pub(crate) ctrl_c: Receiver<()>,
-    pub(crate) use_cache: bool,
     pub(crate) abort: bool,
     pub(crate) timeout: Option<Duration>,
     pub(crate) eval: bool,
@@ -165,7 +164,6 @@ impl NowEnvironment {
         skip_all,
         fields(
             workflow,
-            use_cache,
             abort,
             timeout,
             eval,
@@ -182,7 +180,6 @@ impl NowEnvironment {
         NowWorkflowParams {
             workflow,
             ctrl_c,
-            use_cache,
             abort,
             timeout,
             eval,
@@ -194,7 +191,7 @@ impl NowEnvironment {
             skip,
         }: NowWorkflowParams,
     ) -> color_eyre::Result<()> {
-        let builder = LocalBuilder::new(self, use_cache, builders, local_only, remote_only)?;
+        let builder = LocalBuilder::new(self, builders, local_only, remote_only)?;
         let runner = builder.get_name();
 
         info!(
@@ -203,7 +200,7 @@ impl NowEnvironment {
             "Evaluating workflow '{}'...",
             String::from(&workflow)
         );
-        let workflow = self.evaluate_workflow(&workflow, use_cache)?;
+        let workflow = self.evaluate_workflow(&workflow)?;
         if eval {
             println!("{}", serde_json::to_string(&workflow)?);
             return Ok(());
@@ -381,11 +378,7 @@ impl NowEnvironment {
     }
 
     #[instrument(skip(self))]
-    fn evaluate_workflow(
-        &self,
-        workflow: &WorkflowSource,
-        use_cache: bool,
-    ) -> color_eyre::Result<NowWorkflow> {
+    fn evaluate_workflow(&self, workflow: &WorkflowSource) -> color_eyre::Result<NowWorkflow> {
         let workflow_path = workflow.nix_expression()?;
 
         let nix_workflow = self.nix_project_source.as_ref().join("nix/workflow.nix");
@@ -400,7 +393,7 @@ impl NowEnvironment {
         let nix_project_path = serde_json::to_string(self.nix_project_source.as_ref())?;
 
         let nix_command = format!(
-            "(import {nix_workflow_path} {{ }}) {{ workflow = {workflow_path}; vars = builtins.fromJSON {vars_json}; evalId = {eval_id}; useCache = {use_cache}; gcrootDir = {nix_project_path}; }}"
+            "(import {nix_workflow_path} {{ }}) {{ workflow = {workflow_path}; vars = builtins.fromJSON {vars_json}; evalId = {eval_id}; gcrootDir = {nix_project_path}; }}"
         );
 
         let mut command = Command::new("nix");

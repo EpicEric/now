@@ -164,12 +164,6 @@ enum Command {
         #[arg(long)]
         skip: bool,
 
-        /// Whether to use now's binary cache and pinned nixpkgs when building the step runner.
-        ///
-        /// This avoids having to download and run the compiler toolchain on local and remote builds.
-        #[arg(long)]
-        use_cache: bool,
-
         /// Whether to emit traces in Duper instead of colored logs.
         ///
         /// For more information on Duper: <https://duper.dev.br>
@@ -315,7 +309,7 @@ fn job_completer() -> Vec<CompletionCandidate> {
             let _ = sender.try_send(());
         });
 
-        let environment = smol::block_on(NowEnvironment::get(&workflow, ctrl_c, None, false))?;
+        let environment = smol::block_on(NowEnvironment::get(&workflow, ctrl_c, None))?;
 
         let mut jobs_iter = jobs_iter.rev();
         let current_job = jobs_iter.next();
@@ -379,7 +373,6 @@ fn main() -> color_eyre::Result<()> {
             local_only,
             remote_only,
             skip,
-            use_cache,
             tracing,
         } => {
             let env_filter = EnvFilter::builder()
@@ -413,12 +406,10 @@ fn main() -> color_eyre::Result<()> {
 
             smol::block_on::<color_eyre::Result<()>>(async {
                 let mut environment =
-                    NowEnvironment::get(&workflow, ctrl_c.clone(), env_file.as_ref(), use_cache)
-                        .await?;
+                    NowEnvironment::get(&workflow, ctrl_c.clone(), env_file.as_ref()).await?;
                 environment.run_workflow(NowWorkflowParams {
                     workflow,
                     ctrl_c,
-                    use_cache,
                     abort,
                     timeout: timeout.map(|timeout| timeout.into()),
                     eval,

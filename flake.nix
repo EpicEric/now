@@ -39,7 +39,6 @@
         inherit
           (import ./nix {
             inherit system pkgs;
-            useCache = true;
           })
           now
           now-step

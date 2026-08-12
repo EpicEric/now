@@ -19,15 +19,7 @@
 }:
 
 let
-  mkNowStep =
-    { useCache, pkgs }:
-    if useCache then
-      (import ./. {
-        inherit (pkgs.stdenv.hostPlatform) system;
-        inherit useCache;
-      }).now-step
-    else
-      (import ./. { inherit pkgs useCache; }).now-step;
+  mkNowStep = pkgs: (import ./. { inherit pkgs; }).now-step;
 
   normalizeJob =
     {
@@ -103,7 +95,6 @@ let
       jobSandbox,
       step,
       evalId,
-      useCache,
     }:
     let
       inherit (pkgs)
@@ -145,9 +136,7 @@ let
           name = "now-step";
           checkPhase = "";
           runtimeInputs = step.path ++ [
-            (mkNowStep {
-              inherit useCache pkgs;
-            })
+            (mkNowStep pkgs)
           ];
           text = ''
             now-step ${if step."__nowUpload_${evalId}" == null then "" else "--preserve-stdout"} ${
@@ -171,9 +160,7 @@ let
             name = "now-step";
             checkPhase = "";
             runtimeInputs = step.path ++ [
-              (mkNowStep {
-                inherit useCache pkgs;
-              })
+              (mkNowStep pkgs)
             ];
             text = ''
               now-step ${
@@ -202,7 +189,6 @@ let
       jobSandbox,
       step,
       evalId,
-      useCache,
     }:
     if step == null then
       null
@@ -225,7 +211,6 @@ let
           jobEnv
           jobSandbox
           evalId
-          useCache
           ;
         step = step';
       };
@@ -233,7 +218,6 @@ let
   nowConfig =
     {
       evalId,
-      useCache,
       pkgs,
       module,
     }:
@@ -270,7 +254,7 @@ let
                   placeholder_name = "${jobKey}-${toString i}";
                   jobEnv = job.env;
                   jobSandbox = job.sandbox;
-                  inherit evalId useCache;
+                  inherit evalId;
                 }
               ) job.steps;
             }
@@ -285,7 +269,6 @@ in
 {
   workflow,
   evalId,
-  useCache,
   gcrootDir,
   lib' ? import <nixpkgs/lib>,
   vars ? { },
@@ -308,6 +291,52 @@ let
     { pkgs }:
     let
       inherit (pkgs) lib;
+
+      nixConfigToEnv =
+        nixConfig:
+        let
+          mergedNixConfig = nixConfig // {
+            experimental-features = lib.lists.uniqueStrings (
+              [
+                "nix-command"
+                "flakes"
+              ]
+              ++ (nixConfig.experimental-features or [ ])
+            );
+          };
+        in
+        {
+          NIX_CONFIG =
+            let
+              mkValueString =
+                v:
+                if v == null then
+                  ""
+                else if lib.isInt v then
+                  toString v
+                else if lib.isBool v then
+                  lib.boolToString v
+                else if lib.isFloat v then
+                  lib.strings.floatToString v
+                else if lib.isDerivation v then
+                  toString v
+                else if builtins.isPath v then
+                  toString v
+                else if lib.isString v then
+                  v
+                else if lib.strings.isConvertibleWithToString v then
+                  toString v
+                else
+                  abort "The nix conf value: ${lib.toPretty { } v} can not be encoded";
+              mkKeyValue = k: v: "${lib.escape [ "=" ] k} = ${mkValueString v}";
+              mkKeyValuePairs = attrs: lib.concatStringsSep "\n" (lib.mapAttrsToList mkKeyValue attrs);
+              isExtra = key: lib.hasPrefix "extra-" key;
+            in
+            lib.trim ''
+              ${mkKeyValuePairs (lib.filterAttrs (key: _: !(isExtra key)) mergedNixConfig)}
+              ${mkKeyValuePairs (lib.filterAttrs (key: _: isExtra key) mergedNixConfig)}
+            '';
+        };
     in
     {
       inherit secret var;
@@ -326,16 +355,27 @@ let
 
       steps = {
         build =
-          name: deriv:
+          {
+            name ? "",
+            deriv,
+            nixConfig ? { },
+            env ? { },
+            sandbox ? { },
+          }:
           assert lib.assertMsg (lib.isDerivation deriv)
-            "derivation argument to runner.steps.build must be a derivation";
+            "deriv argument to runner.steps.build must be a derivation";
           { pkgs, ... }: {
             name = "build ${if name == "" then deriv.name else name}";
             path = [
               pkgs.nix
               pkgs.mktemp
             ];
-            sandbox.writableNixStore = true;
+            env = (nixConfigToEnv nixConfig) // env;
+            sandbox = {
+              writableNixStore = true;
+              networkAccess = true;
+            }
+            // sandbox;
             run = ''
               set -euo pipefail
               drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
@@ -346,17 +386,28 @@ let
           };
 
         upload =
-          name: deriv:
+          {
+            name,
+            deriv,
+            nixConfig ? { },
+            env ? { },
+            sandbox ? { },
+          }:
           assert lib.assertMsg (name != "") "name argument to runner.steps.upload must not be empty";
           assert lib.assertMsg (lib.isDerivation deriv)
-            "derivation argument to runner.steps.upload must be a derivation";
+            "deriv argument to runner.steps.upload must be a derivation";
           { pkgs, ... }: {
             name = "upload ${name}";
             path = [
               pkgs.nix
               pkgs.mktemp
             ];
-            sandbox.writableNixStore = true;
+            env = (nixConfigToEnv nixConfig) // env;
+            sandbox = {
+              writableNixStore = true;
+              networkAccess = true;
+            }
+            // sandbox;
             run = ''
               set -euo pipefail
               drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
@@ -387,7 +438,7 @@ let
   pkgs = import bootstrap.config.nixpkgs { inherit system; };
 in
 nowConfig {
-  inherit evalId useCache pkgs;
+  inherit evalId pkgs;
   module = (
     pkgs.lib.evalModules {
       class = "now";

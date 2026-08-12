@@ -31,7 +31,12 @@ in
         (
           { pkgs, name, ... }: {
             name = "Build on ${name}";
-            steps = [ (runner.steps.build "now" (mkNow pkgs)) ];
+            steps = [
+              (runner.steps.build {
+                name = "now";
+                deriv = mkNow pkgs;
+              })
+            ];
           }
         );
 
@@ -164,13 +169,14 @@ in
             ];
             steps = [
               (lib.mkIf (pkgs.stdenv.hostPlatform.isLinux) (
-                runner.steps.upload "docker-${pkgs.stdenv.hostPlatform.system}" (
-                  pkgs.dockerTools.buildLayeredImage {
+                runner.steps.upload {
+                  name = "docker-${pkgs.stdenv.hostPlatform.system}";
+                  deriv = pkgs.dockerTools.buildLayeredImage {
                     name = "now";
                     tag = "latest";
                     config.Entrypoint = [ (lib.getExe (mkNow pkgs)) ];
-                  }
-                )
+                  };
+                }
               ))
             ];
           }

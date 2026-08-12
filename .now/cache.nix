@@ -6,11 +6,21 @@
 
   jobs = {
     build-now = {
-      steps = [ (runner.steps.upload "now" (import ../nix { useCache = true; }).now) ];
+      steps = [
+        (runner.steps.upload {
+          name = "now";
+          deriv = (import ../nix { }).now;
+        })
+      ];
     };
 
     build-now-step = {
-      steps = [ (runner.steps.upload "now-step" (import ../nix { useCache = true; }).now-step) ];
+      steps = [
+        (runner.steps.upload {
+          name = "now-step";
+          deriv = (import ../nix { }).now-step;
+        })
+      ];
     };
 
     push-to-niks3 =

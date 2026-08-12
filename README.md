@@ -91,9 +91,14 @@ Here's a full example of `now`'s features:
             '';
           }
           # Special step to build and upload the provided derivation to the Nix store of other runners
-          (runner.steps.upload "my-derivation" (
-            pkgs.writeText "my-derivation.txt" pkgs.stdenv.hostPlatform.system
-          ))
+          (runner.steps.upload {
+            name = "my-derivation";
+            deriv = pkgs.writeText "my-derivation.txt" pkgs.stdenv.hostPlatform.system;
+            # Optional: Nix config options, env vars, and sandboxing for this step
+            nixConfig.extra-substituters = "https://cache.eric.dev.br";
+            env.FOO = "bar";
+            sandbox.enable = true;
+          })
         ];
       };
 
@@ -126,7 +131,10 @@ Here's a full example of `now`'s features:
           env.DRV = runner.download "my-derivation";
           steps = [
             # Special step that simply builds the provided derivation
-            (runner.steps.build "some-name" pkgs.hello)
+            (runner.steps.build {
+              name = "some-name";
+              deriv = pkgs.hello;
+            })
             {
               run = "echo $DRV";
             }

@@ -8,7 +8,10 @@ in
   jobs = {
     write = { pkgs, ... }: {
       steps = [
-        (runner.steps.upload upload_key (pkgs.writeText "example" "Hello, world!"))
+        (runner.steps.upload {
+          name = upload_key;
+          deriv = pkgs.writeText "example" "Hello, world!";
+        })
         {
           name = "stat";
           env.UPLOADED = runner.download upload_key;

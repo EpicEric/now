@@ -16,7 +16,7 @@ The main option of a workflow is the `jobs` attribute set, which specifies all j
   name = "Optional name for the workflow";
   jobs = {
     build-hello = { pkgs, ... }: {
-      steps = [ (runner.build pkgs.hello) ]
+      steps = [ (runner.steps.build { deriv = pkgs.hello; }) ];
     };
   };
 }
@@ -148,9 +148,10 @@ TOKEN="s3cr3t" now run
   jobs = {
     builder = {
       steps = [
-        (runner.steps.upload "my-artifact" (
-          pkgs.writeText "data.txt" "hello from builder"
-        ))
+        (runner.steps.upload {
+          name = "my-artifact";
+          deriv = pkgs.writeText "data.txt" "hello from builder";
+        })
       ];
     };
     consumer = {
@@ -172,23 +173,67 @@ TOKEN="s3cr3t" now run
 
 ##### runner.steps.upload
 
-`runner.steps.upload "name" derivation` creates a step that builds the given derivation and registers its output path under the provided name. The path can then be consumed by other jobs via `runner.download`. The upload mechanism works regardless of whether the consumer runs on the same machine or a different remote runner.
+`runner.steps.upload { name, deriv, ... }` creates a step that builds the given derivation and registers its output path under the provided name. The path can then be consumed by other jobs via `runner.download`. The upload mechanism works regardless of whether the consumer runs on the same machine or a different remote runner.
 
 ```nix
-(runner.steps.upload "my-data" (
-  pkgs.runCommand "data" {} ''
+(runner.steps.upload {
+  name = "my-data";
+  deriv = pkgs.runCommand "data" {} ''
     echo "hello" > $out
-  ''
-))
+  '';
+})
 ```
 
 ##### runner.steps.build
 
-`runner.steps.build "name" derivation` creates a step that builds the given derivation and adds a GC root to prevent it from being garbage-collected. Unlike `upload`, it does not register the result for download by other jobs, and only verifies that the derivation builds successfully.
+`runner.steps.build { name ? "", deriv, ... }` creates a step that builds the given derivation and adds a GC root to prevent it from being garbage-collected. Unlike `upload`, it does not register the result for download by other jobs, and only verifies that the derivation builds successfully.
 
 ```nix
-(runner.steps.build "some-name" pkgs.hello)
+(runner.steps.build {
+  name = "some-name";
+  deriv = pkgs.hello;
+})
 ```
+
+##### Extra options for build/upload steps
+
+Both `runner.steps.build` and `runner.steps.upload` accept a few optional attributes on top of `name` and `deriv`:
+
+- `nixConfig`: an attrset of Nix configuration options (in the same format as `nix.conf`), made available to `nix-store --realise` via the `NIX_CONFIG` environment variable. Useful for pointing the step at extra binary caches:
+
+  ```nix
+  (runner.steps.build {
+    deriv = pkgs.hello;
+    nixConfig = {
+      extra-substituters = [ "https://cache.eric.dev.br" ];
+      extra-trusted-public-keys = [ "cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=" ];
+    };
+  })
+  ```
+
+- `env`: additional environment variables for the step, merged with (and overriding) any `NIX_CONFIG` derived from `nixConfig`:
+
+  ```nix
+  (runner.steps.build {
+    deriv = pkgs.hello;
+    env.SOME_VAR = "value";
+  })
+  ```
+
+- `sandbox`: overrides for the step's [sandbox configuration](#sandboxing). `writableNixStore` and `networkAccess` default to `true` (required to build/upload at all) and can't usefully be turned off, but everything else (`enable`, `useHome`, `writablePath`) can be set as needed:
+
+  ```nix
+  (runner.steps.upload {
+    name = "my-data";
+    deriv = pkgs.runCommand "data" {} ''
+      echo "hello" > $out
+    '';
+    sandbox = {
+      enable = true;
+      useHome = true;
+    };
+  })
+  ```
 
 ## Jobs
 

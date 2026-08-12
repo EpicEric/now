@@ -109,49 +109,61 @@ in
           types = import ./nix/types.nix { inherit (pkgs) lib; };
         in
         [
-          (runner.steps.upload "docs-workflow" (moduleDocs types.workflow))
-          (runner.steps.upload "docs-job" (moduleDocs {
-            options.job = pkgs.lib.mkOption {
-              description = ''
-                A job is a set of tasks built and run on a single local or remote runner,
-                made from any number of sequential steps.
+          (runner.steps.upload {
+            name = "docs-workflow";
+            deriv = moduleDocs types.workflow;
+          })
+          (runner.steps.upload {
+            name = "docs-job";
+            deriv = moduleDocs {
+              options.job = pkgs.lib.mkOption {
+                description = ''
+                  A job is a set of tasks built and run on a single local or remote runner,
+                  made from any number of sequential steps.
 
-                When defined via `runner.matrix`, you can specify several versions of the same job,
-                which may run concurrently on multiple builders and runners.
-              '';
-              type = types.job {
-                evalId = "";
-                inherit pkgs;
+                  When defined via `runner.matrix`, you can specify several versions of the same job,
+                  which may run concurrently on multiple builders and runners.
+                '';
+                type = types.job {
+                  evalId = "";
+                  inherit pkgs;
+                };
               };
             };
-          }))
-          (runner.steps.upload "docs-step" (moduleDocs {
-            options.step = pkgs.lib.mkOption {
-              description = ''
-                A step is a single, atomic task that's run as part of a job.
-              '';
-              type = types.step {
-                evalId = "";
-                inherit pkgs;
+          })
+          (runner.steps.upload {
+            name = "docs-step";
+            deriv = moduleDocs {
+              options.step = pkgs.lib.mkOption {
+                description = ''
+                  A step is a single, atomic task that's run as part of a job.
+                '';
+                type = types.step {
+                  evalId = "";
+                  inherit pkgs;
+                };
               };
             };
-          }))
-          (runner.steps.upload "docs-sandbox" (moduleDocs {
-            options.sandbox = pkgs.lib.mkOption {
-              description = ''
-                The sandbox submodule allows you to specify extra restrictions at
-                a job or step level.
+          })
+          (runner.steps.upload {
+            name = "docs-sandbox";
+            deriv = moduleDocs {
+              options.sandbox = pkgs.lib.mkOption {
+                description = ''
+                  The sandbox submodule allows you to specify extra restrictions at
+                  a job or step level.
 
-                Any step settings override job settings. For example, this allows you to configure
-                sandboxing for all steps in a job with `sandbox.enable = true;`, then loosen
-                permissions on individual steps that have to write to the filesystem.
+                  Any step settings override job settings. For example, this allows you to configure
+                  sandboxing for all steps in a job with `sandbox.enable = true;`, then loosen
+                  permissions on individual steps that have to write to the filesystem.
 
-                On Linux, [`bubblewrap`](https://github.com/containers/bubblewrap) is used;
-                on macOS, `sandbox-exec` is used.
-              '';
-              type = types.sandbox;
+                  On Linux, [`bubblewrap`](https://github.com/containers/bubblewrap) is used;
+                  on macOS, `sandbox-exec` is used.
+                '';
+                type = types.sandbox;
+              };
             };
-          }))
+          })
           {
             sandbox.writablePath = true;
             env = {
@@ -192,21 +204,23 @@ in
       name = "Generate CLI docs";
       sandbox.enable = true;
       steps = [
-        (runner.steps.upload "docs-cli" (
-          pkgs.runCommand "now-cli"
-            {
-              nativeBuildInputs = [
-                pkgs.to-html
-                (mkNow pkgs)
-              ];
-            }
-            ''
-              mkdir $out
-              to-html --no-prompt "now help" > $out/index.html
-              to-html --no-prompt "now help init" > $out/init.html
-              to-html --no-prompt "now help run" > $out/run.html
-            ''
-        ))
+        (runner.steps.upload {
+          name = "docs-cli";
+          deriv =
+            pkgs.runCommand "now-cli"
+              {
+                nativeBuildInputs = [
+                  pkgs.to-html
+                  (mkNow pkgs)
+                ];
+              }
+              ''
+                mkdir $out
+                to-html --no-prompt "now help" > $out/index.html
+                to-html --no-prompt "now help init" > $out/init.html
+                to-html --no-prompt "now help run" > $out/run.html
+              '';
+        })
         {
           sandbox.writablePath = true;
           env = {
@@ -412,6 +426,22 @@ in
                 echo "=== hint: to run this, pass an envvar like ==="
                 echo "    BUILDERS='ssh://user@host x86_64-linux - 1 1 now now -'"
               fi
+            '';
+          }
+        ];
+      };
+
+    test-nix-config =
+      { pkgs, ... }:
+      {
+        name = "Test nixConfig";
+        steps = [
+          {
+            path = [
+              (mkNow pkgs)
+            ];
+            run = ''
+              now run --workflow .now/tests/nix-config.nix
             '';
           }
         ];

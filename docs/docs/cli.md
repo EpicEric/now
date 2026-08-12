@@ -126,11 +126,6 @@ Run one or more jobs
       <b>--skip</b>
           When specified, skips jobs that don&#39;t match any builders or runners and their dependencies, instead of failing
 
-      <b>--use-cache</b>
-          Whether to use now&#39;s binary cache and pinned nixpkgs when building the step runner.
-          
-          This avoids having to download and run the compiler toolchain on local and remote builds.
-
       <b>--tracing</b>
           Whether to emit traces in Duper instead of colored logs.
           

@@ -19,7 +19,7 @@
   zig_0_16,
   stdenv,
 
-  optimizeLevel ? "Debug",
+  optimizeLevel ? "ReleaseSafe",
 }:
 stdenv.mkDerivation {
   name = "now-step";
