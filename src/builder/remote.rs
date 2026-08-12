@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use smol::{
     channel,
     io::{AsyncReadExt, AsyncWriteExt},
-    lock::{Mutex, futures::Lock},
+    lock::{Semaphore, futures::Acquire},
     process::{Child, Command, Stdio},
 };
 
@@ -37,7 +37,8 @@ use crate::{
 
 pub(crate) struct RemoteBuilder {
     pub(crate) cancellation: channel::Sender<()>,
-    pub(crate) cancellation_rx: Mutex<channel::Receiver<()>>,
+    pub(crate) receiver: channel::Receiver<()>,
+    pub(crate) semaphore: Semaphore,
     pub(crate) control_path: PathBuf,
     pub(crate) ssh_uri: String,
     pub(crate) ssh_identity: Option<String>,
@@ -117,7 +118,13 @@ impl RemoteBuilder {
                 }
             });
 
-            let _maximum_builds = iter.next();
+            let maximum_builds = if let Some(maximum_builds) = iter.next()
+                && maximum_builds != "-"
+            {
+                usize::from_str_radix(maximum_builds, 10)?
+            } else {
+                1
+            };
 
             let _speed_factor = iter.next();
 
@@ -145,7 +152,7 @@ impl RemoteBuilder {
 
             let _ssh_host_key = iter.next();
 
-            let (cancellation, cancellation_rx) = channel::bounded(1);
+            let (cancellation, receiver) = channel::bounded(1);
 
             let control_path = project_source.join(format!("ssh-{}", get_random_string(10)));
 
@@ -182,7 +189,8 @@ impl RemoteBuilder {
 
             vec.push(RemoteBuilder {
                 cancellation,
-                cancellation_rx: Mutex::new(cancellation_rx),
+                receiver,
+                semaphore: Semaphore::new(maximum_builds),
                 control_path,
                 ssh_uri,
                 ssh_identity,
@@ -199,8 +207,8 @@ impl RemoteBuilder {
 
 #[async_trait(?Send)]
 impl NowBuilder for RemoteBuilder {
-    fn acquire(&self) -> Lock<'_, channel::Receiver<()>> {
-        self.cancellation_rx.lock()
+    fn acquire(&self) -> (Acquire<'_>, &channel::Receiver<()>) {
+        (self.semaphore.acquire(), &self.receiver)
     }
 
     fn get_name(&self) -> String {

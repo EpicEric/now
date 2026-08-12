@@ -19,6 +19,7 @@ use std::{
     env::temp_dir,
     ffi::{OsStr, OsString},
     io::Write,
+    num::NonZeroUsize,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
 };
@@ -28,7 +29,7 @@ use futures::{AsyncWriteExt, stream::FuturesUnordered};
 use smol::{
     channel::{self, Receiver},
     io::AsyncReadExt,
-    lock::{Mutex, MutexGuard, futures::Lock},
+    lock::{Semaphore, SemaphoreGuard, futures::Acquire},
     process::{Child, Command, Stdio},
     stream::StreamExt,
 };
@@ -45,7 +46,8 @@ use crate::{
 
 pub(crate) struct LocalBuilder {
     pub(crate) cancellation: channel::Sender<()>,
-    pub(crate) cancellation_rx: Mutex<channel::Receiver<()>>,
+    pub(crate) receiver: channel::Receiver<()>,
+    pub(crate) semaphore: Semaphore,
     pub(crate) env: HashMap<OsString, OsString>,
     pub(crate) hostname: String,
     pub(crate) extra_platforms: Vec<String>,
@@ -61,6 +63,7 @@ impl LocalBuilder {
         builders: Option<String>,
         local_only: bool,
         remote_only: bool,
+        cores: Option<NonZeroUsize>,
     ) -> color_eyre::Result<Self> {
         let output = std::process::Command::new("nix")
             .args([
@@ -94,13 +97,19 @@ impl LocalBuilder {
             return Err(color_eyre::eyre::eyre!("No remote builders available"));
         }
 
-        let (cancellation, cancellation_rx) = channel::bounded(1);
+        let (cancellation, receiver) = channel::bounded(1);
 
-        let hostname = nix::unistd::gethostname()?.to_string_lossy().into_owned();
+        let cores = match cores {
+            Some(cores) => cores.into(),
+            None => sysinfo::System::physical_core_count().unwrap_or(1),
+        };
+
+        let hostname = sysinfo::System::host_name().unwrap_or_else(|| "localhost".into());
 
         Ok(Self {
             cancellation,
-            cancellation_rx: Mutex::new(cancellation_rx),
+            receiver,
+            semaphore: Semaphore::new(cores),
             env: environment.local_env.clone(),
             hostname,
             extra_platforms: config.extra_platforms.value,
@@ -121,7 +130,7 @@ impl LocalBuilder {
     pub(crate) async fn get_builder(
         &self,
         job: &NowJob,
-    ) -> color_eyre::Result<Option<(MutexGuard<'_, Receiver<()>>, &dyn NowBuilder)>> {
+    ) -> color_eyre::Result<Option<(SemaphoreGuard<'_>, &Receiver<()>, &dyn NowBuilder)>> {
         let mut builders = vec![];
 
         if !self.remote_only
@@ -152,8 +161,9 @@ impl LocalBuilder {
         let mut builders_fut: FuturesUnordered<_> = builders
             .into_iter()
             .map(|builder| async move {
-                let guard = builder.acquire().await;
-                (guard, builder)
+                let (semaphore, receiver) = builder.acquire();
+                let guard = semaphore.await;
+                (guard, receiver, builder)
             })
             .collect();
 
@@ -163,7 +173,7 @@ impl LocalBuilder {
     pub(crate) async fn get_runner(
         &self,
         job: &NowJob,
-    ) -> color_eyre::Result<Option<(MutexGuard<'_, Receiver<()>>, &dyn NowBuilder)>> {
+    ) -> color_eyre::Result<Option<(SemaphoreGuard<'_>, &Receiver<()>, &dyn NowBuilder)>> {
         let mut runners = vec![];
 
         if !self.remote_only
@@ -194,8 +204,9 @@ impl LocalBuilder {
         let mut runners_fut: FuturesUnordered<_> = runners
             .into_iter()
             .map(|builder| async move {
-                let guard = builder.acquire().await;
-                (guard, builder)
+                let (semaphore, receiver) = builder.acquire();
+                let guard = semaphore.await;
+                (guard, receiver, builder)
             })
             .collect();
 
@@ -205,8 +216,8 @@ impl LocalBuilder {
 
 #[async_trait(?Send)]
 impl NowBuilder for LocalBuilder {
-    fn acquire(&self) -> Lock<'_, channel::Receiver<()>> {
-        self.cancellation_rx.lock()
+    fn acquire(&self) -> (Acquire<'_>, &channel::Receiver<()>) {
+        (self.semaphore.acquire(), &self.receiver)
     }
 
     fn get_name(&self) -> String {

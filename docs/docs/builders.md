@@ -42,7 +42,7 @@ Each builder line is parsed as a space-separated tuple:
 | `ssh://user@host`            | SSH URI (prefixed with either `ssh://` or `ssh-ng://`)                                   |
 | `aarch64-linux,x86_64-linux` | Comma-separated list of supported build systems (`-` defaults to the local system)       |
 | `/path/to/identity`          | SSH identity file (`-` uses the current user's identity)                                 |
-| `1`                          | Maximum number of concurrent builds (unused)                                             |
+| `1`                          | Maximum number of concurrent builds                                                      |
 | `1`                          | Speed factor (unused)                                                                    |
 | `kvm,benchmark`              | Comma-separated system features the builder advertises (`-` means none)                  |
 | `now`                        | Comma-separated mandatory features the builder requires jobs to request (`-` means none) |

@@ -111,6 +111,13 @@ Run one or more jobs
           
           For more information on the syntax, see: &lt;https://nix.dev/manual/nix/latest/command-ref/conf-file#conf-builders&gt;
 
+      <b>--cores</b> &lt;CORES&gt;
+          How many simultaneous jobs to use for local builds.
+          
+          Defaults to the number of physical cores in the current machine.
+          
+          Cannot be used together with the `--remote-only` option.
+
       <b>--local-only</b>
           When specified, ignores the remote builders configuration of the host, running all jobs in the local builder.
           
@@ -121,7 +128,7 @@ Run one or more jobs
       <b>--remote-only</b>
           When specified, runs all jobs in remote builders, only using the local runner for job orchestration.
           
-          Cannot be used together with the `--local-only` option.
+          Cannot be used together with either the `--cores` or `--local-only` options.
 
       <b>--skip</b>
           When specified, skips jobs that don&#39;t match any builders or runners and their dependencies, instead of failing

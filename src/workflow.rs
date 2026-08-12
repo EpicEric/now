@@ -17,6 +17,7 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     io::Write,
+    num::NonZeroUsize,
     path::PathBuf,
     pin::Pin,
     process::Command,
@@ -86,7 +87,7 @@ pub(crate) struct NowStrategy {
     pub(crate) fail_fast: bool,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct NowStep {
     pub(crate) name: String,
     pub(crate) run_drv: PathBuf,
@@ -154,6 +155,7 @@ pub(crate) struct NowWorkflowParams {
     pub(crate) jobs: Option<Vec<String>>,
     pub(crate) all_jobs: bool,
     pub(crate) builders: Option<String>,
+    pub(crate) cores: Option<NonZeroUsize>,
     pub(crate) local_only: bool,
     pub(crate) remote_only: bool,
     pub(crate) skip: bool,
@@ -170,6 +172,7 @@ impl NowEnvironment {
             jobs,
             all_jobs,
             builders,
+            cores,
             local_only,
             remote_only,
             skip,
@@ -186,12 +189,13 @@ impl NowEnvironment {
             jobs,
             all_jobs,
             builders,
+            cores,
             local_only,
             remote_only,
             skip,
         }: NowWorkflowParams,
     ) -> color_eyre::Result<()> {
-        let builder = LocalBuilder::new(self, builders, local_only, remote_only)?;
+        let builder = LocalBuilder::new(self, builders, local_only, remote_only, cores)?;
         let runner = builder.get_name();
 
         info!(

@@ -16,6 +16,7 @@
 
 use std::{
     collections::HashSet,
+    num::NonZeroUsize,
     path::{Path, PathBuf},
 };
 
@@ -143,6 +144,14 @@ enum Command {
         #[arg(long)]
         builders: Option<String>,
 
+        /// How many simultaneous jobs to use for local builds.
+        ///
+        /// Defaults to the number of physical cores in the current machine.
+        ///
+        /// Cannot be used together with the `--remote-only` option.
+        #[arg(long, conflicts_with = "remote_only")]
+        cores: Option<NonZeroUsize>,
+
         /// When specified, ignores the remote builders configuration of the host,
         /// running all jobs in the local builder.
         ///
@@ -155,7 +164,7 @@ enum Command {
         /// When specified, runs all jobs in remote builders,
         /// only using the local runner for job orchestration.
         ///
-        /// Cannot be used together with the `--local-only` option.
+        /// Cannot be used together with either the `--cores` or `--local-only` options.
         #[arg(long)]
         remote_only: bool,
 
@@ -370,6 +379,7 @@ fn main() -> color_eyre::Result<()> {
             eval,
             cwdir,
             builders,
+            cores,
             local_only,
             remote_only,
             skip,
@@ -416,6 +426,7 @@ fn main() -> color_eyre::Result<()> {
                     jobs,
                     all_jobs,
                     builders,
+                    cores,
                     local_only,
                     remote_only,
                     skip,

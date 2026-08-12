@@ -16,7 +16,10 @@
 
 use std::{collections::HashSet, ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf, pin::Pin};
 
-use futures::{AsyncReadExt, stream::FuturesUnordered};
+use futures::{
+    AsyncReadExt,
+    stream::{FuturesOrdered, FuturesUnordered},
+};
 use petgraph::matrix_graph::NodeIndex;
 use smol::{
     channel::TryRecvError,
@@ -65,78 +68,90 @@ type JobFut<'a> = Pin<Box<dyn Future<Output = JobResult> + 'a>>;
 impl NowEnvironment {
     #[instrument(skip_all, fields(job = job.name))]
     async fn run_job(&self, local_builder: &LocalBuilder, job: NowJob) -> Result<(), JobError> {
-        let mut steps = Vec::with_capacity(job.steps.len());
-        let mut derivations = Vec::new();
+        info!(
+            runner = local_builder.hostname,
+            is_remote = false,
+            "Building derivations for job '{}'...",
+            &job.name
+        );
 
-        {
-            let (guard, builder) = match local_builder.get_builder(&job).await? {
-                Some((guard, builder)) => (guard, builder),
-                None => {
-                    return Err(JobError::NoMatchingBuilders {
-                        job_name: job.name,
-                        build_system: job.build_system,
-                        required_system_features: job.required_system_features,
-                    });
+        let (steps, derivations) = {
+            let mut steps = Vec::with_capacity(job.steps.len());
+            let mut derivations = Vec::new();
+            let mut realize_futs: FuturesOrdered<_> = job
+                .steps
+                .iter()
+                .cloned()
+                .map(|step| async {
+                    let (_guard, receiver, builder) = match local_builder.get_builder(&job).await? {
+                        Some((guard, receiver, builder)) => (guard, receiver, builder),
+                        None => {
+                            return Err(JobError::NoMatchingBuilders {
+                                job_name: job.name.clone(),
+                                build_system: job.build_system.clone(),
+                                required_system_features: job.required_system_features.clone(),
+                            });
+                        }
+                    };
+                    if matches!(receiver.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
+                        return Err(color_eyre::eyre::eyre!("Runner aborted").into());
+                    }
+
+                    let teardown = if let Some(teardown_drv) = step.teardown_drv.as_ref() {
+                        let _span = tracing::debug_span!(
+                            "step-teardown-realize",
+                            job = job.name,
+                            step = step.name,
+                            r#type = "step-teardown-realize",
+                        );
+                        builder
+                            .copy_derivations(&job.name, &[teardown_drv.clone()], &receiver)
+                            .await?;
+                        let teardown = builder.realize_derivation(teardown_drv, &receiver).await?;
+                        builder.fetch_derivation(&teardown, &receiver).await?;
+                        Some(teardown)
+                    } else {
+                        None
+                    };
+                    let run = {
+                        let _span = tracing::debug_span!(
+                            "step-run-realize",
+                            job = job.name,
+                            step = step.name,
+                            r#type = "step-run-realize",
+                        );
+                        builder
+                            .copy_derivations(&job.name, &[step.run_drv.clone()], &receiver)
+                            .await?;
+                        let run = builder.realize_derivation(&step.run_drv, &receiver).await?;
+                        builder.fetch_derivation(&run, &receiver).await?;
+                        run
+                    };
+                    Ok((step, run, teardown))
+                })
+                .collect();
+            while let Some(result) = realize_futs.next().await {
+                let (step, run, teardown) = result?;
+                if let Some(teardown) = teardown.clone() {
+                    derivations.push(teardown);
                 }
-            };
-            if matches!(guard.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
-                return Err(color_eyre::eyre::eyre!("Runner aborted").into());
-            }
-            info!(
-                runner = builder.get_name(),
-                is_remote = builder.is_remote(),
-                "Building derivations for job '{}'...",
-                &job.name
-            );
-
-            for step in &job.steps {
-                let teardown = if let Some(teardown_drv) = step.teardown_drv.as_ref() {
-                    let _span = tracing::debug_span!(
-                        "step-teardown-realize",
-                        job = job.name,
-                        step = step.name,
-                        r#type = "step-teardown-realize",
-                    );
-                    builder
-                        .copy_derivations(&job.name, &[teardown_drv.clone()], &guard)
-                        .await?;
-                    let teardown = builder.realize_derivation(teardown_drv, &guard).await?;
-                    derivations.push(teardown.clone());
-                    builder.fetch_derivation(&teardown, &guard).await?;
-                    Some(teardown)
-                } else {
-                    None
-                };
-                let run = {
-                    let _span = tracing::debug_span!(
-                        "step-run-realize",
-                        job = job.name,
-                        step = step.name,
-                        r#type = "step-run-realize",
-                    );
-                    builder
-                        .copy_derivations(&job.name, &[step.run_drv.clone()], &guard)
-                        .await?;
-                    let run = builder.realize_derivation(&step.run_drv, &guard).await?;
-                    derivations.push(run.clone());
-                    builder.fetch_derivation(&run, &guard).await?;
-                    run
-                };
+                derivations.push(run.clone());
                 steps.push((step, run, teardown));
             }
-        }
+            (steps, derivations)
+        };
 
-        let (guard, runner) = match local_builder.get_runner(&job).await? {
-            Some((guard, runner)) => (guard, runner),
+        let (_guard, receiver, runner) = match local_builder.get_runner(&job).await? {
+            Some((guard, receiver, runner)) => (guard, receiver, runner),
             None => {
                 return Err(JobError::NoMatchingRunners {
-                    job_name: job.name,
-                    host_system: job.host_system,
-                    required_system_features: job.required_system_features,
+                    job_name: job.name.clone(),
+                    host_system: job.host_system.clone(),
+                    required_system_features: job.required_system_features.clone(),
                 });
             }
         };
-        if matches!(guard.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
+        if matches!(receiver.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
             return Err(color_eyre::eyre::eyre!("Runner aborted").into());
         }
         let runner_name = runner.get_name();
@@ -154,7 +169,7 @@ impl NowEnvironment {
             if let Some(checkout_child) = checkout_child.as_mut() {
                 smol::future::race(
                     async {
-                        let _ = guard.recv().await;
+                        let _ = receiver.recv().await;
                         Err(color_eyre::eyre::eyre!("Runner aborted"))
                     },
                     checkout_child.run(),
@@ -163,7 +178,7 @@ impl NowEnvironment {
             }
 
             runner
-                .copy_derivations(&job.name, &derivations, &guard)
+                .copy_derivations(&job.name, &derivations, &receiver)
                 .await?;
 
             for (step, run, teardown) in steps {
@@ -189,10 +204,10 @@ impl NowEnvironment {
                         }
                     }
                 }
-                runner.download(&downloads, &guard).await?;
+                runner.download(&downloads, &receiver).await?;
 
                 if let Some(teardown) = teardown {
-                    teardown_stack.push((&step.name, teardown, &step.env));
+                    teardown_stack.push((step.name.clone(), teardown, step.env.clone()));
                 }
 
                 let mut child = runner.run_derivation(
@@ -234,7 +249,7 @@ impl NowEnvironment {
                     let mut buf = Vec::new();
                     stdout.read_to_end(&mut buf).await?;
                     let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
-                    runner.fetch_derivation(&upload_path, &guard).await?;
+                    runner.fetch_derivation(&upload_path, &receiver).await?;
                     info!(
                         runner = runner_name,
                         is_remote,
@@ -275,7 +290,7 @@ impl NowEnvironment {
                 r#type = "step-teardown",
             );
 
-            let env_vars = match self.generate_env_vars_for_step(step_env) {
+            let env_vars = match self.generate_env_vars_for_step(&step_env) {
                 Ok(env_vars) => env_vars,
                 Err(error) => {
                     warn!(
