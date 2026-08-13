@@ -29,7 +29,7 @@ use smol::{
 use tracing::{info, instrument, warn};
 
 use crate::{
-    builder::local::LocalBuilder,
+    builder::local::{BuilderGuard, LocalBuilder, RunnerGuard},
     environment::NowEnvironment,
     workflow::{NowJob, NowStepEnvVar},
 };
@@ -83,16 +83,22 @@ impl NowEnvironment {
                 .iter()
                 .cloned()
                 .map(|step| async {
-                    let (_guard, receiver, builder) = match local_builder.get_builder(&job).await? {
-                        Some((guard, receiver, builder)) => (guard, receiver, builder),
-                        None => {
-                            return Err(JobError::NoMatchingBuilders {
-                                job_name: job.name.clone(),
-                                build_system: job.build_system.clone(),
-                                required_system_features: job.required_system_features.clone(),
-                            });
-                        }
-                    };
+                    let (_lock, _guard, receiver, builder) =
+                        match local_builder.get_builder(&job).await? {
+                            Some(BuilderGuard {
+                                lock,
+                                guard,
+                                receiver,
+                                builder,
+                            }) => (lock, guard, receiver, builder),
+                            None => {
+                                return Err(JobError::NoMatchingBuilders {
+                                    job_name: job.name.clone(),
+                                    build_system: job.build_system.clone(),
+                                    required_system_features: job.required_system_features.clone(),
+                                });
+                            }
+                        };
                     if matches!(receiver.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
                         return Err(color_eyre::eyre::eyre!("Runner aborted").into());
                     }
@@ -142,7 +148,11 @@ impl NowEnvironment {
         };
 
         let (_guard, receiver, runner) = match local_builder.get_runner(&job).await? {
-            Some((guard, receiver, runner)) => (guard, receiver, runner),
+            Some(RunnerGuard {
+                lock: guard,
+                receiver,
+                builder: runner,
+            }) => (guard, receiver, runner),
             None => {
                 return Err(JobError::NoMatchingRunners {
                     job_name: job.name.clone(),

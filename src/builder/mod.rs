@@ -22,7 +22,11 @@ use std::{
 };
 
 use futures::FutureExt;
-use smol::{channel, lock::futures::Acquire, process::Child};
+use smol::{
+    channel,
+    lock::futures::{Acquire, Read, Write},
+    process::Child,
+};
 
 use async_trait::async_trait;
 use serde::Deserialize;
@@ -103,7 +107,9 @@ impl CheckoutTask for RsyncCheckoutTask {
 
 #[async_trait(?Send)]
 pub(crate) trait NowBuilder {
-    fn acquire(&self) -> (Acquire<'_>, &channel::Receiver<()>);
+    fn acquire(&self) -> (Acquire<'_>, Read<'_, ()>, &channel::Receiver<()>);
+
+    fn acquire_exclusive(&self) -> (Write<'_, ()>, &channel::Receiver<()>);
 
     fn get_name(&self) -> String;
 

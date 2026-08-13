@@ -18,7 +18,7 @@ use std::{
     collections::{HashMap, HashSet},
     env::temp_dir,
     ffi::{OsStr, OsString},
-    io::Write,
+    io::Write as _,
     num::NonZeroUsize,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
@@ -29,7 +29,10 @@ use futures::{AsyncWriteExt, stream::FuturesUnordered};
 use smol::{
     channel::{self, Receiver},
     io::AsyncReadExt,
-    lock::{Semaphore, SemaphoreGuard, futures::Acquire},
+    lock::{
+        RwLock, RwLockReadGuard, RwLockWriteGuard, Semaphore, SemaphoreGuard,
+        futures::{Acquire, Read, Write},
+    },
     process::{Child, Command, Stdio},
     stream::StreamExt,
 };
@@ -48,6 +51,7 @@ pub(crate) struct LocalBuilder {
     pub(crate) cancellation: channel::Sender<()>,
     pub(crate) receiver: channel::Receiver<()>,
     pub(crate) semaphore: Semaphore,
+    pub(crate) lock: RwLock<()>,
     pub(crate) env: HashMap<OsString, OsString>,
     pub(crate) hostname: String,
     pub(crate) extra_platforms: Vec<String>,
@@ -55,6 +59,19 @@ pub(crate) struct LocalBuilder {
     pub(crate) system_features: HashSet<String>,
     pub(crate) remote_builders: Vec<RemoteBuilder>,
     pub(crate) remote_only: bool,
+}
+
+pub(crate) struct BuilderGuard<'a> {
+    pub(crate) guard: SemaphoreGuard<'a>,
+    pub(crate) lock: RwLockReadGuard<'a, ()>,
+    pub(crate) receiver: &'a Receiver<()>,
+    pub(crate) builder: &'a dyn NowBuilder,
+}
+
+pub(crate) struct RunnerGuard<'a> {
+    pub(crate) lock: RwLockWriteGuard<'a, ()>,
+    pub(crate) receiver: &'a Receiver<()>,
+    pub(crate) builder: &'a dyn NowBuilder,
 }
 
 impl LocalBuilder {
@@ -110,6 +127,7 @@ impl LocalBuilder {
             cancellation,
             receiver,
             semaphore: Semaphore::new(cores),
+            lock: RwLock::default(),
             env: environment.local_env.clone(),
             hostname,
             extra_platforms: config.extra_platforms.value,
@@ -130,7 +148,7 @@ impl LocalBuilder {
     pub(crate) async fn get_builder(
         &self,
         job: &NowJob,
-    ) -> color_eyre::Result<Option<(SemaphoreGuard<'_>, &Receiver<()>, &dyn NowBuilder)>> {
+    ) -> color_eyre::Result<Option<BuilderGuard<'_>>> {
         let mut builders = vec![];
 
         if !self.remote_only
@@ -161,9 +179,15 @@ impl LocalBuilder {
         let mut builders_fut: FuturesUnordered<_> = builders
             .into_iter()
             .map(|builder| async move {
-                let (semaphore, receiver) = builder.acquire();
+                let (semaphore, read, receiver) = builder.acquire();
+                let lock = read.await;
                 let guard = semaphore.await;
-                (guard, receiver, builder)
+                BuilderGuard {
+                    guard,
+                    lock,
+                    receiver,
+                    builder,
+                }
             })
             .collect();
 
@@ -173,7 +197,7 @@ impl LocalBuilder {
     pub(crate) async fn get_runner(
         &self,
         job: &NowJob,
-    ) -> color_eyre::Result<Option<(SemaphoreGuard<'_>, &Receiver<()>, &dyn NowBuilder)>> {
+    ) -> color_eyre::Result<Option<RunnerGuard<'_>>> {
         let mut runners = vec![];
 
         if !self.remote_only
@@ -204,9 +228,13 @@ impl LocalBuilder {
         let mut runners_fut: FuturesUnordered<_> = runners
             .into_iter()
             .map(|builder| async move {
-                let (semaphore, receiver) = builder.acquire();
-                let guard = semaphore.await;
-                (guard, receiver, builder)
+                let (write, receiver) = builder.acquire_exclusive();
+                let lock = write.await;
+                RunnerGuard {
+                    lock,
+                    receiver,
+                    builder,
+                }
             })
             .collect();
 
@@ -216,8 +244,12 @@ impl LocalBuilder {
 
 #[async_trait(?Send)]
 impl NowBuilder for LocalBuilder {
-    fn acquire(&self) -> (Acquire<'_>, &channel::Receiver<()>) {
-        (self.semaphore.acquire(), &self.receiver)
+    fn acquire(&self) -> (Acquire<'_>, Read<'_, ()>, &channel::Receiver<()>) {
+        (self.semaphore.acquire(), self.lock.read(), &self.receiver)
+    }
+
+    fn acquire_exclusive(&self) -> (Write<'_, ()>, &channel::Receiver<()>) {
+        (self.lock.write(), &self.receiver)
     }
 
     fn get_name(&self) -> String {

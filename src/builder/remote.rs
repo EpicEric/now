@@ -25,7 +25,10 @@ use async_trait::async_trait;
 use smol::{
     channel,
     io::{AsyncReadExt, AsyncWriteExt},
-    lock::{Semaphore, futures::Acquire},
+    lock::{
+        RwLock, Semaphore,
+        futures::{Acquire, Read, Write},
+    },
     process::{Child, Command, Stdio},
 };
 
@@ -39,6 +42,7 @@ pub(crate) struct RemoteBuilder {
     pub(crate) cancellation: channel::Sender<()>,
     pub(crate) receiver: channel::Receiver<()>,
     pub(crate) semaphore: Semaphore,
+    pub(crate) lock: RwLock<()>,
     pub(crate) control_path: PathBuf,
     pub(crate) ssh_uri: String,
     pub(crate) ssh_identity: Option<String>,
@@ -191,6 +195,7 @@ impl RemoteBuilder {
                 cancellation,
                 receiver,
                 semaphore: Semaphore::new(maximum_builds),
+                lock: RwLock::default(),
                 control_path,
                 ssh_uri,
                 ssh_identity,
@@ -207,8 +212,12 @@ impl RemoteBuilder {
 
 #[async_trait(?Send)]
 impl NowBuilder for RemoteBuilder {
-    fn acquire(&self) -> (Acquire<'_>, &channel::Receiver<()>) {
-        (self.semaphore.acquire(), &self.receiver)
+    fn acquire(&self) -> (Acquire<'_>, Read<'_, ()>, &channel::Receiver<()>) {
+        (self.semaphore.acquire(), self.lock.read(), &self.receiver)
+    }
+
+    fn acquire_exclusive(&self) -> (Write<'_, ()>, &channel::Receiver<()>) {
+        (self.lock.write(), &self.receiver)
     }
 
     fn get_name(&self) -> String {
