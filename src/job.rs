@@ -283,7 +283,7 @@ impl NowEnvironment {
                 Err(color_eyre::eyre::eyre!(
                     "Job '{}' timed out after {}",
                     job.name,
-                    timeout
+                    humantime::Duration::from(timeout)
                 ))
             } else {
                 smol::future::pending::<color_eyre::Result<()>>().await

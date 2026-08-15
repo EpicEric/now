@@ -14,49 +14,10 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    ffi::OsString,
-    io::Write,
-    os::unix::ffi::{OsStrExt, OsStringExt},
-};
+use std::io::Write;
 
 use rand::distr::SampleString;
 use smol::{io::AsyncReadExt, process::Child};
-
-pub(crate) fn escape_os_string(string: OsString) -> OsString {
-    if !string.is_empty()
-        && string.as_bytes().iter().all(|byte| {
-            matches!(byte, b'a'..=b'z'
-                | b'A'..=b'Z'
-                | b'0'..=b'9'
-                | b'-'
-                | b'_'
-                | b'='
-                | b'/'
-                | b','
-                | b'.'
-                | b'+')
-        })
-    {
-        return string;
-    }
-
-    let mut escaped = Vec::new();
-    escaped.push(b'\'');
-    for char in string.as_encoded_bytes() {
-        match char {
-            b'\'' | b'!' => {
-                escaped.extend(b"'\\");
-                escaped.push(*char);
-                escaped.push(b'\'');
-            }
-            _ => escaped.push(*char),
-        }
-    }
-    escaped.push(b'\'');
-
-    OsString::from_vec(escaped)
-}
 
 pub(crate) async fn pipe_outputs_to_stderr(child: &mut Child) -> color_eyre::Result<()> {
     let mut stderr = std::io::stderr();
@@ -77,13 +38,19 @@ pub(crate) fn get_random_string(len: usize) -> String {
     rand::distr::Alphanumeric.sample_string(&mut rand::rng(), len)
 }
 
-pub(crate) fn trim_string(original: String, max_chars: usize) -> String {
+pub(crate) fn trim_string(original: &str, max_chars: usize) -> String {
     debug_assert!(max_chars > 0);
-    if original.chars().count() <= max_chars {
-        return original;
-    }
     let mut output = String::with_capacity(max_chars);
-    output.extend(original.chars().take(max_chars - 1));
-    output.push('…');
+    let mut iter = original.chars();
+    for _ in 0..max_chars - 1 {
+        if let Some(char) = iter.next() {
+            output.push(char);
+        } else {
+            return output;
+        }
+    }
+    if iter.next().is_some() {
+        output.push('…');
+    }
     output
 }

@@ -246,29 +246,33 @@ impl<'de> Deserialize<'de> for NowStepDownload {
 }
 
 pub(crate) mod now_job_timeout {
-    use std::str::FromStr;
+    use std::{str::FromStr, time::Duration};
 
-    use ::humantime::Duration as WrappedType;
     use serde::{Deserializer, Serializer};
 
-    pub fn serialize<S>(value: &Option<WrappedType>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(value: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         match value {
-            Some(value) => serializer.serialize_some(&value.to_string()),
+            Some(value) => serializer.serialize_some(
+                &jiff::Span::try_from(*value)
+                    .map_err(|error| serde::ser::Error::custom(error))?
+                    .round(jiff::SpanRound::new().largest(jiff::Unit::Hour))
+                    .map_err(|error| serde::ser::Error::custom(error))?,
+            ),
             None => serializer.serialize_none(),
         }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<WrappedType>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
     where
         D: Deserializer<'de>,
     {
         struct Visitor;
 
         impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = Option<WrappedType>;
+            type Value = Option<Duration>;
 
             fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> std::fmt::Result {
                 formatter.write_str("an optional duration")
@@ -279,7 +283,9 @@ pub(crate) mod now_job_timeout {
                 E: serde::de::Error,
             {
                 Ok(Some(
-                    WrappedType::from_str(v).map_err(|error| serde::de::Error::custom(error))?,
+                    humantime::Duration::from_str(v)
+                        .map_err(|error| serde::de::Error::custom(error))?
+                        .into(),
                 ))
             }
 
@@ -326,7 +332,6 @@ mod serde_tests {
                         \"env\": {{}},
                         \"name\": \"format-0\",
                         \"runDrv\": \"/nix/store/7djw1vhncf4953h80pq7xwvddrq0k88i-now-step.drv\",
-                        \"sandbox\": null,
                         \"teardownDrv\": null
                     }}
                 ],
@@ -342,7 +347,7 @@ mod serde_tests {
     #[test]
     fn serde_now_job_timeout() {
         #[derive(Serialize, Deserialize)]
-        struct Wrapper(#[serde(with = "now_job_timeout")] Option<humantime::Duration>);
+        struct Wrapper(#[serde(with = "now_job_timeout")] Option<std::time::Duration>);
 
         let value: Wrapper = serde_json::from_str("null").unwrap();
         assert!(value.0.is_none());
@@ -351,8 +356,8 @@ mod serde_tests {
         let value: Wrapper = serde_json::from_str(r#""1h""#).unwrap();
         assert_eq!(
             value.0.unwrap(),
-            humantime::Duration::from_str("1h").unwrap()
+            humantime::Duration::from_str("1h").unwrap().into()
         );
-        assert_eq!(serde_json::to_string(&value).unwrap(), r#""1h""#);
+        assert_eq!(serde_json::to_string(&value).unwrap(), r#""PT1H""#);
     }
 }

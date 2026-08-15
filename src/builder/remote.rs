@@ -34,7 +34,7 @@ use smol::{
 
 use crate::{
     builder::{CheckoutTask, CommandCheckoutTask, NixConfig, NowBuilder, RsyncCheckoutTask},
-    utils::{escape_os_string, get_random_string, pipe_outputs_to_stderr},
+    utils::{get_random_string, pipe_outputs_to_stderr},
     workflow::NowCheckout,
 };
 
@@ -514,7 +514,9 @@ impl NowBuilder for RemoteBuilder {
         for (key, value) in envs {
             full_command.push(key);
             full_command.push("=");
-            full_command.push(escape_os_string(value));
+            full_command.push(OsStr::from_bytes(
+                shlex::bytes::try_quote(value.as_encoded_bytes())?.as_ref(),
+            ));
             full_command.push(" ");
         }
 

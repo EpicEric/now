@@ -15,11 +15,9 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::HashMap,
     hash::{Hash, Hasher},
     io::Write,
     marker::PhantomData,
-    sync::Mutex,
 };
 
 use owo_colors::{OwoColorize, Style};
@@ -34,15 +32,13 @@ struct CachedBuilder {
     style: Style,
 }
 
-#[derive(Default)]
-struct NowSubscriberCache {
-    inner: Mutex<HashMap<String, CachedBuilder>>,
-}
+type NowSubscriberCache = papaya::HashMap<u64, CachedBuilder>;
 
 pub(crate) struct NowSubscriberLayer<S, W = fn() -> std::io::Stderr> {
     make_writer: W,
     builder_name_limit: usize,
     cache: NowSubscriberCache,
+    hasher: ahash::RandomState,
     _subscriber: PhantomData<S>,
 }
 
@@ -52,6 +48,7 @@ impl<S> Default for NowSubscriberLayer<S> {
             make_writer: std::io::stderr,
             builder_name_limit: 40,
             cache: Default::default(),
+            hasher: Default::default(),
             _subscriber: Default::default(),
         }
     }
@@ -67,7 +64,8 @@ where
         event: &tracing::Event<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        let mut fields_visitor = NowSubscriberVisitor::new(&self.cache, self.builder_name_limit);
+        let mut fields_visitor =
+            NowSubscriberVisitor::new(&self.cache, &self.hasher, self.builder_name_limit);
         event.record(&mut fields_visitor);
         if let Some(log_line) = fields_visitor.finish() {
             let _ = writeln!(
@@ -81,6 +79,7 @@ where
 
 struct NowSubscriberVisitor<'a> {
     cache: &'a NowSubscriberCache,
+    hasher: &'a ahash::RandomState,
     builder_name_limit: usize,
     runner: Option<String>,
     is_remote: Option<bool>,
@@ -89,9 +88,14 @@ struct NowSubscriberVisitor<'a> {
 }
 
 impl<'a> NowSubscriberVisitor<'a> {
-    fn new(cache: &'a NowSubscriberCache, builder_name_limit: usize) -> Self {
+    fn new(
+        cache: &'a NowSubscriberCache,
+        hasher: &'a ahash::RandomState,
+        builder_name_limit: usize,
+    ) -> Self {
         NowSubscriberVisitor {
             cache,
+            hasher,
             builder_name_limit,
             runner: None,
             is_remote: None,
@@ -135,13 +139,11 @@ impl<'a> tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscribe
         };
         let is_remote = self.is_remote.is_some_and(|is_remote| is_remote);
 
-        let mut guard = self.cache.inner.lock().expect("not poisoned");
-        let builder = guard
-            .entry(runner.clone())
-            .or_insert_with(|| CachedBuilder {
-                short_name: trim_string(runner.clone(), self.builder_name_limit),
-                style: get_style_for_runner(is_remote, &runner),
-            });
+        let guard = self.cache.pin();
+        let builder = guard.get_or_insert_with(self.hasher.hash_one(&runner), || CachedBuilder {
+            short_name: trim_string(&runner, self.builder_name_limit),
+            style: get_style_for_runner(is_remote, &runner),
+        });
 
         if let Some(step) = self.step {
             Some(format!(

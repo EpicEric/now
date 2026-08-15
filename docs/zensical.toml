@@ -3,7 +3,7 @@ site_name = "now documentation"
 site_description = "Nix-based distributed command runner."
 site_author = "Eric Rodrigues Pires"
 site_url = "https://now.dev.br"
-repo_url = "https://codeberg.org/EpicEric9/now"
+repo_url = "https://codeberg.org/now-runner/now"
 copyright = """
 Copyright &copy; 2026 Eric Rodrigues Pires
 """
@@ -23,7 +23,7 @@ extra_css = [
 ]
 
 [project.theme]
-#favicon = "images/favicon.png"
+favicon = "images/favicon.png"
 logo = "images/logo.png"
 language = "en"
 features = [
