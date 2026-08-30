@@ -6,11 +6,11 @@ icon: lucide/rocket
 
 ## Installation
 
-The recommended way to install now is via Nix (`nix profile add github:EpicEric/now`) or via [crates.io](https://crates.io/crates/now-runner/).
+The recommended way to install now is via Nix or via [crates.io](https://crates.io/crates/now-runner/).
 
 !!! tip
 
-    To try it out without installing, you can use `nix run github:EpicEric/now`.
+    To try it out without installing, you can use `nix run git+https://codeberg.org/now-runner/now`.
 
 now comes with a binary cache as well. If you have a multi-user Nix installation, add the following to `/etc/nix/nix.conf`:
 
@@ -24,7 +24,7 @@ extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+
 === "tack"
 
     ```bash
-    tack add now github:EpicEric/now --fetch
+    tack add now git+https://codeberg.org/now-runner/now --fetch
     ```
 
     ```nix
@@ -49,7 +49,7 @@ extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+
 === "npins"
 
     ```bash
-    npins add github EpicEric now
+    npins add git https://codeberg.org/now-runner/now.git
     ```
 
     ```nix
@@ -78,7 +78,7 @@ extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+
     {
       inputs = {
         # ...
-        now.url = "github:EpicEric/now/main";
+        now.url = "git+https://codeberg.org/now-runner/now?ref=main";
       };
 
       outputs =

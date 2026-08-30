@@ -21,19 +21,19 @@ Still an early work-in-progress. Expect frequent breaking changes and broken fun
 # Binary cache:
 #   extra-substituters = https://cache.eric.dev.br
 #   extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=
-nix run github:EpicEric/now -- init
+nix run git+https://codeberg.org/now-runner/now -- init
 ```
 
 This creates a `now.nix` file in the current directory. To run it:
 
 ```bash
-nix run github:EpicEric/now -- run
+nix run git+https://codeberg.org/now-runner/now -- run
 ```
 
 For options and examples:
 
 ```bash
-nix run github:EpicEric/now -- --help
+nix run git+https://codeberg.org/now-runner/now -- --help
 ```
 
 ## Workflows

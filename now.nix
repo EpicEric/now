@@ -8,7 +8,7 @@ in
   jobs = {
 
     # ============================================================
-    #                             Utils
+    #                           Formatting
     # ============================================================
 
     format = { pkgs, ... }: {
@@ -402,8 +402,6 @@ in
         ];
       };
 
-    # To run this, pass an envvar like:
-    # BUILDERS='ssh://user@host x86_64-linux - 1 1 now now -'
     test-matrix =
       { pkgs, ... }:
       {
@@ -423,8 +421,8 @@ in
               else
                 echo "BUILDERS is unset; skipping"
                 echo ""
-                echo "=== hint: to run this, pass an envvar like ==="
-                echo "    BUILDERS='ssh://user@host x86_64-linux - 1 1 now now -'"
+                echo "=== hint: to run this, pass an envvar like:"
+                echo "===   BUILDERS='ssh://user@host x86_64-linux - 1 1 now now -'"
               fi
             '';
           }
