@@ -31,6 +31,7 @@ now - Nix-based distributed command runner.
 
 <b><u>Commands:</u></b>
   <b>init</b>  Initialize a basic workflow
+  <b>eval</b>  Evaluate a workflow, printing its JSON representation
   <b>run</b>   Run one or more jobs
   <b>help</b>  Print this message or the help of the given subcommand(s)
 
@@ -54,6 +55,34 @@ Initialize a basic workflow
 
 <b><u>Options:</u></b>
   <b>-h</b>, <b>--help</b>  Print help
+</pre>
+
+## now eval
+
+<pre class="terminal">
+Evaluate a workflow, printing its JSON representation
+
+<b><u>Usage:</u></b> <b>now eval</b> [OPTIONS]
+
+<b><u>Options:</u></b>
+  <b>-w</b>, <b>--workflow</b> &lt;FILE&gt;
+          Path to the workflow.
+          
+          Cannot be used together with the `--flake` option.
+
+  <b>-f</b>, <b>--flake</b> &lt;FLAKE[#ATTR]&gt;
+          Path to the flake and an optional attribute (defaults to the `now` output).
+          
+          Cannot be used together with the `--workflow` option.
+
+  <b>-e</b>, <b>--env-file</b> &lt;FILE&gt;
+          Optional dotenv file to read environment variables from
+
+  <b>-c</b>, <b>--cwdir</b> &lt;CWDIR&gt;
+          In which directory to evaluate the workflow
+
+  <b>-h</b>, <b>--help</b>
+          Print help (see a summary with &#39;-h&#39;)
 </pre>
 
 ## now run
@@ -95,9 +124,6 @@ Run one or more jobs
 
       <b>--timeout</b> &lt;DURATION&gt;
           Timeout for the entire workflow, eg. `1h`
-
-      <b>--eval</b>
-          Evaluate but don&#39;t run the workflow
 
   <b>-c</b>, <b>--cwdir</b> &lt;CWDIR&gt;
           In which directory to run the workflow.

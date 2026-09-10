@@ -71,6 +71,38 @@ enum Command {
         workflow: Option<PathBuf>,
     },
 
+    /// Evaluate a workflow, printing its JSON representation.
+    Eval {
+        /// Path to the workflow.
+        ///
+        /// Cannot be used together with the `--flake` option.
+        #[arg(
+            short,
+            long,
+            value_name = "FILE",
+            add = ArgValueCompleter::new(PathCompleter::any().filter(workflow_filter)),
+        )]
+        workflow: Option<PathBuf>,
+
+        /// Path to the flake and an optional attribute (defaults to the `now` output).
+        ///
+        /// Cannot be used together with the `--workflow` option.
+        #[arg(short, long, value_name = "FLAKE[#ATTR]", conflicts_with = "workflow")]
+        flake: Option<String>,
+
+        /// Optional dotenv file to read environment variables from.
+        #[arg(short, long, value_name = "FILE")]
+        env_file: Option<PathBuf>,
+
+        /// In which directory to evaluate the workflow.
+        #[arg(
+            short,
+            long,
+            add = ArgValueCompleter::new(PathCompleter::dir()),
+        )]
+        cwdir: Option<PathBuf>,
+    },
+
     /// Run one or more jobs.
     Run {
         /// Jobs to target in this run.
@@ -118,10 +150,6 @@ enum Command {
         /// Timeout for the entire workflow, eg. `1h`.
         #[arg(long, value_name = "DURATION")]
         timeout: Option<humantime::Duration>,
-
-        /// Evaluate but don't run the workflow.
-        #[arg(long, conflicts_with_all = ["jobs", "all_jobs"])]
-        eval: bool,
 
         /// In which directory to run the workflow.
         ///
@@ -368,6 +396,31 @@ fn main() -> color_eyre::Result<()> {
             )
         }
 
+        Command::Eval {
+            workflow,
+            flake,
+            env_file,
+            cwdir,
+        } => {
+            let workflow = find_workflow(workflow, flake)?;
+
+            if let Some(cwdir) = cwdir {
+                std::env::set_current_dir(cwdir)?;
+            }
+
+            let (sender, ctrl_c) = smol::channel::bounded(1);
+            ctrlc::set_handler(move || {
+                let _ = sender.try_send(());
+            })?;
+
+            smol::block_on(async {
+                let environment = NowEnvironment::get(&workflow, ctrl_c, env_file.as_ref()).await?;
+                let evaluated = environment.evaluate_workflow(&workflow)?;
+                println!("{}", serde_json::to_string(&evaluated)?);
+                Ok::<(), color_eyre::Report>(())
+            })?;
+        }
+
         Command::Run {
             jobs,
             workflow,
@@ -376,7 +429,6 @@ fn main() -> color_eyre::Result<()> {
             env_file,
             abort,
             timeout,
-            eval,
             cwdir,
             builders,
             cores,
@@ -422,7 +474,6 @@ fn main() -> color_eyre::Result<()> {
                     ctrl_c,
                     abort,
                     timeout: timeout.map(|timeout| timeout.into()),
-                    eval,
                     jobs,
                     all_jobs,
                     builders,

@@ -218,6 +218,7 @@ in
                 mkdir $out
                 to-html --no-prompt "now help" > $out/index.html
                 to-html --no-prompt "now help init" > $out/init.html
+                to-html --no-prompt "now help eval" > $out/eval.html
                 to-html --no-prompt "now help run" > $out/run.html
               '';
         })
@@ -244,6 +245,10 @@ in
             echo "## now init" >> $OUT
             echo "" >> $OUT
             cat $DOCS_CLI/init.html >> $OUT
+            echo "" >> $OUT
+            echo "## now eval" >> $OUT
+            echo "" >> $OUT
+            cat $DOCS_CLI/eval.html >> $OUT
             echo "" >> $OUT
             echo "## now run" >> $OUT
             echo "" >> $OUT
@@ -355,7 +360,7 @@ in
             ];
             run = ''
               # Ensure the test evaluates just fine
-              now run --eval --workflow .now/tests/error.nix
+              now eval --workflow .now/tests/error.nix
 
               now run --workflow .now/tests/error.nix || error_code=$?
               if [ "$error_code" -eq 0 ]; then

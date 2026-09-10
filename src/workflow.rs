@@ -151,7 +151,6 @@ pub(crate) struct NowWorkflowParams {
     pub(crate) ctrl_c: Receiver<()>,
     pub(crate) abort: bool,
     pub(crate) timeout: Option<Duration>,
-    pub(crate) eval: bool,
     pub(crate) jobs: Option<Vec<String>>,
     pub(crate) all_jobs: bool,
     pub(crate) builders: Option<String>,
@@ -168,7 +167,6 @@ impl NowEnvironment {
             workflow,
             abort,
             timeout,
-            eval,
             jobs,
             all_jobs,
             builders,
@@ -185,7 +183,6 @@ impl NowEnvironment {
             ctrl_c,
             abort,
             timeout,
-            eval,
             jobs,
             all_jobs,
             builders,
@@ -205,12 +202,7 @@ impl NowEnvironment {
             String::from(&workflow)
         );
         let workflow = self.evaluate_workflow(&workflow)?;
-        if eval {
-            println!("{}", serde_json::to_string(&workflow)?);
-            return Ok(());
-        } else {
-            debug!("$duper.workflow" = duper::serde::ser::to_string_compact(&workflow)?);
-        }
+        debug!("$duper.workflow" = duper::serde::ser::to_string_compact(&workflow)?);
 
         if let Some(name) = workflow.name.as_ref() {
             info!(runner, is_remote = false, "Building tree for '{}'...", name);
@@ -382,7 +374,10 @@ impl NowEnvironment {
     }
 
     #[instrument(skip(self))]
-    fn evaluate_workflow(&self, workflow: &WorkflowSource) -> color_eyre::Result<NowWorkflow> {
+    pub(crate) fn evaluate_workflow(
+        &self,
+        workflow: &WorkflowSource,
+    ) -> color_eyre::Result<NowWorkflow> {
         let workflow_path = workflow.nix_expression()?;
 
         let nix_workflow = self.nix_project_source.as_ref().join("nix/workflow.nix");
