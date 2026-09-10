@@ -8,6 +8,44 @@ icon: lucide/rectangle-ellipsis
 
 now is a command runner based on [Nix](https://nixos.org/). It allows for distributed builds of reproducible scripts, with control over how and where they should run.
 
+## Example
+
+now is written in plain Nix, with a structure inspired by GitHub Actions:
+
+```nix
+{
+  default = [ "serve" ];
+
+  jobs = {
+    build = { pkgs, ... }: {
+      name = "Build";
+      steps = [
+        {
+          path = [ pkgs.zola ];
+          run = "zola build";
+        }
+        {
+          run = "echo Done!";
+        }
+      ];
+    };
+
+    serve = { pkgs, ... }: {
+      name = "Serve";
+      steps = [
+        {
+          path = [ pkgs.zola ];
+          run = ''
+            echo Press Ctrl-C to quit.
+            zola serve
+          '';
+        }
+      ];
+    };
+  };
+}
+```
+
 ## Core concepts
 
 now is separated into three levels:
