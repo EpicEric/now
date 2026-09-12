@@ -20,20 +20,63 @@ use std::{
     io::Write,
     os::unix::ffi::OsStringExt,
     path::{Path, PathBuf},
-    sync::{LazyLock, Mutex},
+    process::Stdio,
+    sync::{Mutex, OnceLock},
 };
 
+use sha2::{Digest, Sha256};
 use smol::{channel::Receiver, process::Command};
 use tracing::instrument;
 
 use crate::{
     project::{ProjectSource, create_nix_project_source},
     secret::SecretString,
-    utils::get_random_string,
+    utils::{wait_for_output, write_output_to_stderr},
     workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow, WorkflowSource},
 };
 
-pub(crate) static EVAL_ID: LazyLock<String> = LazyLock::new(|| get_random_string(10));
+pub(crate) static EVAL_ID: OnceLock<String> = OnceLock::new();
+
+pub(crate) fn eval_id() -> &'static str {
+    EVAL_ID
+        .get()
+        .expect("EVAL_ID initialized before evaluation")
+}
+
+async fn eval_id_from_workflow_source(workflow: &WorkflowSource) -> color_eyre::Result<String> {
+    let mut command = smol::process::Command::new("nix");
+    command
+        .args([
+            "--extra-experimental-features",
+            "nix-command flakes",
+            "eval",
+            "--impure",
+            "--raw",
+            "--expr",
+        ])
+        .arg(workflow.nix_expression()?)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    let mut child = command.spawn()?;
+    let output = wait_for_output(&mut child, None).await?;
+    let data = if output.status.success() {
+        output.stdout
+    } else {
+        write_output_to_stderr(&output)?;
+        return Err(color_eyre::eyre::eyre!(
+            "Failed to get workflow source from {}",
+            workflow
+        ));
+    };
+
+    let digest = Sha256::digest(data);
+    Ok(digest[..16]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect())
+}
 
 pub(crate) struct NowEnvironment {
     pub(crate) nix_project_source: ProjectSource,
@@ -69,6 +112,8 @@ impl NowEnvironment {
         };
         env_vars.extend(std::env::vars_os());
 
+        let _ = EVAL_ID.set(eval_id_from_workflow_source(workflow).await?);
+
         smol::future::or(
             async {
                 let _ = ctrl_c.recv().await;
@@ -84,9 +129,7 @@ impl NowEnvironment {
                     .secrets
                     .into_iter()
                     .filter_map(|secret| {
-                        let Some(value) = env_vars.remove(&secret) else {
-                            return None;
-                        };
+                        let value = env_vars.remove(&secret)?;
                         let key = match secret.into_string() {
                             Ok(secret) => secret,
                             Err(os_string) => {
@@ -114,9 +157,7 @@ impl NowEnvironment {
                     .vars
                     .into_iter()
                     .filter_map(|var| {
-                        let Some(value) = env_vars.remove(&var) else {
-                            return None;
-                        };
+                        let value = env_vars.remove(&var)?;
                         let key = match var.into_string() {
                             Ok(var) => var,
                             Err(os_string) => {
@@ -172,10 +213,10 @@ impl NowEnvironment {
             .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
         let nix_env_path = format!("(/. + {})", serde_json::to_string(&nix_env_str)?);
 
-        let eval_id = serde_json::to_string(&*EVAL_ID)?;
+        let eval_id_json = serde_json::to_string(eval_id())?;
 
         let nix_command = format!(
-            "import {nix_env_path} {{ }} {{ workflow = {workflow_path}; evalId = {eval_id}; }}"
+            "import {nix_env_path} {{ }} {{ workflow = {workflow_path}; evalId = {eval_id_json}; }}"
         );
 
         let mut command = Command::new("nix");
@@ -201,7 +242,7 @@ impl NowEnvironment {
 
         let mut secrets: HashSet<OsString> = HashSet::new();
 
-        let vars_regex = regex::bytes::Regex::new(&format!("@@__nowVar_{}_([^@]+)@@", *EVAL_ID))
+        let vars_regex = regex::bytes::Regex::new(&format!("@@__nowVar_{}_([^@]+)@@", eval_id()))
             .expect("valid regex");
         let vars: HashSet<OsString> = vars_regex
             .captures_iter(&output.stdout)

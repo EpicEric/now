@@ -81,8 +81,8 @@ impl NowEnvironment {
             let mut realize_futs: FuturesOrdered<_> = job
                 .steps
                 .iter()
-                .cloned()
                 .map(|step| async {
+                    let step = step.clone();
                     let (_lock, _guard, receiver, builder) =
                         match local_builder.get_builder(&job).await? {
                             Some(BuilderGuard {
@@ -111,10 +111,14 @@ impl NowEnvironment {
                             r#type = "step-teardown-realize",
                         );
                         builder
-                            .copy_derivations(&job.name, &[teardown_drv.clone()], &receiver)
+                            .copy_derivations(
+                                &job.name,
+                                std::slice::from_ref(teardown_drv),
+                                receiver,
+                            )
                             .await?;
-                        let teardown = builder.realize_derivation(teardown_drv, &receiver).await?;
-                        builder.fetch_derivation(&teardown, &receiver).await?;
+                        let teardown = builder.realize_derivation(teardown_drv, receiver).await?;
+                        builder.fetch_derivation(&teardown, receiver).await?;
                         Some(teardown)
                     } else {
                         None
@@ -127,10 +131,14 @@ impl NowEnvironment {
                             r#type = "step-run-realize",
                         );
                         builder
-                            .copy_derivations(&job.name, &[step.run_drv.clone()], &receiver)
+                            .copy_derivations(
+                                &job.name,
+                                std::slice::from_ref(&step.run_drv),
+                                receiver,
+                            )
                             .await?;
-                        let run = builder.realize_derivation(&step.run_drv, &receiver).await?;
-                        builder.fetch_derivation(&run, &receiver).await?;
+                        let run = builder.realize_derivation(&step.run_drv, receiver).await?;
+                        builder.fetch_derivation(&run, receiver).await?;
                         run
                     };
                     Ok((step, run, teardown))
@@ -188,7 +196,7 @@ impl NowEnvironment {
             }
 
             runner
-                .copy_derivations(&job.name, &derivations, &receiver)
+                .copy_derivations(&job.name, &derivations, receiver)
                 .await?;
 
             for (step, run, teardown) in steps {
@@ -214,7 +222,9 @@ impl NowEnvironment {
                         }
                     }
                 }
-                runner.download(&downloads, &receiver).await?;
+                if !downloads.is_empty() {
+                    runner.download(&downloads, receiver).await?;
+                }
 
                 if let Some(teardown) = teardown {
                     teardown_stack.push((step.name.clone(), teardown, step.env.clone()));
@@ -259,7 +269,7 @@ impl NowEnvironment {
                     let mut buf = Vec::new();
                     stdout.read_to_end(&mut buf).await?;
                     let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
-                    runner.fetch_derivation(&upload_path, &receiver).await?;
+                    runner.fetch_derivation(&upload_path, receiver).await?;
                     info!(
                         runner = runner_name,
                         is_remote,
@@ -279,7 +289,7 @@ impl NowEnvironment {
 
         let mut result: Result<(), JobError> = smol::future::or(steps_fut, async {
             if let Some(timeout) = job.timeout {
-                smol::Timer::after(timeout.into()).await;
+                smol::Timer::after(timeout).await;
                 Err(color_eyre::eyre::eyre!(
                     "Job '{}' timed out after {}",
                     job.name,
@@ -429,9 +439,7 @@ impl NowEnvironment {
             let (fail_fast, no_fail_fast) = smol::future::zip(
                 async move {
                     while let Some(future) = fail_fast.next().await {
-                        if future.is_err() {
-                            return future;
-                        }
+                        future?;
                     }
                     Ok(())
                 },

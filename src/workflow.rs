@@ -16,11 +16,11 @@
 
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
-    io::Write,
+    fmt::{Display, Write},
     num::NonZeroUsize,
     path::PathBuf,
     pin::Pin,
-    process::Command,
+    process::Stdio,
     time::Duration,
 };
 
@@ -31,14 +31,15 @@ use petgraph::{
     visit::EdgeRef,
 };
 use serde::{Deserialize, Serialize};
-use smol::{channel::Receiver, stream::StreamExt};
+use smol::{channel::Receiver, process::Command, stream::StreamExt};
 use tracing::{debug, info, instrument, warn};
 
 use crate::{
     builder::{NowBuilder, local::LocalBuilder},
-    environment::{EVAL_ID, NowEnvironment},
+    environment::{NowEnvironment, eval_id},
     job::{JobError, JobResult},
     serde::now_job_timeout,
+    utils::{wait_for_output, write_output_to_stderr},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -120,6 +121,19 @@ pub(crate) enum WorkflowSource {
     Flake { path: String, attribute: String },
 }
 
+impl Display for WorkflowSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WorkflowSource::Path(path_buf) => f.write_str(&path_buf.to_string_lossy()),
+            WorkflowSource::Flake { path, attribute } => {
+                f.write_str(path)?;
+                f.write_char('#')?;
+                f.write_str(attribute)
+            }
+        }
+    }
+}
+
 impl WorkflowSource {
     pub(crate) fn nix_expression(&self) -> color_eyre::Result<String> {
         match self {
@@ -176,7 +190,7 @@ impl NowEnvironment {
             skip,
         )
     )]
-    pub(crate) fn run_workflow(
+    pub(crate) async fn run_workflow(
         &mut self,
         NowWorkflowParams {
             workflow,
@@ -192,7 +206,7 @@ impl NowEnvironment {
             skip,
         }: NowWorkflowParams,
     ) -> color_eyre::Result<()> {
-        let builder = LocalBuilder::new(self, builders, local_only, remote_only, cores)?;
+        let builder = LocalBuilder::new(self, builders, local_only, remote_only, cores).await?;
         let runner = builder.get_name();
 
         info!(
@@ -201,7 +215,7 @@ impl NowEnvironment {
             "Evaluating workflow '{}'...",
             String::from(&workflow)
         );
-        let workflow = self.evaluate_workflow(&workflow)?;
+        let workflow = self.evaluate_workflow(&workflow).await?;
         debug!("$duper.workflow" = duper::serde::ser::to_string_compact(&workflow)?);
 
         if let Some(name) = workflow.name.as_ref() {
@@ -370,11 +384,13 @@ impl NowEnvironment {
             }
         });
 
-        smol::future::block_on(executor.run(smol::future::or(workflow_task, abort_task)))
+        executor
+            .run(smol::future::or(workflow_task, abort_task))
+            .await
     }
 
     #[instrument(skip(self))]
-    pub(crate) fn evaluate_workflow(
+    pub(crate) async fn evaluate_workflow(
         &self,
         workflow: &WorkflowSource,
     ) -> color_eyre::Result<NowWorkflow> {
@@ -388,31 +404,40 @@ impl NowEnvironment {
         let nix_workflow_path = format!("(/. + {})", serde_json::to_string(&nix_workflow_str)?);
 
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;
-        let eval_id = serde_json::to_string(&*EVAL_ID)?;
+        let eval_id = serde_json::to_string(eval_id())?;
 
         let nix_command = format!(
             "(import {nix_workflow_path} {{ }}) {{ workflow = {workflow_path}; vars = builtins.fromJSON {vars_json}; evalId = {eval_id}; }}"
         );
 
         let mut command = Command::new("nix");
-        command.env("NIXPKGS_ALLOW_UNSUPPORTED_SYSTEM", "1").args([
-            "--extra-experimental-features",
-            "nix-command flakes",
-            "eval",
-            "--impure",
-            "--json",
-            "--keep-derivations",
-        ]);
-        let output = command.arg("--expr").arg(nix_command).output()?;
+        command
+            .env("NIXPKGS_ALLOW_UNSUPPORTED_SYSTEM", "1")
+            .args([
+                "--extra-experimental-features",
+                "nix-command flakes",
+                "eval",
+                "--impure",
+                "--json",
+                "--keep-derivations",
+                "--expr",
+            ])
+            .arg(nix_command)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-        if !output.status.success() {
-            let mut stderr = std::io::stderr();
-            stderr.write_all(&output.stderr)?;
-            stderr.flush()?;
-            return Err(color_eyre::eyre::eyre!("Failed to evaluate workflow"));
+        let mut child = command.spawn()?;
+        let output = wait_for_output(&mut child, None).await?;
+        if output.status.success() {
+            Ok(serde_json::from_slice(&output.stdout)?)
+        } else {
+            write_output_to_stderr(&output)?;
+            Err(color_eyre::eyre::eyre!(
+                "Failed to evaluate workflow at {}",
+                workflow
+            ))
         }
-
-        Ok(serde_json::from_slice(&output.stdout)?)
     }
 }
 

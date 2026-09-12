@@ -31,7 +31,10 @@ use smol::{
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::{utils::pipe_outputs_to_stderr, workflow::NowCheckout};
+use crate::{
+    utils::{wait_for_output, write_output_to_stderr},
+    workflow::NowCheckout,
+};
 
 pub(crate) mod local;
 pub(crate) mod remote;
@@ -56,11 +59,11 @@ impl CheckoutTask for CommandCheckoutTask {
         &'a mut self,
     ) -> std::pin::Pin<Box<dyn Future<Output = color_eyre::Result<()>> + 'a>> {
         Box::pin(async {
-            let status = self.child.status().await?;
-            if status.success() {
+            let output = wait_for_output(&mut self.child, None).await?;
+            if output.status.success() {
                 Ok(())
             } else {
-                pipe_outputs_to_stderr(&mut self.child).await?;
+                write_output_to_stderr(&output)?;
                 Err(color_eyre::eyre::eyre!(
                     "Failed to checkout current directory to {}",
                     self.builder
@@ -87,11 +90,11 @@ impl CheckoutTask for RsyncCheckoutTask {
         Box::pin(
             smol::future::zip(
                 async {
-                    let status = self.child.status().await?;
-                    if status.success() {
+                    let output = wait_for_output(&mut self.child, None).await?;
+                    if output.status.success() {
                         Ok(())
                     } else {
-                        pipe_outputs_to_stderr(&mut self.child).await?;
+                        write_output_to_stderr(&output)?;
                         Err(color_eyre::eyre::eyre!(
                             "Failed to checkout current directory to {}",
                             self.builder

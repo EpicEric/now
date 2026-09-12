@@ -40,8 +40,8 @@ fn main() {
             {
                 let file_path = dir_entry.path();
                 tar.append_file(
-                    &file_path,
-                    &mut std::fs::File::open(&file_path).expect("file should be readable"),
+                    file_path,
+                    &mut std::fs::File::open(file_path).expect("file should be readable"),
                 )
                 .expect("should write file to archive");
             }

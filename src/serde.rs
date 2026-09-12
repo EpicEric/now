@@ -19,7 +19,7 @@ use std::{collections::HashMap, path::PathBuf};
 use serde::{Deserialize, Serialize, de::Visitor, ser::SerializeStruct};
 
 use crate::{
-    environment::EVAL_ID,
+    environment::eval_id,
     workflow::{NowJobContainer, NowStep, NowStepDownload, NowStepEnvVar, NowStepSecret},
 };
 
@@ -53,10 +53,7 @@ impl<'de> Deserialize<'de> for NowJobContainer {
             where
                 A: serde::de::SeqAccess<'de>,
             {
-                let mut job_vec = seq
-                    .size_hint()
-                    .map(|capacity| Vec::with_capacity(capacity))
-                    .unwrap_or_default();
+                let mut job_vec = seq.size_hint().map(Vec::with_capacity).unwrap_or_default();
                 while let Some(job) = seq.next_element()? {
                     job_vec.push(job);
                 }
@@ -122,7 +119,7 @@ impl<'de> Deserialize<'de> for NowStep {
                         "runDrv" => run_drv = Some(map.next_value()?),
                         "teardownDrv" => teardown_drv = map.next_value()?,
                         "env" => env = Some(map.next_value()?),
-                        _ if matches!(key.split_once(&*EVAL_ID), Some(("__nowUpload_", ""))) => {
+                        _ if matches!(key.split_once(eval_id()), Some(("__nowUpload_", ""))) => {
                             upload_key = map.next_value()?
                         }
                         _ => {} // Ignore unknown keys
@@ -183,7 +180,7 @@ impl<'de> Deserialize<'de> for NowStepSecret {
                 let key = map
                     .next_key::<String>()?
                     .ok_or_else(|| serde::de::Error::custom("missing key for map"))?;
-                match key.split_once(&EVAL_ID.to_string()) {
+                match key.split_once(eval_id()) {
                     Some(("__nowSecret_", "")) => Ok(NowStepSecret {
                         secret_name: map.next_value()?,
                     }),
@@ -228,7 +225,7 @@ impl<'de> Deserialize<'de> for NowStepDownload {
                 let key = map
                     .next_key::<String>()?
                     .ok_or_else(|| serde::de::Error::custom("missing key for map"))?;
-                match key.split_once(&EVAL_ID.to_string()) {
+                match key.split_once(eval_id()) {
                     Some(("__nowDownload_", "")) => Ok(NowStepDownload {
                         download_name: map.next_value()?,
                     }),
@@ -257,9 +254,9 @@ pub(crate) mod now_job_timeout {
         match value {
             Some(value) => serializer.serialize_some(
                 &jiff::Span::try_from(*value)
-                    .map_err(|error| serde::ser::Error::custom(error))?
+                    .map_err(serde::ser::Error::custom)?
                     .round(jiff::SpanRound::new().largest(jiff::Unit::Hour))
-                    .map_err(|error| serde::ser::Error::custom(error))?,
+                    .map_err(serde::ser::Error::custom)?,
             ),
             None => serializer.serialize_none(),
         }
@@ -312,10 +309,13 @@ pub(crate) mod now_job_timeout {
 mod serde_tests {
     use std::str::FromStr;
 
+    use crate::environment::EVAL_ID;
+
     use super::*;
 
     #[test]
     fn deserialize_job_single() {
+        EVAL_ID.get_or_init(|| "test".into());
         let json = format!(
             "{{
                 \"buildSystem\": \"x86_64-linux\",
@@ -338,7 +338,7 @@ mod serde_tests {
                 \"strategy\": null,
                 \"timeout\": null
             }}",
-            *EVAL_ID
+            eval_id()
         );
         let job: NowJobContainer = serde_json::from_str(&json).unwrap();
         assert!(matches!(job, NowJobContainer::Single(_)))

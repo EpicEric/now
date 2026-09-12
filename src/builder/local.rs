@@ -18,7 +18,6 @@ use std::{
     collections::{HashMap, HashSet},
     env::temp_dir,
     ffi::{OsStr, OsString},
-    io::Write as _,
     num::NonZeroUsize,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
@@ -28,7 +27,6 @@ use async_trait::async_trait;
 use futures::{AsyncWriteExt, stream::FuturesUnordered};
 use smol::{
     channel::{self, Receiver},
-    io::AsyncReadExt,
     lock::{
         RwLock, RwLockReadGuard, RwLockWriteGuard, Semaphore, SemaphoreGuard,
         futures::{Acquire, Read, Write},
@@ -43,7 +41,7 @@ use crate::{
         remote::RemoteBuilder,
     },
     environment::NowEnvironment,
-    utils::{get_random_string, pipe_outputs_to_stderr},
+    utils::{get_random_string, wait_for_output, write_output_to_stderr},
     workflow::{NowCheckout, NowJob},
 };
 
@@ -76,14 +74,15 @@ pub(crate) struct RunnerGuard<'a> {
 }
 
 impl LocalBuilder {
-    pub(crate) fn new(
+    pub(crate) async fn new(
         environment: &NowEnvironment,
         builders: Option<String>,
         local_only: bool,
         remote_only: bool,
         cores: Option<NonZeroUsize>,
     ) -> color_eyre::Result<Self> {
-        let output = std::process::Command::new("nix")
+        let mut command = Command::new("nix");
+        command
             .args([
                 "--extra-experimental-features",
                 "nix-command flakes",
@@ -91,16 +90,18 @@ impl LocalBuilder {
                 "show",
                 "--json",
             ])
-            .output()?;
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-        if !output.status.success() {
-            let mut stderr = std::io::stderr();
-            stderr.write_all(&output.stderr)?;
-            stderr.flush()?;
+        let mut child = command.spawn()?;
+        let output = wait_for_output(&mut child, None).await?;
+        let config: NixConfig = if output.status.success() {
+            serde_json::from_slice(&output.stdout)?
+        } else {
+            write_output_to_stderr(&output)?;
             return Err(color_eyre::eyre::eyre!("Failed to fetch Nix config"));
-        }
-
-        let config: NixConfig = serde_json::from_slice(&output.stdout)?;
+        };
 
         let remote_builders = if local_only {
             vec![]
@@ -109,7 +110,8 @@ impl LocalBuilder {
                 &config,
                 builders,
                 environment.nix_project_source.as_ref(),
-            )?
+            )
+            .await?
         };
         if remote_only && remote_builders.is_empty() {
             return Err(color_eyre::eyre::eyre!("No remote builders available"));
@@ -119,10 +121,14 @@ impl LocalBuilder {
 
         let cores = match cores {
             Some(cores) => cores.into(),
-            None => sysinfo::System::physical_core_count().unwrap_or(1),
+            None => smol::unblock(sysinfo::System::physical_core_count)
+                .await
+                .unwrap_or(1),
         };
 
-        let hostname = sysinfo::System::host_name().unwrap_or_else(|| "localhost".into());
+        let hostname = smol::unblock(sysinfo::System::host_name)
+            .await
+            .unwrap_or_else(|| "localhost".into());
 
         Ok(Self {
             cancellation,
@@ -325,7 +331,7 @@ impl NowBuilder for LocalBuilder {
                         child,
                         stdin_future,
                     })),
-                    PathBuf::from(tmpdir),
+                    tmpdir,
                 ))
             }
             NowCheckout::CloneAll => {
@@ -380,29 +386,16 @@ impl NowBuilder for LocalBuilder {
             .stderr(Stdio::piped());
 
         let mut child = command.spawn()?;
-        let result = smol::future::race(
-            async {
-                let _ = cancellation.recv().await;
-                Err(color_eyre::eyre::eyre!("Runner aborted"))
-            },
-            async {
-                if child.status().await?.success() {
-                    let mut stdout = child.stdout.take().expect("stdout is piped");
-                    let mut buf = Vec::new();
-                    stdout.read_to_end(&mut buf).await?;
-                    Ok(PathBuf::from(OsStr::from_bytes(buf.trim_ascii())))
-                } else {
-                    pipe_outputs_to_stderr(&mut child).await?;
-                    Err(color_eyre::eyre::eyre!(
-                        "Failed to realize derivation '{}'",
-                        derivation.to_string_lossy(),
-                    ))
-                }
-            },
-        )
-        .await;
-        let _ = child.kill();
-        result
+        let output = wait_for_output(&mut child, Some(cancellation)).await?;
+        if output.status.success() {
+            Ok(PathBuf::from(OsStr::from_bytes(output.stdout.trim_ascii())))
+        } else {
+            write_output_to_stderr(&output)?;
+            Err(color_eyre::eyre::eyre!(
+                "Failed to realize derivation '{}'",
+                derivation.to_string_lossy(),
+            ))
+        }
     }
 
     async fn download(
@@ -454,10 +447,11 @@ impl NowBuilder for LocalBuilder {
                 command.arg("-rf").arg(path);
 
                 let mut child = command.spawn()?;
-                if child.status().await?.success() {
+                let output = wait_for_output(&mut child, None).await?;
+                if output.status.success() {
                     Ok(())
                 } else {
-                    pipe_outputs_to_stderr(&mut child).await?;
+                    write_output_to_stderr(&output)?;
                     Err(color_eyre::eyre::eyre!(
                         "Failed to remove locally checked out directory"
                     ))

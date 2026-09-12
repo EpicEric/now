@@ -14,24 +14,67 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::io::Write;
+use std::{io::Write, process::Output};
 
 use rand::distr::SampleString;
-use smol::{io::AsyncReadExt, process::Child};
+use smol::{channel::Receiver, future::zip, io::AsyncReadExt, process::Child};
 
-pub(crate) async fn pipe_outputs_to_stderr(child: &mut Child) -> color_eyre::Result<()> {
+/// Waits for `child` to exit while draining its pipe buffers concurrently.
+pub(crate) async fn wait_for_output(
+    child: &mut Child,
+    cancellation: Option<&Receiver<()>>,
+) -> color_eyre::Result<Output> {
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
+    let mut stdout_buf = Vec::new();
+    let mut stderr_buf = Vec::new();
+
+    let run = async {
+        let ((status, out), err) = zip(
+            zip(child.status(), async {
+                if let Some(pipe) = stdout.as_mut() {
+                    pipe.read_to_end(&mut stdout_buf).await?;
+                }
+                Ok::<(), color_eyre::Report>(())
+            }),
+            async {
+                if let Some(pipe) = stderr.as_mut() {
+                    pipe.read_to_end(&mut stderr_buf).await?;
+                }
+                Ok::<(), color_eyre::Report>(())
+            },
+        )
+        .await;
+        out?;
+        err?;
+        Ok(Output {
+            status: status?,
+            stdout: stdout_buf,
+            stderr: stderr_buf,
+        })
+    };
+
+    let result = if let Some(cancellation) = cancellation {
+        smol::future::race(
+            async {
+                let _ = cancellation.recv().await;
+                Err(color_eyre::eyre::eyre!("Runner aborted"))
+            },
+            run,
+        )
+        .await
+    } else {
+        run.await
+    };
+    let _ = child.kill();
+    result
+}
+
+pub(crate) fn write_output_to_stderr(output: &Output) -> color_eyre::Result<()> {
     let mut stderr = std::io::stderr();
-    if let Some(mut pipe) = child.stdout.take() {
-        let mut buf = Vec::new();
-        pipe.read_to_end(&mut buf).await?;
-        stderr.write_all(&buf)?;
-    }
-    if let Some(mut pipe) = child.stderr.take() {
-        let mut buf = Vec::new();
-        pipe.read_to_end(&mut buf).await?;
-        stderr.write_all(&buf)?;
-    }
-    Ok(stderr.flush()?)
+    stderr.write_all(&output.stderr)?;
+    stderr.flush()?;
+    Ok(())
 }
 
 pub(crate) fn get_random_string(len: usize) -> String {

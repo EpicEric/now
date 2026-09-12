@@ -426,7 +426,7 @@ fn main() -> color_eyre::Result<()> {
             smol::block_on(async {
                 let environment =
                     NowEnvironment::get(&workflow, ctrl_c, env_file.as_ref(), None).await?;
-                let evaluated = environment.evaluate_workflow(&workflow)?;
+                let evaluated = environment.evaluate_workflow(&workflow).await?;
                 println!("{}", serde_json::to_string(&evaluated)?);
                 Ok::<(), color_eyre::Report>(())
             })?;
@@ -482,19 +482,21 @@ fn main() -> color_eyre::Result<()> {
                 let mut environment =
                     NowEnvironment::get(&workflow, ctrl_c.clone(), env_file.as_ref(), gcroot_dir)
                         .await?;
-                environment.run_workflow(NowWorkflowParams {
-                    workflow,
-                    ctrl_c,
-                    abort,
-                    timeout: timeout.map(|timeout| timeout.into()),
-                    jobs,
-                    all_jobs,
-                    builders,
-                    cores,
-                    local_only,
-                    remote_only,
-                    skip,
-                })
+                environment
+                    .run_workflow(NowWorkflowParams {
+                        workflow,
+                        ctrl_c,
+                        abort,
+                        timeout: timeout.map(|timeout| timeout.into()),
+                        jobs,
+                        all_jobs,
+                        builders,
+                        cores,
+                        local_only,
+                        remote_only,
+                        skip,
+                    })
+                    .await
             })?;
         }
     }

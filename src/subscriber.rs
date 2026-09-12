@@ -107,16 +107,14 @@ impl<'a> NowSubscriberVisitor<'a> {
 
 impl<'a> Visit for NowSubscriberVisitor<'a> {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn core::fmt::Debug) {
-        match field.name() {
-            "message" => self.message = Some(format!("{:?}", value)),
-            _ => (),
+        if field.name() == "message" {
+            self.message = Some(format!("{:?}", value));
         }
     }
 
     fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
-        match field.name() {
-            "is_remote" => self.is_remote = Some(value),
-            _ => self.record_debug(field, &value),
+        if field.name() == "is_remote" {
+            self.is_remote = Some(value);
         }
     }
 
@@ -131,9 +129,7 @@ impl<'a> Visit for NowSubscriberVisitor<'a> {
 
 impl<'a> tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscriberVisitor<'a> {
     fn finish(self) -> Option<String> {
-        let Some(message) = self.message else {
-            return None;
-        };
+        let message = self.message?;
         let Some(runner) = self.runner else {
             return Some(message);
         };
@@ -148,7 +144,7 @@ impl<'a> tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscribe
         if let Some(step) = self.step {
             Some(format!(
                 "{} {}",
-                format!("{} step[{}]>", &builder.short_name, step)
+                format!("{} step[{}]>", builder.short_name, step)
                     .if_supports_color(owo_colors::Stream::Stderr, |text| text
                         .style(builder.style)),
                 message
@@ -156,7 +152,7 @@ impl<'a> tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscribe
         } else {
             Some(format!(
                 "{} {}",
-                format!("{}>", &builder.short_name)
+                format!("{}>", builder.short_name)
                     .if_supports_color(owo_colors::Stream::Stderr, |text| text
                         .style(builder.style)),
                 message

@@ -24,7 +24,7 @@ use std::{
 use async_trait::async_trait;
 use smol::{
     channel,
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::AsyncWriteExt,
     lock::{
         RwLock, Semaphore,
         futures::{Acquire, Read, Write},
@@ -34,7 +34,7 @@ use smol::{
 
 use crate::{
     builder::{CheckoutTask, CommandCheckoutTask, NixConfig, NowBuilder, RsyncCheckoutTask},
-    utils::{get_random_string, pipe_outputs_to_stderr},
+    utils::{get_random_string, wait_for_output, write_output_to_stderr},
     workflow::NowCheckout,
 };
 
@@ -54,7 +54,7 @@ pub(crate) struct RemoteBuilder {
 
 pub(crate) fn ssh_options(control_path: &Path) -> impl Iterator<Item = OsString> {
     let mut control_path_option: OsString = "ControlPath=".into();
-    control_path_option.push(&control_path);
+    control_path_option.push(control_path);
     [
         "-o".into(),
         "ControlMaster=auto".into(),
@@ -69,7 +69,7 @@ pub(crate) fn ssh_options(control_path: &Path) -> impl Iterator<Item = OsString>
 }
 
 impl RemoteBuilder {
-    pub(crate) fn get_remote_builders(
+    pub(crate) async fn get_remote_builders(
         config: &NixConfig,
         builders: Option<String>,
         project_source: &Path,
@@ -125,7 +125,7 @@ impl RemoteBuilder {
             let maximum_builds = if let Some(maximum_builds) = iter.next()
                 && maximum_builds != "-"
             {
-                usize::from_str_radix(maximum_builds, 10)?
+                str::parse(maximum_builds)?
             } else {
                 1
             };
@@ -161,7 +161,7 @@ impl RemoteBuilder {
             let control_path = project_source.join(format!("ssh-{}", get_random_string(10)));
 
             // Get host system for remote
-            let mut command = std::process::Command::new("ssh");
+            let mut command = Command::new("ssh");
             if let Some(ssh_identity) = ssh_identity.as_ref() {
                 command.arg("-i").arg(ssh_identity);
             }
@@ -183,11 +183,13 @@ impl RemoteBuilder {
                 .stdin(Stdio::null())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            let output = command.output()?;
+
+            let mut child = command.spawn()?;
+            let output = wait_for_output(&mut child, None).await?;
             let host_system = if output.status.success() {
                 String::from_utf8(output.stdout)?
             } else {
-                eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+                write_output_to_stderr(&output)?;
                 return Err(color_eyre::eyre::eyre!("Failed to connect to {}", ssh_uri));
             };
 
@@ -380,27 +382,16 @@ impl NowBuilder for RemoteBuilder {
             .stderr(Stdio::piped());
 
         let mut child = command.spawn()?;
-        let result = smol::future::race(
-            async {
-                let _ = cancellation.recv().await;
-                Err(color_eyre::eyre::eyre!("Runner aborted"))
-            },
-            async {
-                if child.status().await?.success() {
-                    Ok(())
-                } else {
-                    pipe_outputs_to_stderr(&mut child).await?;
-                    Err(color_eyre::eyre::eyre!(
-                        "Failed to copy '{}' derivations to {}",
-                        job_name,
-                        self.ssh_uri
-                    ))
-                }
-            },
-        )
-        .await;
-        let _ = child.kill();
-        result
+        let output = wait_for_output(&mut child, Some(cancellation)).await?;
+        if !output.status.success() {
+            write_output_to_stderr(&output)?;
+            return Err(color_eyre::eyre::eyre!(
+                "Failed to copy '{}' derivations to {}",
+                job_name,
+                self.ssh_uri
+            ));
+        }
+        Ok(())
     }
 
     async fn realize_derivation(
@@ -426,30 +417,17 @@ impl NowBuilder for RemoteBuilder {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         let mut child = command.spawn()?;
-        let result = smol::future::race(
-            async {
-                let _ = cancellation.recv().await;
-                Err(color_eyre::eyre::eyre!("Runner aborted"))
-            },
-            async {
-                if child.status().await?.success() {
-                    let mut stdout = child.stdout.take().expect("stdout is piped");
-                    let mut buf = Vec::new();
-                    stdout.read_to_end(&mut buf).await?;
-                    Ok(PathBuf::from(OsStr::from_bytes(buf.trim_ascii())))
-                } else {
-                    pipe_outputs_to_stderr(&mut child).await?;
-                    Err(color_eyre::eyre::eyre!(
-                        "Failed to realize derivation '{}' in {}",
-                        derivation.to_string_lossy(),
-                        self.ssh_uri
-                    ))
-                }
-            },
-        )
-        .await;
-        let _ = child.kill();
-        result
+        let output = wait_for_output(&mut child, Some(cancellation)).await?;
+        if output.status.success() {
+            Ok(PathBuf::from(OsStr::from_bytes(output.stdout.trim_ascii())))
+        } else {
+            write_output_to_stderr(&output)?;
+            Err(color_eyre::eyre::eyre!(
+                "Failed to realize derivation '{}' in {}",
+                derivation.to_string_lossy(),
+                self.ssh_uri
+            ))
+        }
     }
 
     async fn download(
@@ -479,26 +457,15 @@ impl NowBuilder for RemoteBuilder {
             .stderr(Stdio::piped());
 
         let mut child = command.spawn()?;
-        let result = smol::future::race(
-            async {
-                let _ = cancellation.recv().await;
-                Err(color_eyre::eyre::eyre!("Runner aborted"))
-            },
-            async {
-                if child.status().await?.success() {
-                    Ok(())
-                } else {
-                    pipe_outputs_to_stderr(&mut child).await?;
-                    Err(color_eyre::eyre::eyre!(
-                        "Failed to copy uploads to {}",
-                        self.ssh_uri
-                    ))
-                }
-            },
-        )
-        .await;
-        let _ = child.kill();
-        result
+        let output = wait_for_output(&mut child, Some(cancellation)).await?;
+        if !output.status.success() {
+            write_output_to_stderr(&output)?;
+            return Err(color_eyre::eyre::eyre!(
+                "Failed to copy uploads to {}",
+                self.ssh_uri
+            ));
+        }
+        Ok(())
     }
 
     fn run_derivation(
@@ -566,27 +533,16 @@ impl NowBuilder for RemoteBuilder {
             .stderr(Stdio::piped());
 
         let mut child = command.spawn()?;
-        let result = smol::future::race(
-            async {
-                let _ = cancellation.recv().await;
-                Err(color_eyre::eyre::eyre!("Runner aborted"))
-            },
-            async {
-                if child.status().await?.success() {
-                    Ok(())
-                } else {
-                    pipe_outputs_to_stderr(&mut child).await?;
-                    Err(color_eyre::eyre::eyre!(
-                        "Failed to copy '{}' derivation from {}",
-                        derivation.to_string_lossy(),
-                        self.ssh_uri
-                    ))
-                }
-            },
-        )
-        .await;
-        let _ = child.kill();
-        result
+        let output = wait_for_output(&mut child, Some(cancellation)).await?;
+        if !output.status.success() {
+            write_output_to_stderr(&output)?;
+            return Err(color_eyre::eyre::eyre!(
+                "Failed to copy '{}' derivation from {}",
+                derivation.to_string_lossy(),
+                self.ssh_uri
+            ));
+        }
+        Ok(())
     }
 
     async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
@@ -614,10 +570,11 @@ impl NowBuilder for RemoteBuilder {
                     .stderr(Stdio::piped());
 
                 let mut child = command.spawn()?;
-                if child.status().await?.success() {
+                let output = wait_for_output(&mut child, None).await?;
+                if output.status.success() {
                     Ok(())
                 } else {
-                    pipe_outputs_to_stderr(&mut child).await?;
+                    write_output_to_stderr(&output)?;
                     Err(color_eyre::eyre::eyre!(
                         "Failed to remove checked out directory in {}",
                         self.ssh_uri
