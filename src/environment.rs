@@ -41,6 +41,7 @@ pub(crate) struct NowEnvironment {
     pub(crate) vars: HashMap<String, String>,
     pub(crate) jobs: BTreeMap<String, String>,
     pub(crate) local_env: HashMap<OsString, OsString>,
+    pub(crate) gcroot_dir: PathBuf,
     pub(crate) uploads: Mutex<HashMap<String, PathBuf>>,
 }
 
@@ -51,11 +52,12 @@ struct ParsedWorkflow {
 }
 
 impl NowEnvironment {
-    #[instrument(skip(ctrl_c))]
+    #[instrument(skip(ctrl_c, gcroot_dir))]
     pub(crate) async fn get(
         workflow: &WorkflowSource,
         ctrl_c: Receiver<()>,
         env_file: Option<&PathBuf>,
+        gcroot_dir: Option<PathBuf>,
     ) -> color_eyre::Result<NowEnvironment> {
         let mut env_vars: HashMap<OsString, OsString> = HashMap::new();
         if let Some(env_file) = env_file {
@@ -138,12 +140,17 @@ impl NowEnvironment {
                     .collect();
                 let vars = vars?;
 
+                let gcroot_dir =
+                    gcroot_dir.unwrap_or_else(|| nix_project_source.as_ref().to_path_buf());
+                std::fs::create_dir_all(&gcroot_dir)?;
+
                 Ok(Self {
                     nix_project_source,
                     secrets,
                     vars,
                     jobs: parsed_workflow.jobs,
                     local_env: env_vars,
+                    gcroot_dir,
                     uploads: Default::default(),
                 })
             },
@@ -166,10 +173,9 @@ impl NowEnvironment {
         let nix_env_path = format!("(/. + {})", serde_json::to_string(&nix_env_str)?);
 
         let eval_id = serde_json::to_string(&*EVAL_ID)?;
-        let nix_project_path = serde_json::to_string(nix_project_source)?;
 
         let nix_command = format!(
-            "import {nix_env_path} {{ }} {{ workflow = {workflow_path}; evalId = {eval_id}; gcrootDir = {nix_project_path}; }}"
+            "import {nix_env_path} {{ }} {{ workflow = {workflow_path}; evalId = {eval_id}; }}"
         );
 
         let mut command = Command::new("nix");
@@ -319,6 +325,11 @@ impl NowEnvironment {
                 map.insert("NO_COLOR".into(), "1".into());
             }
         }
+
+        map.insert(
+            "NOW_GCROOT_DIR".into(),
+            self.gcroot_dir.clone().into_os_string(),
+        );
 
         Ok(map)
     }

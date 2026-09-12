@@ -59,6 +59,7 @@ pub(crate) struct LocalBuilder {
     pub(crate) system_features: HashSet<String>,
     pub(crate) remote_builders: Vec<RemoteBuilder>,
     pub(crate) remote_only: bool,
+    pub(crate) gcroot_dir: PathBuf,
 }
 
 pub(crate) struct BuilderGuard<'a> {
@@ -135,6 +136,7 @@ impl LocalBuilder {
             system_features: config.system_features.value.into_iter().collect(),
             remote_builders,
             remote_only,
+            gcroot_dir: environment.gcroot_dir.clone(),
         })
     }
 
@@ -363,9 +365,15 @@ impl NowBuilder for LocalBuilder {
         derivation: &Path,
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<PathBuf> {
+        let gcroot = self
+            .gcroot_dir
+            .join(derivation.file_name().expect("derivation has file name"));
+
         let mut command = Command::new("nix-store");
         command
-            .arg("--realise")
+            .arg("--add-root")
+            .arg(&gcroot)
+            .args(["--indirect", "--realise"])
             .arg(derivation)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())

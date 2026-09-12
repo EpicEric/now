@@ -269,7 +269,6 @@ in
 {
   workflow,
   evalId,
-  gcrootDir,
   lib' ? import <nixpkgs/lib>,
   vars ? { },
   var ?
@@ -378,9 +377,10 @@ let
             // sandbox;
             run = ''
               set -euo pipefail
+              : "''${NOW_GCROOT_DIR:=$(mktemp -d)}"
+              mkdir -p "$NOW_GCROOT_DIR"
               drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
-              tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
-              nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
+              nix-store --add-root "$NOW_GCROOT_DIR/''${drv##*/}" --indirect --realise "$drv" >/dev/null
               printf 'now: Built %s\n' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
             '';
           };
@@ -410,9 +410,10 @@ let
             // sandbox;
             run = ''
               set -euo pipefail
+              : "''${NOW_GCROOT_DIR:=$(mktemp -d)}"
+              mkdir -p "$NOW_GCROOT_DIR"
               drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
-              tmpdir=$(mktemp -d ${gcrootDir}/gcroot-XXXXXXXXXX)
-              nix-store --add-root $tmpdir/result --realise "$drv" >/dev/null
+              nix-store --add-root "$NOW_GCROOT_DIR/''${drv##*/}" --indirect --realise "$drv" >/dev/null
               printf '%s' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
             '';
             ${"__nowUpload_${evalId}"} = name;

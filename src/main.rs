@@ -143,6 +143,16 @@ enum Command {
         #[arg(short, long, value_name = "FILE")]
         env_file: Option<PathBuf>,
 
+        /// Directory where Nix GC roots for realized steps are kept.
+        ///
+        /// Defaults to a temporary directory removed when `now` exits.
+        #[arg(
+            long,
+            value_name = "DIR",
+            add = ArgValueCompleter::new(PathCompleter::dir()),
+        )]
+        gcroot_dir: Option<PathBuf>,
+
         /// Immediately abort on the first job failure.
         #[arg(long)]
         abort: bool,
@@ -346,7 +356,7 @@ fn job_completer() -> Vec<CompletionCandidate> {
             let _ = sender.try_send(());
         });
 
-        let environment = smol::block_on(NowEnvironment::get(&workflow, ctrl_c, None))?;
+        let environment = smol::block_on(NowEnvironment::get(&workflow, ctrl_c, None, None))?;
 
         let mut jobs_iter = jobs_iter.rev();
         let current_job = jobs_iter.next();
@@ -414,7 +424,8 @@ fn main() -> color_eyre::Result<()> {
             })?;
 
             smol::block_on(async {
-                let environment = NowEnvironment::get(&workflow, ctrl_c, env_file.as_ref()).await?;
+                let environment =
+                    NowEnvironment::get(&workflow, ctrl_c, env_file.as_ref(), None).await?;
                 let evaluated = environment.evaluate_workflow(&workflow)?;
                 println!("{}", serde_json::to_string(&evaluated)?);
                 Ok::<(), color_eyre::Report>(())
@@ -427,6 +438,7 @@ fn main() -> color_eyre::Result<()> {
             flake,
             all_jobs,
             env_file,
+            gcroot_dir,
             abort,
             timeout,
             cwdir,
@@ -468,7 +480,8 @@ fn main() -> color_eyre::Result<()> {
 
             smol::block_on::<color_eyre::Result<()>>(async {
                 let mut environment =
-                    NowEnvironment::get(&workflow, ctrl_c.clone(), env_file.as_ref()).await?;
+                    NowEnvironment::get(&workflow, ctrl_c.clone(), env_file.as_ref(), gcroot_dir)
+                        .await?;
                 environment.run_workflow(NowWorkflowParams {
                     workflow,
                     ctrl_c,
