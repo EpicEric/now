@@ -149,6 +149,15 @@ impl WorkflowSource {
             }
         }
     }
+
+    pub(crate) fn nix_source_expression(&self) -> color_eyre::Result<String> {
+        match self {
+            WorkflowSource::Path(_) => self.nix_expression(),
+            WorkflowSource::Flake { path, .. } => {
+                Ok(format!("(builtins.getFlake \"{}\").outPath", path))
+            }
+        }
+    }
 }
 
 impl From<&WorkflowSource> for String {

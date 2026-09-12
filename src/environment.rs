@@ -54,14 +54,14 @@ async fn eval_id_from_workflow_source(workflow: &WorkflowSource) -> color_eyre::
             "--raw",
             "--expr",
         ])
-        .arg(workflow.nix_expression()?)
+        .arg(workflow.nix_source_expression()?)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     let mut child = command.spawn()?;
     let output = wait_for_output(&mut child, None).await?;
-    let data = if output.status.success() {
+    let mut data = if output.status.success() {
         output.stdout
     } else {
         write_output_to_stderr(&output)?;
@@ -70,6 +70,12 @@ async fn eval_id_from_workflow_source(workflow: &WorkflowSource) -> color_eyre::
             workflow
         ));
     };
+
+    // Two attributes of the same flake share a source tree; keep their IDs apart.
+    if let WorkflowSource::Flake { attribute, .. } = workflow {
+        data.push(b'#');
+        data.extend_from_slice(attribute.as_bytes());
+    }
 
     let digest = Sha256::digest(data);
     Ok(digest[..16]
@@ -181,9 +187,13 @@ impl NowEnvironment {
                     .collect();
                 let vars = vars?;
 
-                let gcroot_dir =
-                    gcroot_dir.unwrap_or_else(|| nix_project_source.as_ref().to_path_buf());
-                std::fs::create_dir_all(&gcroot_dir)?;
+                let gcroot_dir = match gcroot_dir {
+                    Some(dir) => {
+                        smol::fs::create_dir_all(&dir).await?;
+                        dir.canonicalize()?
+                    }
+                    None => nix_project_source.as_ref().to_path_buf(),
+                };
 
                 Ok(Self {
                     nix_project_source,

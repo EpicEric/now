@@ -119,6 +119,11 @@ Run one or more jobs
   <b>-e</b>, <b>--env-file</b> &lt;FILE&gt;
           Optional dotenv file to read environment variables from
 
+      <b>--gcroot-dir</b> &lt;DIR&gt;
+          Directory where Nix GC roots for realized steps are kept.
+          
+          Defaults to a temporary directory removed when `now` exits.
+
       <b>--abort</b>
           Immediately abort on the first job failure
 

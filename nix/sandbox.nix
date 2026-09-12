@@ -29,6 +29,9 @@ if nowSandbox.enable then
   if stdenvNoCC.hostPlatform.isLinux then
     writeShellScript nowScript.name ''
       set -euo pipefail
+      ${lib.optionalString nowSandbox.gcroots ''
+        mkdir -p "''${NOW_GCROOT_DIR:=$(mktemp -d)}"
+      ''}
       exec ${lib.getExe bubblewrap} \
         --ro-bind /nix/store /nix/store \
         ${lib.optionalString nowSandbox.writableNixStore ''
@@ -48,6 +51,9 @@ if nowSandbox.enable then
           else
             ''--ro-bind "$PWD" "$PWD" --chdir "$PWD"''
         } \
+        ${lib.optionalString nowSandbox.gcroots ''
+          --bind "$NOW_GCROOT_DIR" "$NOW_GCROOT_DIR" \
+        ''} \
         --proc /proc \
         --dev /dev \
         --tmpfs /tmp \
@@ -87,6 +93,10 @@ if nowSandbox.enable then
 
           ${lib.optionalString nowSandbox.writableNixStore ''
             (allow file-read* file-write* (subpath "/nix/var/nix"))
+          ''}
+
+          ${lib.optionalString nowSandbox.gcroots ''
+            (allow file-read* file-write* (subpath (param "NOW_GCROOT_DIR")))
           ''}
 
           (allow file-read* file-write* (subpath "/tmp"))
@@ -151,10 +161,16 @@ if nowSandbox.enable then
     in
     writeShellScript nowScript.name ''
       set -euo pipefail
+      ${lib.optionalString nowSandbox.gcroots ''
+        mkdir -p "''${NOW_GCROOT_DIR:=$(mktemp -d)}"
+      ''}
       exec /usr/bin/sandbox-exec \
         -D HOME="$HOME" \
         -D PWD="$PWD" \
         -D TMPDIR="''${TMPDIR:-/tmp}" \
+        ${lib.optionalString nowSandbox.gcroots ''
+          -D NOW_GCROOT_DIR="$NOW_GCROOT_DIR" \
+        ''}
         -f ${profile} -- ${nowScript} "$@"
     ''
 

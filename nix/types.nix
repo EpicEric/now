@@ -39,6 +39,11 @@ let
         default = false;
         description = "Whether to use a sandbox for the step.";
       };
+      gcroots = lib.mkOption {
+        type = types.bool;
+        default = false;
+        description = "Whether the sandboxed step can write Nix GC roots to the configured GC root directory.";
+      };
       networkAccess = lib.mkOption {
         type = types.bool;
         default = false;

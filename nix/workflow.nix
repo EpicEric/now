@@ -373,6 +373,7 @@ let
             sandbox = {
               writableNixStore = true;
               networkAccess = true;
+              gcroots = true;
             }
             // sandbox;
             run = ''
@@ -406,6 +407,7 @@ let
             sandbox = {
               writableNixStore = true;
               networkAccess = true;
+              gcroots = true;
             }
             // sandbox;
             run = ''

@@ -532,6 +532,27 @@ false
 
 
 
+### sandbox\.gcroots
+
+
+
+Whether the sandboxed step can write Nix GC roots to the configured GC root directory\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+
+
 ### sandbox\.networkAccess
 
 
