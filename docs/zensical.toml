@@ -10,6 +10,7 @@ Copyright &copy; 2026 Eric Rodrigues Pires
 nav = [
   { "Home" = "index.md" },
   "quick-start.md",
+  "cookbook.md",
   { "Reference" = [
     { "Configuration" = "configuration.md" },
     { "Builders" = "builders.md" },
