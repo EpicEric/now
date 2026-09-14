@@ -544,15 +544,21 @@ impl NowWorkflow {
             ));
         };
         if let Some(target_jobs) = jobs {
-            let job_nodes = target_jobs
-                .iter()
-                .map(|job_id| {
-                    graph_nodes
-                        .get(job_id)
-                        .copied()
-                        .ok_or_else(|| color_eyre::eyre::eyre!("Unknown job '{job_id}'"))
-                })
-                .collect::<color_eyre::Result<HashSet<NodeIndex<u32>>>>()?;
+            let mut job_nodes: HashSet<NodeIndex<u32>> = HashSet::new();
+            for job_glob in target_jobs {
+                let glob = glob::Pattern::new(&job_glob)?;
+                let mut matching_jobs = vec![];
+                for (job_id, value) in graph_nodes.iter() {
+                    if glob.matches(job_id) {
+                        matching_jobs.push(*value);
+                    }
+                }
+                if matching_jobs.is_empty() {
+                    return Err(color_eyre::eyre::eyre!("No jobs matched '{job_glob}'"));
+                } else {
+                    job_nodes.extend(matching_jobs);
+                }
+            }
 
             // Collect the set of nodes to keep
             let mut keep: HashSet<NodeIndex<u32>> = HashSet::new();

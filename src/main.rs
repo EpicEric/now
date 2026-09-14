@@ -105,7 +105,7 @@ enum Command {
 
     /// Run one or more jobs.
     Run {
-        /// Jobs to target in this run.
+        /// Jobs to target in this run. Unix-style globs are supported.
         ///
         /// If unspecified, the default jobs of the workflow are run.
         ///

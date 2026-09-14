@@ -273,6 +273,7 @@ in
         "test-env"
         "test-error"
         "test-flake"
+        "test-glob"
         "test-jobs"
         "test-matrix"
         "test-nixpkgs"
@@ -386,6 +387,24 @@ in
             ];
             run = ''
               now run --flake .now/tests
+            '';
+          }
+        ];
+      };
+
+    test-glob =
+      { pkgs, ... }:
+      {
+        name = "Test job globbing";
+        steps = [
+          {
+            path = [
+              (mkNow pkgs)
+            ];
+            run = ''
+              now run "a/1*" --workflow .now/tests/glob.nix
+              now run "b/**/*" --workflow .now/tests/glob.nix
+              now run "c/f?o" --workflow .now/tests/glob.nix
             '';
           }
         ];
