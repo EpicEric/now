@@ -399,8 +399,17 @@ impl NowBuilder for RemoteBuilder {
         derivation: &Path,
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<PathBuf> {
-        let mut full_command: OsString = "nix-store".into();
-        full_command.push(" --realise ");
+        let mut full_command: OsString = OsString::new();
+
+        if let Some(nix_config) = std::env::var_os("NIX_CONFIG") {
+            full_command.push("NIX_CONFIG=");
+            full_command.push(OsStr::from_bytes(
+                shlex::bytes::try_quote(nix_config.as_encoded_bytes())?.as_ref(),
+            ));
+            full_command.push(" ");
+        }
+
+        full_command.push("nix-store --realise ");
         full_command.push(derivation);
 
         let mut command = Command::new("ssh");
