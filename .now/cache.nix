@@ -14,17 +14,28 @@
       ];
     };
 
+    build-now-step = {
+      steps = [
+        (runner.steps.upload {
+          name = "now-step";
+          deriv = (import ../nix { }).now-step;
+        })
+      ];
+    };
+
     push-to-niks3 =
       { pkgs, ... }:
       {
         needs = [
           "build-now"
+          "build-now-step"
         ];
         steps = [
           {
             name = "Push to niks3 cache";
             env = {
               NOW = runner.download "now";
+              NOW_STEP = runner.download "now-step";
               NIKS3_SERVER_URL = runner.var "NIKS3_SERVER_URL";
               NIKS3_AUTH_TOKEN = runner.secret "NIKS3_AUTH_TOKEN";
               NIKS3_AUTH_TOKEN_FILE = "/tmp/niks3-token-${toString builtins.currentTime}";
@@ -38,8 +49,12 @@
               chmod 600 $NIKS3_AUTH_TOKEN_FILE
               echo $NIKS3_AUTH_TOKEN > $NIKS3_AUTH_TOKEN_FILE
 
-              # Push derivation to cache
-              niks3 push $NOW
+              # Push derivations to cache
+              niks3 push $NOW $NOW_STEP
+
+              # Pin so they survive garbage collection between releases
+              niks3 pins create now $NOW
+              niks3 pins create now-step $NOW_STEP
             '';
             teardown = ''
               rm $NIKS3_AUTH_TOKEN_FILE

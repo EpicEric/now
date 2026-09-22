@@ -19,7 +19,7 @@
 }:
 
 let
-  mkNowStep = pkgs: (import ./. { inherit pkgs; }).now-step;
+  inherit (import ./. { inherit system; }) now-step;
 
   normalizeJob =
     {
@@ -135,9 +135,7 @@ let
         (writeShellApplication {
           name = "now-step";
           checkPhase = "";
-          runtimeInputs = step.path ++ [
-            (mkNowStep pkgs)
-          ];
+          runtimeInputs = [ now-step ] ++ step.path;
           text = ''
             now-step ${if step."__nowUpload_${evalId}" == null then "" else "--preserve-stdout"} ${
               pkgs.callPackage ./sandbox.nix {
@@ -159,9 +157,7 @@ let
           (writeShellApplication {
             name = "now-step";
             checkPhase = "";
-            runtimeInputs = step.path ++ [
-              (mkNowStep pkgs)
-            ];
+            runtimeInputs = [ now-step ] ++ step.path;
             text = ''
               now-step ${
                 pkgs.callPackage ./sandbox.nix {
