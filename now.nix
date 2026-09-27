@@ -1,17 +1,17 @@
 { runner, ... }:
 let
-  mkNow = pkgs: import ./. { inherit pkgs; };
+  inputs = import ./.tack;
+  pkgs = import inputs.nixpkgs { };
+  now = import ./. { inherit pkgs; };
 in
 {
-  inherit (import ./.tack) nixpkgs;
-
   jobs = {
 
     # ============================================================
-    #                           Formatting
+    #                           Development
     # ============================================================
 
-    format = { pkgs, ... }: {
+    format = {
       name = "Fix formatting";
       sandbox.enable = true;
       steps = [
@@ -34,12 +34,12 @@ in
     #                              Docs
     # ============================================================
 
-    serve-docs = { pkgs, ... }: {
+    serve-docs = {
       name = "Serve docs";
       steps = [
         {
           path = [
-            (mkNow pkgs)
+            now
             pkgs.watchexec
             pkgs.zensical
           ];
@@ -53,7 +53,7 @@ in
       ];
     };
 
-    publish-docs = { pkgs, ... }: {
+    publish-docs = {
       name = "Build and publish docs";
       needs = [
         "generate-nix-docs"
@@ -86,7 +86,7 @@ in
       ];
     };
 
-    generate-nix-docs = { pkgs, ... }: {
+    generate-nix-docs = {
       name = "Generate Nix docs";
       sandbox.enable = true;
       steps =
@@ -94,9 +94,7 @@ in
           evalOptions =
             type:
             pkgs.lib.evalModules {
-              modules = [
-                type
-              ];
+              modules = [ type ];
               specialArgs = { inherit pkgs; };
             };
 
@@ -200,7 +198,7 @@ in
         ];
     };
 
-    generate-cli-docs = { pkgs, ... }: {
+    generate-cli-docs = {
       name = "Generate CLI docs";
       sandbox.enable = true;
       steps = [
@@ -210,8 +208,8 @@ in
             pkgs.runCommand "now-cli"
               {
                 nativeBuildInputs = [
+                  now
                   pkgs.to-html
-                  (mkNow pkgs)
                 ];
               }
               ''
@@ -284,54 +282,46 @@ in
       steps = [ { run = "echo Good to go! ^u^"; } ];
     };
 
-    test-abort =
-      { pkgs, ... }:
-      {
-        name = "Test abort";
-        steps = [
-          {
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              now run --abort --workflow .now/tests/abort.nix --all-jobs || error_code=$?
-              if [ "$error_code" -eq 0 ]; then
-                echo "Test shouldn't have succeeded!"
-                exit 1
-              else
-                echo ""
-                echo "=== hint: if 'fail' is the last job, the test works ==="
-              fi
-            '';
-          }
-        ];
-      };
+    test-abort = {
+      name = "Test abort";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            now run --abort --workflow .now/tests/abort.nix --all-jobs || error_code=$?
+            if [ "$error_code" -eq 0 ]; then
+              echo "Test shouldn't have succeeded!"
+              exit 1
+            else
+              echo ""
+              echo "=== hint: if 'fail' is the last job, the test works ==="
+            fi
+          '';
+        }
+      ];
+    };
 
-    test-cycle =
-      { pkgs, ... }:
-      {
-        name = "Test cycle";
-        steps = [
-          {
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              now run --abort --workflow .now/tests/cycle.nix --all-jobs || error_code=$?
-              if [ "$error_code" -eq 0 ]; then
-                echo "Test shouldn't have succeeded!"
-                exit 1
-              else
-                echo ""
-                echo "=== hint: this means the test works ==="
-              fi
-            '';
-          }
-        ];
-      };
+    test-cycle = {
+      name = "Test cycle";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            now run --abort --workflow .now/tests/cycle.nix --all-jobs || error_code=$?
+            if [ "$error_code" -eq 0 ]; then
+              echo "Test shouldn't have succeeded!"
+              exit 1
+            else
+              echo ""
+              echo "=== hint: this means the test works ==="
+            fi
+          '';
+        }
+      ];
+    };
 
     test-env =
-      { pkgs, ... }:
+
       {
         name = "Test environment";
         steps = [
@@ -340,9 +330,7 @@ in
               MY_VAR = "This is a variable";
               MY_SECRET = "This is a secret";
             };
-            path = [
-              (mkNow pkgs)
-            ];
+            path = [ now ];
             run = ''
               now run --workflow .now/tests/env.nix
             '';
@@ -351,14 +339,12 @@ in
       };
 
     test-error =
-      { pkgs, ... }:
+
       {
         name = "Test error exit status";
         steps = [
           {
-            path = [
-              (mkNow pkgs)
-            ];
+            path = [ now ];
             run = ''
               # Ensure the test evaluates just fine
               now eval --workflow .now/tests/error.nix
@@ -376,190 +362,172 @@ in
         ];
       };
 
-    test-flake =
-      { pkgs, ... }:
-      {
-        name = "Test flake";
-        steps = [
-          {
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              now run --flake .now/tests
-            '';
-          }
-        ];
-      };
+    test-flake = {
+      name = "Test flake";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            now run --flake .now/tests
+          '';
+        }
+      ];
+    };
 
-    test-glob =
-      { pkgs, ... }:
-      {
-        name = "Test job globbing";
-        steps = [
-          {
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              now run "a/1*" --workflow .now/tests/glob.nix
-              now run "b/**/*" --workflow .now/tests/glob.nix
-              now run "c/f?o" --workflow .now/tests/glob.nix
-            '';
-          }
-        ];
-      };
+    test-glob = {
+      name = "Test job globbing";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            now run "a/1*" --workflow .now/tests/glob.nix
+            now run "b/**/*" --workflow .now/tests/glob.nix
+            now run "c/f?o" --workflow .now/tests/glob.nix
+          '';
+        }
+      ];
+    };
 
-    test-jobs =
-      { pkgs, ... }:
-      {
-        name = "Test job dependencies";
-        steps = [
-          {
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              now run b x --workflow .now/tests/jobs.nix
-            '';
-          }
-        ];
-      };
+    test-jobs = {
+      name = "Test job dependencies";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            now run b x --workflow .now/tests/jobs.nix
+          '';
+        }
+      ];
+    };
 
-    test-matrix =
-      { pkgs, ... }:
-      {
-        name = "Test run matrix";
-        steps = [
-          {
-            env.BUILDERS = runner.var "BUILDERS";
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              if [ -n "$BUILDERS" ]; then
-                now run \
-                  --all-jobs \
-                  --builders "$BUILDERS" \
-                  --workflow .now/tests/matrix.nix
-              else
-                echo "BUILDERS is unset; skipping"
-                echo ""
-                echo "=== hint: to run this, pass an envvar like:"
-                echo "===   BUILDERS='ssh://user@host x86_64-linux - 1 1 now now -'"
-              fi
-            '';
-          }
-        ];
-      };
+    test-matrix = {
+      name = "Test run matrix";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            if [ -n "$BUILDERS" ]; then
+              now run \
+                --all-jobs \
+                --builders "$BUILDERS" \
+                --workflow .now/tests/matrix.nix
+            else
+              echo "BUILDERS is unset; skipping"
+              echo ""
+              echo "=== hint: to run this, pass an envvar like:"
+              echo "===   BUILDERS='ssh://user@host x86_64-linux - 1 1 now now -'"
+            fi
+          '';
+        }
+      ];
+    };
 
-    test-nix-config =
-      { pkgs, ... }:
-      {
-        name = "Test nixConfig";
-        steps = [
-          {
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              now run --workflow .now/tests/nix-config.nix
-            '';
-          }
-        ];
-      };
+    test-nix-config = {
+      name = "Test nixConfig";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            now run --workflow .now/tests/nix-config.nix
+          '';
+        }
+      ];
+    };
 
-    test-nixpkgs =
-      { pkgs, ... }:
-      {
-        name = "Test nixpkgs";
-        steps = [
-          {
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              now run --workflow .now/tests/nixpkgs.nix
-            '';
-          }
-        ];
-      };
+    test-nixpkgs = {
+      name = "Test nixpkgs";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            now run --workflow .now/tests/nixpkgs.nix
+          '';
+        }
+      ];
+    };
 
-    test-skip =
-      { pkgs, ... }:
-      {
-        name = "Test skip non-runnable jobs";
-        steps = [
-          {
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              now run --builders "" --skip --all-jobs --workflow .now/tests/skip.nix
-            '';
-          }
-        ];
-      };
+    test-skip = {
+      name = "Test skip non-runnable jobs";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            now run --builders "" --skip --all-jobs --workflow .now/tests/skip.nix
+          '';
+        }
+      ];
+    };
 
-    test-timeout =
-      { pkgs, ... }:
-      {
-        name = "Test job timeout";
-        steps = [
-          {
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              now run --workflow .now/tests/timeout.nix || error_code=$?
-              if [ "$error_code" -eq 0 ]; then
-                echo "Test shouldn't have succeeded!"
-                exit 1
-              else
-                echo ""
-                echo "=== hint: this means the test works ==="
-              fi
-            '';
-          }
-        ];
-      };
+    test-timeout = {
+      name = "Test job timeout";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            now run --workflow .now/tests/timeout.nix || error_code=$?
+            if [ "$error_code" -eq 0 ]; then
+              echo "Test shouldn't have succeeded!"
+              exit 1
+            else
+              echo ""
+              echo "=== hint: this means the test works ==="
+            fi
+          '';
+        }
+      ];
+    };
 
-    test-upload =
-      { pkgs, ... }:
-      {
-        name = "Test uploads";
-        steps = [
-          {
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              now run --workflow .now/tests/upload.nix
-            '';
-          }
-        ];
-      };
+    test-upload = {
+      name = "Test uploads";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            now run --workflow .now/tests/upload.nix
+          '';
+        }
+      ];
+    };
 
-    test-vars =
-      { pkgs, ... }:
-      {
-        name = "Test envvars";
-        steps = [
-          {
-            env = {
-              TEST_FIRST_VAR = "first var";
-              TEST_FIRST_SECRET = "first secret";
-              TEST_SECOND_VAR = "second var";
-              TEST_SECOND_SECRET = "second secret";
-            };
-            path = [
-              (mkNow pkgs)
-            ];
-            run = ''
-              now run --workflow .now/tests/vars.nix
-            '';
-          }
-        ];
-      };
+    test-var-script = {
+      name = "Test runner.var disallowed in scripts";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            output=$(now run --workflow .now/tests/var-script.nix 2>&1) || error_code=$?
+            if [ "$error_code" -eq 0 ]; then
+              echo "Test shouldn't have succeeded!"
+              exit 1
+            fi
+            if ! echo "$output" | grep -q "cannot be used directly in"; then
+              echo "Expected a 'cannot be used directly in' error, but got:"
+              echo "$output"
+              exit 1
+            fi
+            echo ""
+            echo "=== hint: this means the test works ==="
+          '';
+        }
+      ];
+    };
+
+    test-vars = {
+      name = "Test envvars";
+      steps = [
+        {
+          env = {
+            TEST_FIRST_VAR = "first var";
+            TEST_FIRST_SECRET = "first secret";
+            TEST_SECOND_VAR = "second var";
+            TEST_SECOND_SECRET = "second secret";
+          };
+          path = [ now ];
+          run = ''
+            now run --workflow .now/tests/vars.nix
+          '';
+        }
+      ];
+    };
   };
 }

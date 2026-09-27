@@ -198,9 +198,12 @@ in
             steps = [
               {
                 name = "Login to DockerHub";
-                env.DOCKERHUB_PUSH_TOKEN = runner.secret "DOCKERHUB_PUSH_TOKEN";
+                env = {
+                  DOCKERHUB_PUSH_TOKEN = runner.secret "DOCKERHUB_PUSH_TOKEN";
+                  DOCKERHUB_USERNAME = runner.var "DOCKERHUB_USERNAME";
+                };
                 run = ''
-                  echo $DOCKERHUB_PUSH_TOKEN | docker login --password-stdin --username ${runner.var "DOCKERHUB_USERNAME"} docker.io
+                  echo $DOCKERHUB_PUSH_TOKEN | docker login --password-stdin --username $DOCKERHUB_USERNAME docker.io
                 '';
                 teardown = ''
                   docker logout docker.io
@@ -211,9 +214,12 @@ in
               }
               {
                 name = "Login to GHCR";
-                env.GITHUB_TOKEN = runner.secret "GITHUB_TOKEN";
+                env = {
+                  GITHUB_TOKEN = runner.secret "GITHUB_TOKEN";
+                  GITHUB_USERNAME = runner.var "GITHUB_USERNAME";
+                };
                 run = ''
-                  echo $GITHUB_TOKEN | docker login --pasword-stdin --username ${runner.var "GITHUB_USERNAME"} ghcr.io
+                  echo $GITHUB_TOKEN | docker login --pasword-stdin --username $GITHUB_USERNAME ghcr.io
                 '';
                 teardown = ''
                   docker logout ghcr.io

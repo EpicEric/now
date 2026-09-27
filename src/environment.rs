@@ -332,11 +332,20 @@ impl NowEnvironment {
     ) -> color_eyre::Result<HashMap<OsString, OsString>> {
         let mut map: HashMap<OsString, OsString> = HashMap::with_capacity(step_env.len() + 1);
 
+        let unset_var_regex = regex::Regex::new(&format!("@@__nowUnset_{}_([^@]+)@@", eval_id()))
+            .expect("valid regex");
+
         {
             let uploads = self.uploads.lock().expect("not poisoned");
             for (key, value) in step_env {
                 match value {
                     NowStepEnvVar::Plain(value) => {
+                        if let Some(needle) = unset_var_regex.captures(value) {
+                            return Err(color_eyre::eyre::eyre!(
+                                "Required environment variable '{}' is unset",
+                                needle.get(1).expect("is match").as_str()
+                            ));
+                        }
                         map.insert(key.into(), value.into());
                     }
                     NowStepEnvVar::Secret(secret) => {

@@ -85,7 +85,7 @@ The `strategy` submodule controls how matrix runs coordinate:
 
 #### runner.var
 
-`runner.var "NAME"` declares a runtime attribute that is read from the environment when `now run` is invoked. If the variable is not set, it evaluates to an empty string. Because it returns a plain string, it can be used in string interpolation.
+`runner.var "NAME"` declares a runtime attribute that is read from the environment when `now run` is invoked. If the variable is not set, an error is raised. Because it returns a plain string, it can be used in string interpolation, but only inside `env` blocks.
 
 ```nix
 { runner, ... }: {
@@ -95,7 +95,6 @@ The `strategy` submodule controls how matrix runs coordinate:
       {
         env.MESSAGE = "${runner.var "MESSAGE"} (from the environment)";
         run = ''
-          echo ${runner.var "MESSAGE"}
           echo $MESSAGE
         '';
       }
@@ -109,6 +108,29 @@ Pass the value at runtime:
 ```bash
 MESSAGE="Hello" now run
 ```
+
+!!! tip
+
+    If you want an environment variable to be optional, use it directly in your script without `runner.var`:
+
+    ```nix
+    {
+      jobs.missing.steps = [
+        {
+          run = ''
+            echo "Maybe missing: $MAYBE_SET"
+          '';
+        }
+      ];
+    }
+    ```
+
+    Both of these commands run successfully:
+
+    ```bash
+    MAYBE_SET="Not missing" now run missing
+    now run missing
+    ```
 
 #### runner.secret
 

@@ -127,7 +127,27 @@ let
           (if lib.isBool jobSandbox then { } else jobSandbox) // { enable = step.sandbox; }
         else
           (if lib.isBool jobSandbox then { enable = jobSandbox; } else jobSandbox) // step.sandbox;
+
+      runnerVarsRun = map builtins.head (
+        builtins.filter builtins.isList (builtins.split "@@__nowVar_${evalId}_([^@]+)@@" step.run)
+      );
+
+      runnerVarsTeardown =
+        if step.teardown == null then
+          [ ]
+        else
+          map builtins.head (
+            builtins.filter builtins.isList (builtins.split "@@__nowVar_${evalId}_([^@]+)@@" step.teardown)
+          );
     in
+    assert lib.assertMsg (runnerVarsRun == [ ])
+      "${
+        lib.concatStringsSep ", " (map (var: "`runner.var \"${var}\"`") runnerVarsRun)
+      } cannot be used directly in run script";
+    assert lib.assertMsg (runnerVarsTeardown == [ ])
+      "${
+        lib.concatStringsSep ", " (map (var: "`runner.var \"${var}\"`") runnerVarsTeardown)
+      } cannot be used directly in teardown script";
     {
       name = if (step.name != null && step.name != "") then step.name else placeholder_name;
 
@@ -271,7 +291,7 @@ in
     name:
     assert lib'.assertMsg (lib'.isValidPosixName name)
       "environment variable '${name}' is not a valid POSIX variable name";
-    vars.${name} or "",
+    vars.${name} or "@@__nowUnset_${evalId}_${name}@@",
 }:
 let
   secret =
