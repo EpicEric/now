@@ -62,7 +62,7 @@ jobs:
 === "bash / zsh"
 
     ```bash
-    echo > .git/hooks/pre-commit <<EOF
+    cat > .git/hooks/pre-commit <<EOF
     #! /usr/bin/env nix
     #! nix shell git+https://codeberg.org/now-runner/now#now --command /bin/sh
     now run format
@@ -78,6 +78,16 @@ jobs:
       echo '#! nix shell git+https://codeberg.org/now-runner/now#now --command /bin/sh'
       echo 'now run format'
     end > .git/hooks/pre-commit
+    chmod +x .git/hooks/pre-commit
+    ```
+
+=== "nushell"
+
+    ```nu
+    r#'#! /usr/bin/env nix
+    #! nix shell git+https://codeberg.org/now-runner/now#now --command /bin/sh
+    now run format
+    '# | save --force .git/hooks/pre-commit
     chmod +x .git/hooks/pre-commit
     ```
 
@@ -126,6 +136,29 @@ jobs:
         ];
       };
     }' | psub)
+    ```
+
+=== "nushell"
+
+    You can declare workflows with temporary files:
+
+    ```nu
+    let tmp = mktemp
+    r#'{
+      default = [ "hello" ];
+      jobs.hello = { pkgs, ... }: {
+        steps = [
+          {
+            run = ''
+              ${pkgs.hello}/bin/hello
+            '';
+          }
+        ];
+      };
+    }
+    '# | save --force $tmp
+    now run -w $tmp
+    rm $tmp
     ```
 
 ## Cross-compilation

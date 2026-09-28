@@ -150,5 +150,5 @@ Here's a full example of `now`'s features:
 now is tested with itself. At the root of this repo:
 
 ```bash
-nix run . -- run test
+BUILDERS='ssh://localhost - - 1 1 now now -' nix run . -- run test
 ```

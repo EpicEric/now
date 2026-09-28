@@ -13,7 +13,6 @@ in
 
     format = {
       name = "Fix formatting";
-      sandbox.enable = true;
       steps = [
         {
           run = ''
@@ -25,7 +24,10 @@ in
             pkgs.rustfmt
             pkgs.nixfmt-tree
           ];
-          sandbox.writablePath = true;
+          sandbox = {
+            enable = true;
+            writablePath = true;
+          };
         }
       ];
     };
@@ -59,29 +61,18 @@ in
         "generate-nix-docs"
         "generate-cli-docs"
       ];
+      sandbox.enable = true;
       steps = [
         {
-          sandbox = {
-            enable = true;
-            writablePath = true;
-          };
-          path = [
-            pkgs.zensical
-          ];
-          run = ''
-            zensical build -f docs/zensical.toml
-          '';
+          sandbox.writablePath = true;
+          path = [ pkgs.zensical ];
+          run = "zensical build -f docs/zensical.toml";
         }
         {
-          env = {
-            DOCS_HOST = runner.secret "DOCS_HOST";
-          };
-          run = ''
-            rsync --delete-after -acP docs/site/ $DOCS_HOST:www
-          '';
-          path = [
-            pkgs.rsync
-          ];
+          sandbox.networkAccess = true;
+          env.DOCS_HOST = runner.secret "DOCS_HOST";
+          path = [ pkgs.rsync ];
+          run = "rsync --delete-after -acP docs/site/ $DOCS_HOST:www";
         }
       ];
     };
@@ -264,7 +255,7 @@ in
     # ============================================================
 
     test = {
-      name = "Run tests";
+      name = "Finalize tests";
       needs = [
         "test-abort"
         "test-cycle"
@@ -282,7 +273,14 @@ in
         "test-var-script"
         "test-vars"
       ];
-      steps = [ { run = "echo Good to go! ^u^"; } ];
+      steps = [
+        {
+          shell = pkgs.nushell;
+          run = ''
+            print $"(ansi green)Good to go! ^u^(ansi reset)"
+          '';
+        }
+      ];
     };
 
     test-abort = {
@@ -290,30 +288,30 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
-            error_code=0
-            output=$(now run --abort --workflow .now/tests/abort.nix --all-jobs 2>&1) || error_code=$?
+            let result = (now run --abort --workflow .now/tests/abort.nix --all-jobs | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
 
-            if [ "$error_code" -eq 0 ]; then
-              echo "ERROR: Test shouldn't have succeeded!"
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
               exit 1
-            fi
+            }
 
-            for i in 0 1 2 3 4 5; do
-              if ! echo "$output" | grep -qF "=> $i"; then
-                echo "ERROR: Expected '=> $i' in output, but got:"
-                echo "$output"
+            for i in 0..5 {
+              if not ($output | str contains $"=> ($i)") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Expected '=> ($i)' in output"
                 exit 1
-              fi
-            done
+              }
+            }
 
-            if echo "$output" | grep -qF "late ran"; then
-              echo "ERROR: 'late' job should have been aborted, but it ran:"
-              echo "$output"
+            if ($output | str contains "late ran") {
+              print $"(ansi red_bold)ERROR:(ansi reset) 'late' job should have been aborted"
               exit 1
-            fi
+            }
 
-            echo "Test passed."
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -324,22 +322,23 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
-            error_code=0
-            output=$(now run --abort --workflow .now/tests/cycle.nix --all-jobs 2>&1) || error_code=$?
+            let result = (now run --abort --workflow .now/tests/cycle.nix --all-jobs | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
 
-            if [ "$error_code" -eq 0 ]; then
-              echo "ERROR: Test shouldn't have succeeded!"
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
               exit 1
-            fi
+            }
 
-            if ! echo "$output" | grep -qF "Cycle detected"; then
-              echo "ERROR: Expected a 'Cycle detected' error, but got:"
-              echo "$output"
+            if not ($output | str contains "Cycle detected") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected a 'Cycle detected' error"
               exit 1
-            fi
+            }
 
-            echo "Test passed."
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -354,8 +353,15 @@ in
             MY_SECRET = "This is a secret";
           };
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
             now run --workflow .now/tests/env.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -366,31 +372,35 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
             # Ensure the test evaluates just fine
             now eval --workflow .now/tests/error.nix
-
-            error_code=0
-            output=$(now run --workflow .now/tests/error.nix --all-jobs 2>&1) || error_code=$?
-
-            if [ "$error_code" -eq 0 ]; then
-              echo "ERROR: Test shouldn't have succeeded!"
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed to evaluate"
               exit 1
-            fi
+            }
 
-            if ! echo "$output" | grep -qF "=== note: teardown still runs on error ==="; then
-              echo "ERROR: Expected teardown note in output, but got:"
-              echo "$output"
+            let result = (now run --workflow .now/tests/error.nix --all-jobs | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
               exit 1
-            fi
+            }
 
-            if echo "$output" | grep -qF "This shouldn't be printed at all!"; then
-              echo "ERROR: Steps after a failed step should not run, but got:"
-              echo "$output"
+            if not ($output | str contains "=== note: teardown still runs on error ===") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected teardown note in output"
               exit 1
-            fi
+            }
 
-            echo "Test passed."
+            if ($output | str contains "This shouldn't be printed at all!") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Steps after a failed step should not run"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -401,8 +411,15 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
             now run --flake .now/tests
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -413,11 +430,17 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
-            now run "a/1*" --workflow .now/tests/glob.nix
-            now run "b/**/*" --workflow .now/tests/glob.nix
-            now run "c/f?o" --workflow .now/tests/glob.nix
-            echo "Test passed."
+            for pattern in ["a/1*" "b/**/*" "c/f?o"] {
+              now run $pattern --workflow .now/tests/glob.nix
+              if $env.LAST_EXIT_CODE != 0 {
+                print $"ERROR: now run failed for pattern '($pattern)'"
+                exit 1
+              }
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -428,9 +451,15 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
             now run b x --workflow .now/tests/jobs.nix
-            echo "Test passed."
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -441,32 +470,42 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
-            if [ -n "$BUILDERS" ]; then
-              now run \
-                --all-jobs \
-                --builders "$BUILDERS" \
-                --workflow .now/tests/matrix.nix
-              echo "Test passed."
-            else
-              echo "WARNING: BUILDERS is unset; skipping"
-              echo ""
-              echo "=== hint: to run this, pass an envvar like:"
-              echo "===   BUILDERS='ssh://user@host x86_64-linux - 1 1 now now -'"
-            fi
+            if BUILDERS in $env {
+              now run --all-jobs --builders $env.BUILDERS --workflow .now/tests/matrix.nix
+              if $env.LAST_EXIT_CODE != 0 {
+                print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+                exit 1
+              }
+
+              print $"(ansi green)Test passed.(ansi reset)"
+
+            } else {
+              print $"(ansi yellow_bold)WARNING:(ansi reset) BUILDERS is unset; skipping"
+              print ""
+              print $"(ansi d)=== hint: to run this, pass an envvar like:(ansi reset)"
+              print $"(ansi d)===   BUILDERS='ssh://localhost - - 1 1 now now -'(ansi reset)"
+            }
           '';
         }
       ];
     };
 
     test-nix-config = {
-      name = "Test nixConfig";
+      name = "Test special steps' nixConfig";
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
             now run --workflow .now/tests/nix-config.nix
-            echo "Test passed."
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -477,9 +516,15 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
             now run --workflow .now/tests/nixpkgs.nix
-            echo "Test passed."
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -490,9 +535,15 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
             now run --builders "" --skip --all-jobs --workflow .now/tests/skip.nix
-            echo "Test passed."
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -503,40 +554,38 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
-            error_code=0
-            output=$(now run --workflow .now/tests/timeout.nix 2>&1) || error_code=$?
+            let result = (now run --workflow .now/tests/timeout.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
 
-            if [ "$error_code" -eq 0 ]; then
-              echo "ERROR: Test shouldn't have succeeded!"
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
               exit 1
-            fi
+            }
 
-            if ! echo "$output" | grep -qF "Done!"; then
-              echo "ERROR: Expected the first step to complete before the timeout, but got:"
-              echo "$output"
+            if not ($output | str contains "Done!") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected the first step to complete before the timeout"
               exit 1
-            fi
+            }
 
-            if ! echo "$output" | grep -qF "=== note: teardown still runs on timeout ==="; then
-              echo "ERROR: Expected teardown note in output, but got:"
-              echo "$output"
+            if not ($output | str contains "=== note: teardown still runs on timeout ===") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected teardown note in output"
               exit 1
-            fi
+            }
 
-            if ! echo "$output" | grep -qF "timed out after 5s"; then
-              echo "ERROR: Expected a timeout error, but got:"
-              echo "$output"
+            if not ($output | str contains "timed out after 5s") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected a timeout error"
               exit 1
-            fi
+            }
 
-            if echo "$output" | grep -qF "This shouldn't be printed at all!"; then
-              echo "ERROR: The step that timed out should not have completed, but got:"
-              echo "$output"
+            if ($output | str contains "This shouldn't be printed at all!") {
+              print $"(ansi red_bold)ERROR:(ansi reset) The step that timed out should not have completed"
               exit 1
-            fi
+            }
 
-            echo "Test passed."
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -547,9 +596,15 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
             now run --workflow .now/tests/upload.nix
-            echo "Test passed."
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -560,22 +615,23 @@ in
       steps = [
         {
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
-            error_code=0
-            output=$(now run --workflow .now/tests/var-script.nix 2>&1) || error_code=$?
+            let result = (now run --workflow .now/tests/var-script.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
 
-            if [ "$error_code" -eq 0 ]; then
-              echo "ERROR: Test shouldn't have succeeded!"
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
               exit 1
-            fi
+            }
 
-            if ! echo "$output" | grep -q "cannot be used directly in"; then
-              echo "ERROR: Expected a 'cannot be used directly in' error, but got:"
-              echo "$output"
+            if not ($output | str contains "cannot be used directly in") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected a 'cannot be used directly in' error"
               exit 1
-            fi
+            }
 
-            echo "Test passed."
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -592,9 +648,15 @@ in
             TEST_SECOND_SECRET = "second secret";
           };
           path = [ now ];
+          shell = pkgs.nushell;
           run = ''
             now run --workflow .now/tests/vars.nix
-            echo "Test passed."
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];

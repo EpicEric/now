@@ -82,9 +82,7 @@ in
             steps = [
               {
                 name = "Test";
-                env = {
-                  RUSTFLAGS = "-A dead_code -A unused_variables";
-                };
+                env.RUSTFLAGS = "-A dead_code -A unused_variables";
                 run = ''
                   cargo nextest run --no-fail-fast --verbose --locked
                 '';
@@ -128,9 +126,7 @@ in
               }
               {
                 name = "Upload coverage reports to Codecov";
-                env = {
-                  CODECOV_TOKEN = runner.secret "CODECOV_TOKEN";
-                };
+                env.CODECOV_TOKEN = runner.secret "CODECOV_TOKEN";
                 run = ''
                   codecovcli do-upload -f ./codecov.json --token "$CODECOV_TOKEN"
                 '';
