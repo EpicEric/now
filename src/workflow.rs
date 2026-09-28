@@ -154,7 +154,7 @@ impl WorkflowSource {
         match self {
             WorkflowSource::Path(_) => self.nix_expression(),
             WorkflowSource::Flake { path, .. } => {
-                Ok(format!("(builtins.getFlake \"{}\").outPath", path))
+                Ok(format!("(builtins.getFlake \"{path}\").outPath"))
             }
         }
     }

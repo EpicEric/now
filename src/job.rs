@@ -193,13 +193,10 @@ impl NowEnvironment {
 
         let steps_fut = async {
             if let Some(checkout_child) = checkout_child.as_mut() {
-                smol::future::race(
-                    async {
-                        let _ = receiver.recv().await;
-                        Err(color_eyre::eyre::eyre!("Runner aborted"))
-                    },
-                    checkout_child.run(),
-                )
+                smol::future::or(checkout_child.run(), async {
+                    let _ = receiver.recv().await;
+                    Err(color_eyre::eyre::eyre!("Runner aborted"))
+                })
                 .await?;
             }
 

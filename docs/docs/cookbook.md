@@ -20,7 +20,7 @@ NIX_CONFIG='extra-substituters=https://cache.eric.dev.br extra-trusted-public-ke
   now run distributed-job --builders 'ssh://remote'
 ```
 
-## Using `now` in GitHub Actions
+## Using in GitHub Actions
 
 ```yaml
 on:
@@ -83,7 +83,7 @@ jobs:
 
 === "nushell"
 
-    ```nu
+    ```nushell
     r#'#! /usr/bin/env nix
     #! nix shell git+https://codeberg.org/now-runner/now#now --command /bin/sh
     now run format
@@ -142,7 +142,7 @@ jobs:
 
     You can declare workflows with temporary files:
 
-    ```nu
+    ```nushell
     let tmp = mktemp
     r#'{
       default = [ "hello" ];
@@ -185,7 +185,7 @@ jobs:
 }
 ```
 
-Steps are cross-compiled and run on `aarch64-linux` runners.
+Steps are cross-compiled to and run on `aarch64-linux` runners (specified with the `--builders` flag).
 
 To also specify the build system's architecture, use `import <nixpkgs> { buildSystem = "..."; }`.
 

@@ -30,19 +30,22 @@ pub(crate) async fn wait_for_output(
     let mut stderr_buf = Vec::new();
 
     let run = async {
-        let ((status, out), err) = zip(
-            zip(child.status(), async {
-                if let Some(pipe) = stdout.as_mut() {
-                    pipe.read_to_end(&mut stdout_buf).await?;
-                }
-                Ok::<(), color_eyre::Report>(())
-            }),
-            async {
-                if let Some(pipe) = stderr.as_mut() {
-                    pipe.read_to_end(&mut stderr_buf).await?;
-                }
-                Ok::<(), color_eyre::Report>(())
-            },
+        let (status, (out, err)) = zip(
+            child.status(),
+            zip(
+                async {
+                    if let Some(pipe) = stdout.as_mut() {
+                        pipe.read_to_end(&mut stdout_buf).await?;
+                    }
+                    Ok::<(), color_eyre::Report>(())
+                },
+                async {
+                    if let Some(pipe) = stderr.as_mut() {
+                        pipe.read_to_end(&mut stderr_buf).await?;
+                    }
+                    Ok::<(), color_eyre::Report>(())
+                },
+            ),
         )
         .await;
         out?;
@@ -55,13 +58,10 @@ pub(crate) async fn wait_for_output(
     };
 
     let result = if let Some(cancellation) = cancellation {
-        smol::future::race(
-            async {
-                let _ = cancellation.recv().await;
-                Err(color_eyre::eyre::eyre!("Runner aborted"))
-            },
-            run,
-        )
+        smol::future::or(run, async {
+            let _ = cancellation.recv().await;
+            Err(color_eyre::eyre::eyre!("Runner aborted"))
+        })
         .await
     } else {
         run.await

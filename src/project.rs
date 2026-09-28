@@ -16,6 +16,7 @@
 
 use std::{
     env::temp_dir,
+    fs::remove_dir_all,
     path::{Path, PathBuf},
 };
 
@@ -37,7 +38,7 @@ impl AsRef<Path> for ProjectSource {
 
 impl Drop for ProjectSource {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        let _ = remove_dir_all(&self.0);
     }
 }
 
