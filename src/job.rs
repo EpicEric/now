@@ -68,6 +68,14 @@ type JobFut<'a> = Pin<Box<dyn Future<Output = JobResult> + 'a>>;
 impl NowEnvironment {
     #[instrument(skip_all, fields(job = job.name))]
     async fn run_job(&self, local_builder: &LocalBuilder, job: NowJob) -> Result<(), JobError> {
+        if !local_builder.has_runner(&job) {
+            return Err(JobError::NoMatchingRunners {
+                job_name: job.name.clone(),
+                host_system: job.host_system.clone(),
+                required_system_features: job.required_system_features.clone(),
+            });
+        }
+
         info!(
             runner = local_builder.hostname,
             is_remote = false,

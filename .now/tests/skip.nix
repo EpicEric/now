@@ -1,7 +1,7 @@
 { runner, ... }:
 let
   thisSystem = builtins.currentSystem;
-  unavailableSystem = "x86_64-unknown-freebsd";
+  unavailableSystem = if thisSystem == "aarch64-darwin" then "x86_64-linux" else "aarch64-darwin";
 in
 {
   jobs = {

@@ -275,8 +275,10 @@ in
         "test-jobs"
         "test-matrix"
         "test-nixpkgs"
+        "test-skip"
         "test-timeout"
         "test-upload"
+        "test-var-script"
         "test-vars"
       ];
       steps = [ { run = "echo Good to go! ^u^"; } ];
@@ -288,14 +290,29 @@ in
         {
           path = [ now ];
           run = ''
-            now run --abort --workflow .now/tests/abort.nix --all-jobs || error_code=$?
+            error_code=0
+            output=$(now run --abort --workflow .now/tests/abort.nix --all-jobs 2>&1) || error_code=$?
+
             if [ "$error_code" -eq 0 ]; then
-              echo "Test shouldn't have succeeded!"
+              echo "ERROR: Test shouldn't have succeeded!"
               exit 1
-            else
-              echo ""
-              echo "=== hint: if 'fail' is the last job, the test works ==="
             fi
+
+            for i in 0 1 2 3 4 5; do
+              if ! echo "$output" | grep -qF "=> $i"; then
+                echo "ERROR: Expected '=> $i' in output, but got:"
+                echo "$output"
+                exit 1
+              fi
+            done
+
+            if echo "$output" | grep -qF "late ran"; then
+              echo "ERROR: 'late' job should have been aborted, but it ran:"
+              echo "$output"
+              exit 1
+            fi
+
+            echo "Test passed."
           '';
         }
       ];
@@ -307,14 +324,21 @@ in
         {
           path = [ now ];
           run = ''
-            now run --abort --workflow .now/tests/cycle.nix --all-jobs || error_code=$?
+            error_code=0
+            output=$(now run --abort --workflow .now/tests/cycle.nix --all-jobs 2>&1) || error_code=$?
+
             if [ "$error_code" -eq 0 ]; then
-              echo "Test shouldn't have succeeded!"
+              echo "ERROR: Test shouldn't have succeeded!"
               exit 1
-            else
-              echo ""
-              echo "=== hint: this means the test works ==="
             fi
+
+            if ! echo "$output" | grep -qF "Cycle detected"; then
+              echo "ERROR: Expected a 'Cycle detected' error, but got:"
+              echo "$output"
+              exit 1
+            fi
+
+            echo "Test passed."
           '';
         }
       ];
@@ -345,14 +369,27 @@ in
             # Ensure the test evaluates just fine
             now eval --workflow .now/tests/error.nix
 
-            now run --workflow .now/tests/error.nix || error_code=$?
+            error_code=0
+            output=$(now run --workflow .now/tests/error.nix --all-jobs 2>&1) || error_code=$?
+
             if [ "$error_code" -eq 0 ]; then
-              echo "Test shouldn't have succeeded!"
+              echo "ERROR: Test shouldn't have succeeded!"
               exit 1
-            else
-              echo ""
-              echo "=== hint: this means the test works ==="
             fi
+
+            if ! echo "$output" | grep -qF "=== note: teardown still runs on error ==="; then
+              echo "ERROR: Expected teardown note in output, but got:"
+              echo "$output"
+              exit 1
+            fi
+
+            if echo "$output" | grep -qF "This shouldn't be printed at all!"; then
+              echo "ERROR: Steps after a failed step should not run, but got:"
+              echo "$output"
+              exit 1
+            fi
+
+            echo "Test passed."
           '';
         }
       ];
@@ -379,6 +416,7 @@ in
             now run "a/1*" --workflow .now/tests/glob.nix
             now run "b/**/*" --workflow .now/tests/glob.nix
             now run "c/f?o" --workflow .now/tests/glob.nix
+            echo "Test passed."
           '';
         }
       ];
@@ -391,6 +429,7 @@ in
           path = [ now ];
           run = ''
             now run b x --workflow .now/tests/jobs.nix
+            echo "Test passed."
           '';
         }
       ];
@@ -407,8 +446,9 @@ in
                 --all-jobs \
                 --builders "$BUILDERS" \
                 --workflow .now/tests/matrix.nix
+              echo "Test passed."
             else
-              echo "BUILDERS is unset; skipping"
+              echo "WARNING: BUILDERS is unset; skipping"
               echo ""
               echo "=== hint: to run this, pass an envvar like:"
               echo "===   BUILDERS='ssh://user@host x86_64-linux - 1 1 now now -'"
@@ -425,6 +465,7 @@ in
           path = [ now ];
           run = ''
             now run --workflow .now/tests/nix-config.nix
+            echo "Test passed."
           '';
         }
       ];
@@ -437,6 +478,7 @@ in
           path = [ now ];
           run = ''
             now run --workflow .now/tests/nixpkgs.nix
+            echo "Test passed."
           '';
         }
       ];
@@ -449,6 +491,7 @@ in
           path = [ now ];
           run = ''
             now run --builders "" --skip --all-jobs --workflow .now/tests/skip.nix
+            echo "Test passed."
           '';
         }
       ];
@@ -460,14 +503,39 @@ in
         {
           path = [ now ];
           run = ''
-            now run --workflow .now/tests/timeout.nix || error_code=$?
+            error_code=0
+            output=$(now run --workflow .now/tests/timeout.nix 2>&1) || error_code=$?
+
             if [ "$error_code" -eq 0 ]; then
-              echo "Test shouldn't have succeeded!"
+              echo "ERROR: Test shouldn't have succeeded!"
               exit 1
-            else
-              echo ""
-              echo "=== hint: this means the test works ==="
             fi
+
+            if ! echo "$output" | grep -qF "Done!"; then
+              echo "ERROR: Expected the first step to complete before the timeout, but got:"
+              echo "$output"
+              exit 1
+            fi
+
+            if ! echo "$output" | grep -qF "=== note: teardown still runs on timeout ==="; then
+              echo "ERROR: Expected teardown note in output, but got:"
+              echo "$output"
+              exit 1
+            fi
+
+            if ! echo "$output" | grep -qF "timed out after 5s"; then
+              echo "ERROR: Expected a timeout error, but got:"
+              echo "$output"
+              exit 1
+            fi
+
+            if echo "$output" | grep -qF "This shouldn't be printed at all!"; then
+              echo "ERROR: The step that timed out should not have completed, but got:"
+              echo "$output"
+              exit 1
+            fi
+
+            echo "Test passed."
           '';
         }
       ];
@@ -480,6 +548,7 @@ in
           path = [ now ];
           run = ''
             now run --workflow .now/tests/upload.nix
+            echo "Test passed."
           '';
         }
       ];
@@ -491,18 +560,21 @@ in
         {
           path = [ now ];
           run = ''
+            error_code=0
             output=$(now run --workflow .now/tests/var-script.nix 2>&1) || error_code=$?
+
             if [ "$error_code" -eq 0 ]; then
-              echo "Test shouldn't have succeeded!"
+              echo "ERROR: Test shouldn't have succeeded!"
               exit 1
             fi
+
             if ! echo "$output" | grep -q "cannot be used directly in"; then
-              echo "Expected a 'cannot be used directly in' error, but got:"
+              echo "ERROR: Expected a 'cannot be used directly in' error, but got:"
               echo "$output"
               exit 1
             fi
-            echo ""
-            echo "=== hint: this means the test works ==="
+
+            echo "Test passed."
           '';
         }
       ];
@@ -521,6 +593,7 @@ in
           path = [ now ];
           run = ''
             now run --workflow .now/tests/vars.nix
+            echo "Test passed."
           '';
         }
       ];

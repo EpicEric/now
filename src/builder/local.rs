@@ -202,6 +202,35 @@ impl LocalBuilder {
         Ok(builders_fut.next().await)
     }
 
+    pub(crate) fn has_runner(&self, job: &NowJob) -> bool {
+        if !self.remote_only
+            && (job.host_system == self.system || self.extra_platforms.contains(&job.host_system))
+            && job
+                .required_system_features
+                .iter()
+                .all(|feature| self.system_features.contains(feature))
+        {
+            return true;
+        }
+
+        for builder in self.remote_builders.iter() {
+            if builder.host_system == job.host_system
+                && builder
+                    .required_features
+                    .iter()
+                    .all(|feature| job.required_system_features.contains(feature))
+                && job
+                    .required_system_features
+                    .iter()
+                    .all(|feature| builder.system_features.contains(feature))
+            {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub(crate) async fn get_runner(
         &self,
         job: &NowJob,
