@@ -1,4 +1,4 @@
-{ runner, ... }:
+{ runner, lib, ... }:
 {
   default = "nix-config";
 
@@ -16,11 +16,15 @@
                 "-c"
                 "/bin/hello > $out"
               ];
+              nativeBuildInputs = [
+                pkgs.bash
+                pkgs.hello
+              ];
               inherit (pkgs.stdenv.hostPlatform) system;
             };
             nixConfig.extra-sandbox-paths = [
-              "/bin/bash=${pkgs.bash}/bin/bash"
-              "/bin/hello=${pkgs.hello}/bin/hello"
+              "/bin/bash=${lib.getExe pkgs.bash}"
+              "/bin/hello=${lib.getExe pkgs.hello}"
             ];
           })
         ];

@@ -274,6 +274,7 @@ in
         "test-glob"
         "test-jobs"
         "test-matrix"
+        "test-nix-config"
         "test-nixpkgs"
         "test-skip"
         "test-timeout"
