@@ -35,7 +35,7 @@ jobs:
           extra-conf: |
             extra-substituters = ${{ vars.NIKS3_SERVER_URL }}
             extra-trusted-public-keys = ${{ vars.NIKS3_PUBLIC_KEY }}
-      - name: Run now workflow
+      - name: Run now job
         env:
           NIKS3_SERVER_URL: ${{ vars.NIKS3_SERVER_URL }}
           NIKS3_AUTH_TOKEN: ${{ secrets.NIKS3_AUTH_TOKEN }}

@@ -109,16 +109,20 @@ Pass the value at runtime:
 MESSAGE="Hello" now run
 ```
 
-!!! tip
+!!! note
 
-    If you want an environment variable to be optional, use it directly in your script without `runner.var`:
+    If you want an environment variable to be optional, use it directly in your script without going through `runner.var`:
 
     ```nix
     {
       jobs.missing.steps = [
         {
           run = ''
-            echo "Maybe missing: $MAYBE_SET"
+            if [ -n "$MAYBE_SET" ]; then
+              echo "Variable is: $MAYBE_SET"
+            else
+              echo "Variable is not set"
+            fi
           '';
         }
       ];

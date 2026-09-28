@@ -320,47 +320,43 @@ in
       ];
     };
 
-    test-env =
+    test-env = {
+      name = "Test environment";
+      steps = [
+        {
+          env = {
+            MY_VAR = "This is a variable";
+            MY_SECRET = "This is a secret";
+          };
+          path = [ now ];
+          run = ''
+            now run --workflow .now/tests/env.nix
+          '';
+        }
+      ];
+    };
 
-      {
-        name = "Test environment";
-        steps = [
-          {
-            env = {
-              MY_VAR = "This is a variable";
-              MY_SECRET = "This is a secret";
-            };
-            path = [ now ];
-            run = ''
-              now run --workflow .now/tests/env.nix
-            '';
-          }
-        ];
-      };
+    test-error = {
+      name = "Test error exit status";
+      steps = [
+        {
+          path = [ now ];
+          run = ''
+            # Ensure the test evaluates just fine
+            now eval --workflow .now/tests/error.nix
 
-    test-error =
-
-      {
-        name = "Test error exit status";
-        steps = [
-          {
-            path = [ now ];
-            run = ''
-              # Ensure the test evaluates just fine
-              now eval --workflow .now/tests/error.nix
-
-              now run --workflow .now/tests/error.nix || error_code=$?
-              if [ "$error_code" -eq 0 ]; then
-                echo "Test shouldn't have succeeded!"
-                exit 1
-              else
-                echo ""
-                echo "=== hint: this means the test works ==="
-              fi
-            '';
-          }
-        ];
-      };
+            now run --workflow .now/tests/error.nix || error_code=$?
+            if [ "$error_code" -eq 0 ]; then
+              echo "Test shouldn't have succeeded!"
+              exit 1
+            else
+              echo ""
+              echo "=== hint: this means the test works ==="
+            fi
+          '';
+        }
+      ];
+    };
 
     test-flake = {
       name = "Test flake";
