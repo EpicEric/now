@@ -207,6 +207,7 @@ in
                 mkdir $out
                 to-html --no-prompt "now help" > $out/index.html
                 to-html --no-prompt "now help init" > $out/init.html
+                to-html --no-prompt "now help list" > $out/list.html
                 to-html --no-prompt "now help eval" > $out/eval.html
                 to-html --no-prompt "now help run" > $out/run.html
               '';
@@ -236,6 +237,10 @@ in
             echo "## now init" >> $OUT
             echo "" >> $OUT
             cat $DOCS_CLI/init.html >> $OUT
+            echo "" >> $OUT
+            echo "## now list" >> $OUT
+            echo "" >> $OUT
+            cat $DOCS_CLI/list.html >> $OUT
             echo "" >> $OUT
             echo "## now eval" >> $OUT
             echo "" >> $OUT

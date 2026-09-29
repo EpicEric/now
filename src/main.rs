@@ -71,6 +71,26 @@ enum Command {
         workflow: Option<PathBuf>,
     },
 
+    /// List the jobs available in the workflow.
+    List {
+        /// Path to the workflow.
+        ///
+        /// Cannot be used together with the `--flake` option.
+        #[arg(
+            short,
+            long,
+            value_name = "FILE",
+            add = ArgValueCompleter::new(PathCompleter::any().filter(workflow_filter)),
+        )]
+        workflow: Option<PathBuf>,
+
+        /// Path to the flake and an optional attribute (defaults to the `now` output).
+        ///
+        /// Cannot be used together with the `--workflow` option.
+        #[arg(short, long, value_name = "FLAKE[#ATTR]", conflicts_with = "workflow")]
+        flake: Option<String>,
+    },
+
     /// Evaluate a workflow, printing its JSON representation.
     Eval {
         /// Path to the workflow.
@@ -410,6 +430,35 @@ fn main() -> color_eyre::Result<()> {
                 "'{}' has been initialized with a basic workflow",
                 path.to_string_lossy(),
             )
+        }
+
+        Command::List { workflow, flake } => {
+            let workflow = find_workflow(workflow, flake)?;
+
+            let (sender, ctrl_c) = smol::channel::bounded(1);
+            let _ = ctrlc::set_handler(move || {
+                let _ = sender.try_send(());
+            });
+
+            let environment = smol::block_on(NowEnvironment::get(&workflow, ctrl_c, None, None))?;
+
+            if let Some((width, _)) = terminal_size::terminal_size_of(std::io::stdout()) {
+                print!(
+                    "{}",
+                    term_grid::Grid::new(
+                        environment.jobs.keys().collect(),
+                        term_grid::GridOptions {
+                            direction: term_grid::Direction::TopToBottom,
+                            filling: term_grid::Filling::Spaces(3),
+                            width: usize::from(width.0),
+                        },
+                    )
+                );
+            } else {
+                for job in environment.jobs.keys() {
+                    println!("{job}");
+                }
+            }
         }
 
         Command::Eval {
