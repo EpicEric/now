@@ -268,6 +268,7 @@ in
         "test-nix-config"
         "test-nixpkgs"
         "test-skip"
+        "test-tempdir"
         "test-timeout"
         "test-upload"
         "test-var-script"
@@ -538,6 +539,25 @@ in
           shell = pkgs.nushell;
           run = ''
             now run --builders "" --skip --all-jobs --workflow .now/tests/skip.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-tempdir = {
+      name = "Test runner.steps.tempdir";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            now run --workflow .now/tests/tempdir.nix
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
               exit 1

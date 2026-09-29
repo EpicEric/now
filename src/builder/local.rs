@@ -15,7 +15,6 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{HashMap, HashSet},
     env::temp_dir,
     ffi::{OsStr, OsString},
     num::NonZeroUsize,
@@ -23,6 +22,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use ahash::{HashMap, HashSet};
 use async_trait::async_trait;
 use futures::{AsyncWriteExt, stream::FuturesUnordered};
 use smol::{

@@ -361,6 +361,29 @@ null
 
 
 
+### step\.outputVar
+
+
+
+If set, then the standard output of this step will be assigned to the
+provided environment variable, and made available to the remaining
+steps of the job\.
+
+
+
+*Type:*
+null or string
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
 ### step\.path
 
 

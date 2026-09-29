@@ -138,6 +138,15 @@ let
                 See [the submodule documentation](#sandbox).
               '';
             };
+            outputVar = lib.mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              description = ''
+                If set, then the standard output of this step will be assigned to the
+                provided environment variable, and made available to the remaining
+                steps of the job.
+              '';
+            };
             ${"__nowUpload_${evalId}"} = lib.mkOption {
               type = types.nullOr types.str;
               default = null;

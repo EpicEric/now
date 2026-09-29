@@ -148,6 +148,9 @@ let
       "${
         lib.concatStringsSep ", " (map (var: "`runner.var \"${var}\"`") runnerVarsTeardown)
       } cannot be used directly in teardown script";
+    assert lib.assertMsg (
+      step.outputVar == null || lib.isValidPosixName step.outputVar
+    ) "environment variable '${step.outputVar}' is not a valid POSIX variable name";
     {
       name = if (step.name != null && step.name != "") then step.name else placeholder_name;
 
@@ -157,7 +160,9 @@ let
           checkPhase = "";
           runtimeInputs = [ now-step ] ++ step.path;
           text = ''
-            now-step ${if step."__nowUpload_${evalId}" == null then "" else "--preserve-stdout"} ${
+            now-step ${
+              if step."__nowUpload_${evalId}" == null && step.outputVar == null then "" else "--preserve-stdout"
+            } ${
               pkgs.callPackage ./sandbox.nix {
                 inherit nowSandbox;
                 nowScript = script step.run;
@@ -195,6 +200,8 @@ let
       inherit env;
 
       ${"__nowUpload_${evalId}"} = step."__nowUpload_${evalId}";
+
+      inherit (step) outputVar;
     };
 
   stepFn =
@@ -436,6 +443,23 @@ let
             '';
             ${"__nowUpload_${evalId}"} = name;
           };
+
+        tempdir = name: { pkgs, ... }: {
+          name = "create tempdir";
+          path = [ pkgs.mktemp ];
+          sandbox.enable = false;
+          run = ''
+            set -euo pipefail
+            mktemp -d
+          '';
+          teardown = ''
+            DIR_TO_REMOVE=''$${name}
+            if [ -d $DIR_TO_REMOVE ]; then
+              rm -rf $DIR_TO_REMOVE
+            fi
+          '';
+          outputVar = name;
+        };
       };
 
       download = name: {

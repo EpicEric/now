@@ -197,6 +197,14 @@ TOKEN="s3cr3t" now run
 
 `runner.steps` provides special step generators that encapsulate common patterns.
 
+##### runner.steps.tempdir
+
+`runner.steps.tempdir name` is a step that creates a temporary directory, sets the provided `name` environment variable with its path, and automatically removes it and its contents on teardown.
+
+```nix
+(runner.steps.tempdir MY_TEMP_DIR)  # Equivalent to `export MY_TEMP_DIR=/tmp/tmp.XXXXXXXXXX`
+```
+
 ##### runner.steps.upload
 
 `runner.steps.upload { name, deriv, ... }` creates a step that builds the given derivation and registers its output path under the provided name. The path can then be consumed by other jobs via `runner.download`. The upload mechanism works regardless of whether the consumer runs on the same machine or a different remote runner.
@@ -403,6 +411,27 @@ Each value in `env` can be:
     echo $ARTIFACT_PATH
   '';
 }
+```
+
+You can also set environment variables in a job dynamically, by specifying the `outputVar` argument to a step. The standard output of that step is stored in the provided environment variable, which is made available to subsequent steps:
+
+```nix
+{
+  steps = [
+    {
+      run = ''
+        echo "discarded" > /dev/null
+        echo "42"
+      '';
+      outputVar = "MY_VALUE";
+    }
+    {
+      run = ''
+        echo "10 + 32 = $MY_VALUE"  # Prints 10 + 32 = 42
+      '';
+    }
+  ];
+};
 ```
 
 #### Anonymization behavior

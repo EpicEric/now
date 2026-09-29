@@ -14,8 +14,9 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
+use ahash::HashMap;
 use serde::{Deserialize, Serialize, de::Visitor, ser::SerializeStruct};
 
 use crate::{
@@ -84,6 +85,7 @@ impl Serialize for NowStep {
         strct.serialize_field("runDrv", &self.run_drv)?;
         strct.serialize_field("teardownDrv", &self.teardown_drv)?;
         strct.serialize_field("env", &self.env)?;
+        strct.serialize_field("outputVar", &self.output_var)?;
         strct.serialize_field("uploadKey", &self.upload_key)?;
         strct.end()
     }
@@ -111,6 +113,7 @@ impl<'de> Deserialize<'de> for NowStep {
                 let mut run_drv: Option<PathBuf> = None;
                 let mut teardown_drv: Option<PathBuf> = None;
                 let mut env: Option<HashMap<String, NowStepEnvVar>> = None;
+                let mut output_var: Option<String> = None;
                 let mut upload_key: Option<String> = None;
 
                 while let Some(key) = map.next_key::<String>()? {
@@ -119,6 +122,7 @@ impl<'de> Deserialize<'de> for NowStep {
                         "runDrv" => run_drv = Some(map.next_value()?),
                         "teardownDrv" => teardown_drv = map.next_value()?,
                         "env" => env = Some(map.next_value()?),
+                        "outputVar" => output_var = map.next_value()?,
                         _ if matches!(key.split_once(eval_id()), Some(("__nowUpload_", ""))) => {
                             upload_key = map.next_value()?
                         }
@@ -135,6 +139,7 @@ impl<'de> Deserialize<'de> for NowStep {
                     run_drv,
                     teardown_drv,
                     env,
+                    output_var,
                     upload_key,
                 })
             }

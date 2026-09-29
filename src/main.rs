@@ -15,11 +15,11 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::HashSet,
     num::NonZeroUsize,
     path::{Path, PathBuf},
 };
 
+use ahash::HashSet;
 use clap::{CommandFactory, Parser};
 use clap_complete::{ArgValueCandidates, ArgValueCompleter, CompletionCandidate, PathCompleter};
 use color_eyre::eyre::OptionExt;

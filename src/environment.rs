@@ -15,7 +15,7 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet},
     ffi::OsString,
     io::Write,
     os::unix::ffi::OsStringExt,
@@ -24,6 +24,8 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 
+use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use color_eyre::eyre::Context;
 use sha2::{Digest, Sha256};
 use smol::{channel::Receiver, process::Command};
 use tracing::instrument;
@@ -248,7 +250,8 @@ impl NowEnvironment {
             ));
         }
 
-        let workflow: NowWorkflow = serde_json::from_slice(&output.stdout)?;
+        let workflow: NowWorkflow = serde_json::from_slice(&output.stdout)
+            .wrap_err_with(|| "Failed to deserialize workflow")?;
 
         let mut secrets: HashSet<OsString> = HashSet::new();
 
@@ -329,8 +332,10 @@ impl NowEnvironment {
     pub(crate) fn generate_env_vars_for_step(
         &self,
         step_env: &HashMap<String, NowStepEnvVar>,
+        output_vars: &HashMap<OsString, OsString>,
     ) -> color_eyre::Result<HashMap<OsString, OsString>> {
-        let mut map: HashMap<OsString, OsString> = HashMap::with_capacity(step_env.len() + 1);
+        let mut map: HashMap<OsString, OsString> =
+            HashMap::with_capacity(step_env.len() + output_vars.len() + 2);
 
         let unset_var_regex = regex::Regex::new(&format!("@@__nowUnset_{}_([^@]+)@@", eval_id()))
             .expect("valid regex");
@@ -385,6 +390,12 @@ impl NowEnvironment {
                 map.insert("NO_COLOR".into(), "1".into());
             }
         }
+
+        map.extend(
+            output_vars
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
 
         map.insert(
             "NOW_GCROOT_DIR".into(),

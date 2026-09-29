@@ -15,12 +15,12 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{HashMap, HashSet},
     ffi::{OsStr, OsString},
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
 };
 
+use ahash::{HashMap, HashSet, HashSetExt};
 use async_trait::async_trait;
 use smol::{
     channel,

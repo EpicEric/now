@@ -15,12 +15,12 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::HashMap,
     ffi::OsString,
     path::{Path, PathBuf},
     pin::Pin,
 };
 
+use ahash::HashMap;
 use futures::FutureExt;
 use smol::{
     channel,

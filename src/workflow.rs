@@ -15,7 +15,7 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::BTreeSet,
     fmt::{Display, Write},
     num::NonZeroUsize,
     path::PathBuf,
@@ -24,6 +24,7 @@ use std::{
     time::Duration,
 };
 
+use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use color_eyre::Section;
 use futures::stream::FuturesUnordered;
 use petgraph::{
@@ -94,6 +95,7 @@ pub(crate) struct NowStep {
     pub(crate) run_drv: PathBuf,
     pub(crate) teardown_drv: Option<PathBuf>,
     pub(crate) env: HashMap<String, NowStepEnvVar>,
+    pub(crate) output_var: Option<String>,
     pub(crate) upload_key: Option<String>,
 }
 

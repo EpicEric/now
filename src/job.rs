@@ -14,8 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{collections::HashSet, ffi::OsStr, os::unix::ffi::OsStrExt, path::PathBuf, pin::Pin};
+use std::{
+    ffi::{OsStr, OsString},
+    os::unix::ffi::OsStrExt,
+    path::PathBuf,
+    pin::Pin,
+};
 
+use ahash::{HashMap, HashMapExt, HashSet};
 use futures::{
     AsyncReadExt,
     stream::{FuturesOrdered, FuturesUnordered},
@@ -189,6 +195,8 @@ impl NowEnvironment {
 
         let (mut checkout_child, cwdir) = runner.checkout(job.checkout)?;
 
+        let mut output_vars: HashMap<OsString, OsString> = HashMap::new();
+
         let mut teardown_stack = Vec::new();
 
         let steps_fut = async {
@@ -237,7 +245,7 @@ impl NowEnvironment {
 
                 let mut child = runner.run_derivation(
                     &cwdir,
-                    self.generate_env_vars_for_step(&step.env)?,
+                    self.generate_env_vars_for_step(&step.env, &output_vars)?,
                     run,
                 )?;
                 let mut stdout = child.stdout.take().expect("stdout is piped");
@@ -270,7 +278,23 @@ impl NowEnvironment {
                     ));
                 }
 
-                if let Some(upload_key) = step.upload_key.as_ref() {
+                if let Some(output_var) = step.output_var.as_ref() {
+                    let mut buf = Vec::new();
+                    stdout.read_to_end(&mut buf).await?;
+                    let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
+                    runner.fetch_derivation(&upload_path, receiver).await?;
+                    info!(
+                        runner = runner_name,
+                        is_remote,
+                        step = step.name,
+                        "Set '{}'",
+                        output_var,
+                    );
+                    output_vars.insert(
+                        output_var.into(),
+                        OsStr::from_bytes(buf.trim_ascii()).into(),
+                    );
+                } else if let Some(upload_key) = step.upload_key.as_ref() {
                     let mut buf = Vec::new();
                     stdout.read_to_end(&mut buf).await?;
                     let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
@@ -315,7 +339,7 @@ impl NowEnvironment {
                 r#type = "step-teardown",
             );
 
-            let env_vars = match self.generate_env_vars_for_step(&step_env) {
+            let env_vars = match self.generate_env_vars_for_step(&step_env, &output_vars) {
                 Ok(env_vars) => env_vars,
                 Err(error) => {
                     warn!(
