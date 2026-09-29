@@ -35,6 +35,7 @@ use crate::{
 
 mod builder;
 mod environment;
+mod graph;
 mod job;
 mod project;
 mod secret;
@@ -89,6 +90,22 @@ enum Command {
         /// Cannot be used together with the `--workflow` option.
         #[arg(short, long, value_name = "FLAKE[#ATTR]", conflicts_with = "workflow")]
         flake: Option<String>,
+
+        /// Optional dotenv file to read environment variables from.
+        #[arg(short, long, value_name = "FILE")]
+        env_file: Option<PathBuf>,
+
+        /// In which directory to evaluate the workflow.
+        #[arg(
+            short,
+            long,
+            add = ArgValueCompleter::new(PathCompleter::dir()),
+        )]
+        cwdir: Option<PathBuf>,
+
+        /// Whether to print jobs as a graphviz-compatible .dot tree graph.
+        #[arg(short, long)]
+        tree: bool,
     },
 
     /// Evaluate a workflow, printing its JSON representation.
@@ -432,17 +449,36 @@ fn main() -> color_eyre::Result<()> {
             )
         }
 
-        Command::List { workflow, flake } => {
+        Command::List {
+            workflow,
+            flake,
+            env_file,
+            cwdir,
+            tree,
+        } => {
             let workflow = find_workflow(workflow, flake)?;
+
+            if let Some(cwdir) = cwdir {
+                std::env::set_current_dir(cwdir)?;
+            }
 
             let (sender, ctrl_c) = smol::channel::bounded(1);
             let _ = ctrlc::set_handler(move || {
                 let _ = sender.try_send(());
             });
 
-            let environment = smol::block_on(NowEnvironment::get(&workflow, ctrl_c, None, None))?;
+            let environment = smol::block_on(NowEnvironment::get(
+                &workflow,
+                ctrl_c,
+                env_file.as_ref(),
+                None,
+            ))?;
 
-            if let Some((width, _)) = terminal_size::terminal_size_of(std::io::stdout()) {
+            if tree {
+                let workflow = smol::block_on(environment.evaluate_workflow(&workflow))?;
+                let graph = workflow.build_graph()?;
+                println!("{}", graph.to_dot());
+            } else if let Some((width, _)) = terminal_size::terminal_size_of(std::io::stdout()) {
                 print!(
                     "{}",
                     term_grid::Grid::new(

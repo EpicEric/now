@@ -78,6 +78,15 @@ List the jobs available in the workflow
           
           Cannot be used together with the `--workflow` option.
 
+  <b>-e</b>, <b>--env-file</b> &lt;FILE&gt;
+          Optional dotenv file to read environment variables from
+
+  <b>-c</b>, <b>--cwdir</b> &lt;CWDIR&gt;
+          In which directory to evaluate the workflow
+
+  <b>-t</b>, <b>--tree</b>
+          Whether to print jobs as a graphviz-compatible .dot tree graph
+
   <b>-h</b>, <b>--help</b>
           Print help (see a summary with &#39;-h&#39;)
 </pre>

@@ -266,6 +266,7 @@ in
       needs = [
         "test-abort"
         "test-cycle"
+        "test-dry-run"
         "test-env"
         "test-error"
         "test-flake"
@@ -333,6 +334,41 @@ in
           shell = pkgs.nushell;
           run = ''
             let result = (now run --abort --workflow .now/tests/cycle.nix --all-jobs | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "Cycle detected") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected a 'Cycle detected' error"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-dry-run = {
+      name = "Test --dry-run";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            # Error job should pass.
+            now run --dry-run --workflow .now/tests/error.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            # Malformed job (eg. cyclic graph) should fail.
+            let result = (now run --dry-run --workflow .now/tests/cycle.nix --all-jobs | complete)
             let output = $result.stdout + $result.stderr
             print $output
 

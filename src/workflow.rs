@@ -24,13 +24,10 @@ use std::{
     time::Duration,
 };
 
-use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use ahash::{HashMap, HashSet, HashSetExt};
 use color_eyre::Section;
 use futures::stream::FuturesUnordered;
-use petgraph::{
-    acyclic::Acyclic, algo::Cycle, matrix_graph::NodeIndex, stable_graph::StableDiGraph,
-    visit::EdgeRef,
-};
+use petgraph::{matrix_graph::NodeIndex, visit::EdgeRef};
 use serde::{Deserialize, Serialize};
 use smol::{channel::Receiver, process::Command, stream::StreamExt};
 use tracing::{debug, info, instrument, warn};
@@ -38,6 +35,7 @@ use tracing::{debug, info, instrument, warn};
 use crate::{
     builder::{NowBuilder, local::LocalBuilder},
     environment::{NowEnvironment, eval_id},
+    graph::{DagNode, NowWorkflowGraph},
     job::{JobError, JobResult},
     serde::now_job_timeout,
     utils::{wait_for_output, write_output_to_stderr},
@@ -236,10 +234,14 @@ impl NowEnvironment {
         } else {
             info!(runner, is_remote = false, "Building tree for workflow...");
         }
+        let jobs = jobs.or_else(|| workflow.default.clone());
+        let mut graph = workflow.build_graph()?;
+        graph.prune(jobs, all_jobs)?;
         let NowWorkflowGraph {
             dag: mut tree,
             mut nodes,
-        } = workflow.build_graph(jobs, all_jobs)?;
+            ..
+        } = graph;
         debug!("$duper.graph" = duper::serde::ser::to_string_compact(tree.inner())?);
 
         let executor = smol::LocalExecutor::new();
@@ -451,147 +453,5 @@ impl NowEnvironment {
                 workflow
             ))
         }
-    }
-}
-
-#[derive(Debug, Serialize)]
-enum DagNode {
-    Root,
-    Job(String),
-}
-
-struct NowWorkflowGraph {
-    dag: Acyclic<StableDiGraph<DagNode, ()>>,
-    nodes: HashMap<NodeIndex<u32>, NowJobContainer>,
-}
-
-impl NowWorkflow {
-    #[instrument(skip(self))]
-    fn build_graph(
-        self,
-        target_jobs: Option<Vec<String>>,
-        all_jobs: bool,
-    ) -> color_eyre::Result<NowWorkflowGraph> {
-        if self.jobs.is_empty() {
-            return Err(color_eyre::eyre::eyre!("No jobs in workflow"));
-        }
-
-        let mut graph = StableDiGraph::new();
-        let root = graph.add_node(DagNode::Root);
-
-        let mut nodes: HashMap<NodeIndex<u32>, NowJobContainer> = HashMap::new();
-        let mut graph_nodes: HashMap<String, NodeIndex<u32>> = HashMap::new();
-        let mut edges: HashMap<String, HashSet<String>> = HashMap::new();
-
-        let mut joined_jobs = String::new();
-        for (job_id, job) in self.jobs.into_iter() {
-            if !joined_jobs.is_empty() {
-                joined_jobs.push_str(", ");
-            }
-            joined_jobs.push_str(&job_id);
-            match job {
-                NowJobContainer::Single(job) => {
-                    for need in job.needs.iter().flatten() {
-                        edges
-                            .entry(job_id.clone())
-                            .or_default()
-                            .insert(need.clone());
-                    }
-                    let node = graph.add_node(DagNode::Job(job_id.clone()));
-                    nodes.insert(node, NowJobContainer::Single(job));
-                    graph_nodes.insert(job_id, node);
-                    graph.add_edge(node, root, ());
-                }
-                NowJobContainer::Multiple(job_vec) => {
-                    for need in job_vec.iter().flat_map(|job| job.needs.iter().flatten()) {
-                        edges
-                            .entry(job_id.clone())
-                            .or_default()
-                            .insert(need.clone());
-                    }
-                    let node = graph.add_node(DagNode::Job(job_id.clone()));
-                    nodes.insert(node, NowJobContainer::Multiple(job_vec));
-                    graph_nodes.insert(job_id, node);
-                    graph.add_edge(node, root, ());
-                }
-            }
-        }
-
-        for (from, to) in edges {
-            for edge in to {
-                graph.add_edge(
-                    *graph_nodes
-                        .get(&edge)
-                        .ok_or_else(|| color_eyre::eyre::eyre!("Unknown node {}", edge))?,
-                    *graph_nodes
-                        .get(&from)
-                        .ok_or_else(|| color_eyre::eyre::eyre!("Unknown node {}", from))?,
-                    (),
-                );
-            }
-        }
-
-        // Prune non-target jobs
-        let jobs = if all_jobs {
-            None
-        } else if let Some(target_jobs) = target_jobs
-            && !target_jobs.is_empty()
-        {
-            Some(target_jobs)
-        } else if let Some(default_jobs) = self.default.as_ref()
-            && !default_jobs.is_empty()
-        {
-            Some(default_jobs.clone())
-        } else {
-            return Err(color_eyre::eyre::eyre!(
-                "No job specified. Available options: {joined_jobs}"
-            ));
-        };
-        if let Some(target_jobs) = jobs {
-            let mut job_nodes: HashSet<NodeIndex<u32>> = HashSet::new();
-            for job_glob in target_jobs {
-                let glob = glob::Pattern::new(&job_glob)?;
-                let mut matching_jobs = vec![];
-                for (job_id, value) in graph_nodes.iter() {
-                    if glob.matches(job_id) {
-                        matching_jobs.push(*value);
-                    }
-                }
-                if matching_jobs.is_empty() {
-                    return Err(color_eyre::eyre::eyre!("No jobs matched '{job_glob}'"));
-                } else {
-                    job_nodes.extend(matching_jobs);
-                }
-            }
-
-            // Collect the set of nodes to keep
-            let mut keep: HashSet<NodeIndex<u32>> = HashSet::new();
-            let mut stack: Vec<NodeIndex<u32>> = job_nodes.iter().copied().collect();
-            while let Some(node) = stack.pop() {
-                if !keep.insert(node) {
-                    continue;
-                }
-                for dep in graph.neighbors_directed(node, petgraph::Direction::Incoming) {
-                    if dep != root && !keep.contains(&dep) {
-                        stack.push(dep);
-                    }
-                }
-            }
-
-            graph.retain_nodes(|_, node| node == root || keep.contains(&node));
-        }
-
-        let dag = graph.try_into().map_err(|cycle: Cycle<_>| {
-            color_eyre::eyre::eyre!(
-                "Cycle detected on '{}'",
-                graph_nodes
-                    .iter()
-                    .find(|(_, value)| **value == cycle.node_id())
-                    .map(|(key, _)| key.clone())
-                    .unwrap_or("unknown".into())
-            )
-        })?;
-
-        Ok(NowWorkflowGraph { dag, nodes })
     }
 }
