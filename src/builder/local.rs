@@ -130,12 +130,18 @@ impl LocalBuilder {
             .await
             .unwrap_or_else(|| "localhost".into());
 
+        let mut env = environment.local_env.clone();
+        env.insert(
+            "NOW_GCROOT_DIR".into(),
+            environment.gcroot_dir.clone().into(),
+        );
+
         Ok(Self {
             cancellation,
             receiver,
             semaphore: Semaphore::new(cores),
             lock: RwLock::default(),
-            env: environment.local_env.clone(),
+            env,
             hostname,
             extra_platforms: config.extra_platforms.value,
             system: config.system.value,

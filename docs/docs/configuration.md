@@ -109,6 +109,10 @@ Pass the value at runtime:
 MESSAGE="Hello" now run
 ```
 
+!!! warning
+
+    `runner.var` variables will be baked into derivations at build time. Don't use these for sensitive data.
+
 !!! note
 
     If you want an environment variable to be optional, use it directly in your script without going through `runner.var`:
@@ -132,7 +136,7 @@ MESSAGE="Hello" now run
     Both of these commands run successfully:
 
     ```bash
-    MAYBE_SET="Not missing" now run missing
+    MAYBE_SET="My text here" now run missing
     now run missing
     ```
 

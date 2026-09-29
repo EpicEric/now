@@ -335,7 +335,7 @@ impl NowEnvironment {
         output_vars: &HashMap<OsString, OsString>,
     ) -> color_eyre::Result<HashMap<OsString, OsString>> {
         let mut map: HashMap<OsString, OsString> =
-            HashMap::with_capacity(step_env.len() + output_vars.len() + 2);
+            HashMap::with_capacity(step_env.len() + output_vars.len() + 1);
 
         let unset_var_regex = regex::Regex::new(&format!("@@__nowUnset_{}_([^@]+)@@", eval_id()))
             .expect("valid regex");
@@ -395,11 +395,6 @@ impl NowEnvironment {
             output_vars
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone())),
-        );
-
-        map.insert(
-            "NOW_GCROOT_DIR".into(),
-            self.gcroot_dir.clone().into_os_string(),
         );
 
         Ok(map)
