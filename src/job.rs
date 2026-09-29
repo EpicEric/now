@@ -19,6 +19,7 @@ use std::{
     os::unix::ffi::OsStrExt,
     path::PathBuf,
     pin::Pin,
+    process::Stdio,
 };
 
 use ahash::{HashMap, HashMapExt, HashSet};
@@ -30,6 +31,7 @@ use petgraph::matrix_graph::NodeIndex;
 use smol::{
     channel::TryRecvError,
     io::{AsyncBufReadExt, BufReader},
+    process::{Child, Command},
     stream::StreamExt,
 };
 use tracing::{info, instrument, warn};
@@ -71,9 +73,25 @@ impl From<color_eyre::Report> for JobError {
 pub(crate) type JobResult = (NodeIndex<u32>, Result<(), JobError>);
 type JobFut<'a> = Pin<Box<dyn Future<Output = JobResult> + 'a>>;
 
+fn dummy_command() -> color_eyre::Result<Child> {
+    let mut command = Command::new("/usr/bin/env");
+    command
+        .args(["sh", "-c", "echo /dummy"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .env_clear();
+    Ok(command.spawn()?)
+}
+
 impl NowEnvironment {
     #[instrument(skip_all, fields(job = job.name))]
-    async fn run_job(&self, local_builder: &LocalBuilder, job: NowJob) -> Result<(), JobError> {
+    async fn run_job(
+        &self,
+        local_builder: &LocalBuilder,
+        job: NowJob,
+        dry_run: bool,
+    ) -> Result<(), JobError> {
         if !local_builder.has_runner(&job) {
             return Err(JobError::NoMatchingRunners {
                 job_name: job.name.clone(),
@@ -82,12 +100,21 @@ impl NowEnvironment {
             });
         }
 
-        info!(
-            runner = local_builder.hostname,
-            is_remote = false,
-            "Building derivations for job '{}'...",
-            &job.name
-        );
+        if dry_run {
+            info!(
+                runner = local_builder.hostname,
+                is_remote = false,
+                "(dry run) Not building derivations for job '{}'...",
+                &job.name
+            );
+        } else {
+            info!(
+                runner = local_builder.hostname,
+                is_remote = false,
+                "Building derivations for job '{}'...",
+                &job.name
+            );
+        }
 
         let (steps, derivations) = {
             let mut steps = Vec::with_capacity(job.steps.len());
@@ -124,16 +151,21 @@ impl NowEnvironment {
                             step = step.name,
                             r#type = "step-teardown-realize",
                         );
-                        builder
-                            .copy_derivations(
-                                &job.name,
-                                std::slice::from_ref(teardown_drv),
-                                receiver,
-                            )
-                            .await?;
-                        let teardown = builder.realize_derivation(teardown_drv, receiver).await?;
-                        builder.fetch_derivation(&teardown, receiver).await?;
-                        Some(teardown)
+                        if dry_run {
+                            Some(PathBuf::from("/dummy"))
+                        } else {
+                            builder
+                                .copy_derivations(
+                                    &job.name,
+                                    std::slice::from_ref(teardown_drv),
+                                    receiver,
+                                )
+                                .await?;
+                            let teardown =
+                                builder.realize_derivation(teardown_drv, receiver).await?;
+                            builder.fetch_derivation(&teardown, receiver).await?;
+                            Some(teardown)
+                        }
                     } else {
                         None
                     };
@@ -144,16 +176,20 @@ impl NowEnvironment {
                             step = step.name,
                             r#type = "step-run-realize",
                         );
-                        builder
-                            .copy_derivations(
-                                &job.name,
-                                std::slice::from_ref(&step.run_drv),
-                                receiver,
-                            )
-                            .await?;
-                        let run = builder.realize_derivation(&step.run_drv, receiver).await?;
-                        builder.fetch_derivation(&run, receiver).await?;
-                        run
+                        if dry_run {
+                            PathBuf::from("/dummy")
+                        } else {
+                            builder
+                                .copy_derivations(
+                                    &job.name,
+                                    std::slice::from_ref(&step.run_drv),
+                                    receiver,
+                                )
+                                .await?;
+                            let run = builder.realize_derivation(&step.run_drv, receiver).await?;
+                            builder.fetch_derivation(&run, receiver).await?;
+                            run
+                        }
                     };
                     Ok((step, run, teardown))
                 })
@@ -188,12 +224,24 @@ impl NowEnvironment {
         }
         let runner_name = runner.get_name();
         let is_remote = runner.is_remote();
-        info!(
-            runner = runner_name,
-            is_remote, "Running job '{}'...", &job.name
-        );
 
-        let (mut checkout_child, cwdir) = runner.checkout(job.checkout)?;
+        if dry_run {
+            info!(
+                runner = runner_name,
+                is_remote, "(dry run) Not running job '{}'...", &job.name
+            );
+        } else {
+            info!(
+                runner = runner_name,
+                is_remote, "Running job '{}'...", &job.name
+            );
+        }
+
+        let (mut checkout_child, cwdir) = if dry_run {
+            (None, PathBuf::from("/dummy"))
+        } else {
+            runner.checkout(job.checkout)?
+        };
 
         let mut output_vars: HashMap<OsString, OsString> = HashMap::new();
 
@@ -208,9 +256,11 @@ impl NowEnvironment {
                 .await?;
             }
 
-            runner
-                .copy_derivations(&job.name, &derivations, receiver)
-                .await?;
+            if !dry_run {
+                runner
+                    .copy_derivations(&job.name, &derivations, receiver)
+                    .await?;
+            }
 
             for (step, run, teardown) in steps {
                 let _span = tracing::debug_span!(
@@ -235,7 +285,7 @@ impl NowEnvironment {
                         }
                     }
                 }
-                if !downloads.is_empty() {
+                if !dry_run && !downloads.is_empty() {
                     runner.download(&downloads, receiver).await?;
                 }
 
@@ -243,11 +293,15 @@ impl NowEnvironment {
                     teardown_stack.push((step.name.clone(), teardown, step.env.clone()));
                 }
 
-                let mut child = runner.run_derivation(
-                    &cwdir,
-                    self.generate_env_vars_for_step(&step.env, &output_vars)?,
-                    run,
-                )?;
+                let mut child = if dry_run {
+                    dummy_command()?
+                } else {
+                    runner.run_derivation(
+                        &cwdir,
+                        self.generate_env_vars_for_step(&step.env, &output_vars)?,
+                        run,
+                    )?
+                };
                 let mut stdout = child.stdout.take().expect("stdout is piped");
                 let stderr = child.stderr.take().expect("stderr is piped");
 
@@ -281,8 +335,6 @@ impl NowEnvironment {
                 if let Some(output_var) = step.output_var.as_ref() {
                     let mut buf = Vec::new();
                     stdout.read_to_end(&mut buf).await?;
-                    let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
-                    runner.fetch_derivation(&upload_path, receiver).await?;
                     info!(
                         runner = runner_name,
                         is_remote,
@@ -298,7 +350,9 @@ impl NowEnvironment {
                     let mut buf = Vec::new();
                     stdout.read_to_end(&mut buf).await?;
                     let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
-                    runner.fetch_derivation(&upload_path, receiver).await?;
+                    if !dry_run {
+                        runner.fetch_derivation(&upload_path, receiver).await?;
+                    }
                     info!(
                         runner = runner_name,
                         is_remote,
@@ -361,7 +415,11 @@ impl NowEnvironment {
                     continue;
                 }
             };
-            let mut child = runner.run_derivation(&cwdir, env_vars, teardown)?;
+            let mut child = if dry_run {
+                dummy_command()?
+            } else {
+                runner.run_derivation(&cwdir, env_vars, teardown)?
+            };
             let stderr = child.stderr.take().expect("stderr is piped");
 
             let mut lines = BufReader::new(stderr).lines();
@@ -423,12 +481,14 @@ impl NowEnvironment {
         }
 
         drop(checkout_child.take());
-        result.and(
+        result.and(if dry_run {
+            Ok(())
+        } else {
             runner
                 .undo_checkout(job.checkout, &cwdir)
                 .await
-                .map_err(Into::into),
-        )
+                .map_err(Into::into)
+        })
     }
 
     pub(crate) fn run_job_single<'a>(
@@ -436,9 +496,10 @@ impl NowEnvironment {
         local_builder: &'a LocalBuilder,
         job: NowJob,
         node_index: NodeIndex<u32>,
+        dry_run: bool,
     ) -> JobFut<'a> {
         Box::pin(async move {
-            let result = self.run_job(local_builder, job).await;
+            let result = self.run_job(local_builder, job, dry_run).await;
             (node_index, result)
         })
     }
@@ -448,6 +509,7 @@ impl NowEnvironment {
         local_builder: &'a LocalBuilder,
         jobs: Vec<NowJob>,
         node_index: NodeIndex<u32>,
+        dry_run: bool,
     ) -> JobFut<'a> {
         let mut fail_fast = FuturesUnordered::new();
         let mut no_fail_fast = FuturesUnordered::new();
@@ -458,9 +520,9 @@ impl NowEnvironment {
                 .as_ref()
                 .is_none_or(|strategy| strategy.fail_fast)
             {
-                fail_fast.push(self.run_job(local_builder, job));
+                fail_fast.push(self.run_job(local_builder, job, dry_run));
             } else {
-                no_fail_fast.push(self.run_job(local_builder, job));
+                no_fail_fast.push(self.run_job(local_builder, job, dry_run));
             }
         }
 

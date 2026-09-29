@@ -224,9 +224,11 @@ in
             echo "icon: lucide/terminal" >> $OUT
             echo "---" >> $OUT
             echo "# CLI reference" >> $OUT
+            echo "" >> $OUT
             echo "!!! note" >> $OUT
             echo "" >> $OUT
             echo "    This documentation is auto-generated from the command line." >> $OUT
+            echo "" >> $OUT
             echo "## now" >> $OUT
             echo "" >> $OUT
             cat $DOCS_CLI/index.html >> $OUT

@@ -2,9 +2,11 @@
 icon: lucide/terminal
 ---
 # CLI reference
+
 !!! note
 
     This documentation is auto-generated from the command line.
+
 ## now
 
 <pre class="terminal">
@@ -110,6 +112,11 @@ Run one or more jobs
           Path to the flake and an optional attribute (defaults to the `now` output).
           
           Cannot be used together with the `--workflow` option.
+
+      <b>--dry-run</b>
+          Don&#39;t realize derivations or run jobs.
+          
+          Useful for debugging workflows before running them.
 
       <b>--all-jobs</b>
           Run all jobs in the workflow.

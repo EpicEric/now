@@ -174,6 +174,7 @@ impl From<&WorkflowSource> for String {
 pub(crate) struct NowWorkflowParams {
     pub(crate) workflow: WorkflowSource,
     pub(crate) ctrl_c: Receiver<()>,
+    pub(crate) dry_run: bool,
     pub(crate) abort: bool,
     pub(crate) timeout: Option<Duration>,
     pub(crate) jobs: Option<Vec<String>>,
@@ -206,6 +207,7 @@ impl NowEnvironment {
         NowWorkflowParams {
             workflow,
             ctrl_c,
+            dry_run,
             abort,
             timeout,
             jobs,
@@ -288,10 +290,10 @@ impl NowEnvironment {
                         }
                         DagNode::Job(_) => match nodes.remove(&node_index) {
                             Some(NowJobContainer::Single(job)) => {
-                                futures.push(self.run_job_single(&builder, job, node_index))
+                                futures.push(self.run_job_single(&builder, job, node_index, dry_run))
                             }
                             Some(NowJobContainer::Multiple(job_vec)) => {
-                                futures.push(self.run_jobs_multiple(&builder, job_vec, node_index));
+                                futures.push(self.run_jobs_multiple(&builder, job_vec, node_index, dry_run));
                             }
                             None => (),
                         },

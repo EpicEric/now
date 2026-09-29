@@ -133,6 +133,12 @@ enum Command {
         #[arg(short, long, value_name = "FLAKE[#ATTR]", conflicts_with = "workflow")]
         flake: Option<String>,
 
+        /// Don't realize derivations or run jobs.
+        ///
+        /// Useful for debugging workflows before running them.
+        #[arg(long)]
+        dry_run: bool,
+
         /// Run all jobs in the workflow.
         ///
         /// Cannot be used together with any `[JOB]` arguments.
@@ -436,6 +442,7 @@ fn main() -> color_eyre::Result<()> {
             jobs,
             workflow,
             flake,
+            dry_run,
             all_jobs,
             env_file,
             gcroot_dir,
@@ -486,6 +493,7 @@ fn main() -> color_eyre::Result<()> {
                     .run_workflow(NowWorkflowParams {
                         workflow,
                         ctrl_c,
+                        dry_run,
                         abort,
                         timeout: timeout.map(|timeout| timeout.into()),
                         jobs,
