@@ -146,21 +146,35 @@ pub fn main(init: std.process.Init) !void {
         try secret_names.append(allocator, secret);
     }
 
-    var secret_collection = try now_step.SecretCollection.init(allocator, init.environ_map, secret_names.items);
-    defer secret_collection.deinit();
-
     var child_env = std.process.Environ.Map.init(allocator);
     defer child_env.deinit();
     var env_iterator = init.environ_map.iterator();
     while (env_iterator.next()) |entry| {
         try child_env.put(entry.key_ptr.*, entry.value_ptr.*);
     }
-    try child_env.put("CI", "true");
-    try child_env.put("TERM", "xterm-256color");
 
     var io_impl: std.Io.Threaded = .init(allocator, .{});
     defer io_impl.deinit();
     const io = io_impl.io();
+
+    const stdin_buf = try allocator.alloc(u8, 128 * 1024);
+    defer allocator.free(stdin_buf);
+    var stdin: std.Io.File.Reader = .init(.stdin(), io, stdin_buf);
+    const stdin_reader = &stdin.interface;
+
+    while (try stdin_reader.takeDelimiter(0)) |entry| {
+        if (entry.len == 0) continue;
+        const sep = std.mem.findScalar(u8, entry, '=') orelse
+            return error.MalformedEnvEntry;
+        if (sep == 0) return error.EmptyEnvKey;
+        try child_env.put(entry[0..sep], entry[sep + 1 ..]);
+    }
+
+    var secret_collection = try now_step.SecretCollection.init(allocator, &child_env, secret_names.items);
+    defer secret_collection.deinit();
+
+    try child_env.put("CI", "true");
+    try child_env.put("TERM", "xterm-256color");
 
     var child = try std.process.spawn(io, .{
         .argv = &.{derivation},
@@ -171,26 +185,30 @@ pub fn main(init: std.process.Init) !void {
     });
     errdefer killChild(io, &child);
 
-    var child_stdout_buffer: [2048]u8 = undefined;
+    const child_stdout_buffer = try allocator.alloc(u8, 128 * 1024);
+    defer allocator.free(child_stdout_buffer);
     var child_stdout_file = std.Io.File{ .handle = child.stdout.?.handle, .flags = .{ .nonblocking = false } };
-    var child_stdout_file_reader = child_stdout_file.reader(init.io, &child_stdout_buffer);
+    var child_stdout_file_reader = child_stdout_file.reader(init.io, child_stdout_buffer);
     const child_stdout_reader = &child_stdout_file_reader.interface;
 
-    var child_stderr_buffer: [2048]u8 = undefined;
+    const child_stderr_buffer = try allocator.alloc(u8, 128 * 1024);
+    defer allocator.free(child_stderr_buffer);
     var child_stderr_file = std.Io.File{ .handle = child.stderr.?.handle, .flags = .{ .nonblocking = false } };
-    var child_stderr_file_reader = child_stderr_file.reader(init.io, &child_stderr_buffer);
+    var child_stderr_file_reader = child_stderr_file.reader(init.io, child_stderr_buffer);
     const child_stderr_reader = &child_stderr_file_reader.interface;
 
-    var stderr_buffer: [2048]u8 = undefined;
-    var stderr_file_writer: std.Io.File.Writer = .init(.stderr(), init.io, &stderr_buffer);
+    const stderr_buffer = try allocator.alloc(u8, 128 * 1024);
+    defer allocator.free(stderr_buffer);
+    var stderr_file_writer: std.Io.File.Writer = .init(.stderr(), init.io, stderr_buffer);
     const stderr_writer = &stderr_file_writer.interface;
 
     var result: std.process.Child.Term = undefined;
     var mutex = std.Io.Mutex.init;
     var task_group = std.Io.Group.init;
     if (preserve_stdout) {
-        var stdout_buffer: [512]u8 = undefined;
-        var stdout_file_writer: std.Io.File.Writer = .init(.stdout(), init.io, &stdout_buffer);
+        const stdout_buffer = try allocator.alloc(u8, 128 * 1024);
+        defer allocator.free(stdout_buffer);
+        var stdout_file_writer: std.Io.File.Writer = .init(.stdout(), init.io, stdout_buffer);
         const stdout_writer = &stdout_file_writer.interface;
         try task_group.concurrent(io, pipe, .{ child_stdout_reader, stdout_writer });
     } else {

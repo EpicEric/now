@@ -24,7 +24,7 @@ use std::{
 
 use ahash::{HashMap, HashMapExt, HashSet};
 use futures::{
-    AsyncReadExt,
+    AsyncReadExt, AsyncWriteExt,
     stream::{FuturesOrdered, FuturesUnordered},
 };
 use petgraph::matrix_graph::NodeIndex;
@@ -77,7 +77,7 @@ fn dummy_command() -> color_eyre::Result<Child> {
     let mut command = Command::new("/usr/bin/env");
     command
         .args(["sh", "-c", "echo /dummy"])
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env_clear();
@@ -296,12 +296,9 @@ impl NowEnvironment {
                 let mut child = if dry_run {
                     dummy_command()?
                 } else {
-                    runner.run_derivation(
-                        &cwdir,
-                        self.generate_env_vars_for_step(&step.env, &output_vars)?,
-                        run,
-                    )?
+                    runner.run_derivation(&cwdir, run)?
                 };
+                let mut stdin = child.stdin.take().expect("stdin is piped");
                 let mut stdout = child.stdout.take().expect("stdout is piped");
                 let stderr = child.stderr.take().expect("stderr is piped");
 
@@ -322,7 +319,23 @@ impl NowEnvironment {
                     }
                 };
 
-                let exit_status = smol::future::zip(child.status(), log_task).await.0?;
+                let stdin_task = async {
+                    let env = self.generate_env_vars_for_step(&step.env, &output_vars)?;
+                    for (key, value) in env {
+                        stdin.write_all(&key.into_encoded_bytes()).await?;
+                        stdin.write_all(b"=").await?;
+                        stdin.write_all(&value.into_encoded_bytes()).await?;
+                        stdin.write_all(b"\0").await?;
+                    }
+                    drop(stdin);
+                    Ok(())
+                };
+
+                let (exit_status, (_, stdin_task)): (_, (_, color_eyre::Result<()>)) =
+                    smol::future::zip(child.status(), smol::future::zip(log_task, stdin_task))
+                        .await;
+                stdin_task?;
+                let exit_status = exit_status?;
 
                 if !exit_status.success() {
                     return Err(color_eyre::eyre::eyre!(
@@ -418,27 +431,63 @@ impl NowEnvironment {
             let mut child = if dry_run {
                 dummy_command()?
             } else {
-                runner.run_derivation(&cwdir, env_vars, teardown)?
+                runner.run_derivation(&cwdir, teardown)?
             };
+            let mut stdin = child.stdin.take().expect("stdin is piped");
             let stderr = child.stderr.take().expect("stderr is piped");
 
-            let mut lines = BufReader::new(stderr).lines();
-            while let Some(line) = lines.next().await {
-                if let Ok(line) = line {
-                    info!(
-                        runner = runner_name,
-                        is_remote,
-                        step = step_name,
-                        teardown = true,
-                        "{}",
-                        line
-                    );
-                } else {
-                    break;
+            let log_task = async {
+                let mut lines = BufReader::new(stderr).lines();
+                while let Some(line) = lines.next().await {
+                    if let Ok(line) = line {
+                        info!(
+                            runner = runner_name,
+                            is_remote,
+                            step = step_name,
+                            "{}",
+                            line
+                        );
+                    } else {
+                        break;
+                    }
                 }
+            };
+
+            let stdin_task = async {
+                for (key, value) in env_vars {
+                    stdin.write_all(&key.into_encoded_bytes()).await?;
+                    stdin.write_all(b"=").await?;
+                    stdin.write_all(&value.into_encoded_bytes()).await?;
+                    stdin.write_all(b"\0").await?;
+                }
+                drop(stdin);
+                Ok(())
+            };
+
+            let (exit_status, (_, stdin_task)): (_, (_, color_eyre::Result<()>)) =
+                smol::future::zip(child.status(), smol::future::zip(log_task, stdin_task)).await;
+
+            if let Err(error) = stdin_task {
+                warn!(
+                    runner = runner_name,
+                    is_remote,
+                    step = step_name,
+                    teardown = true,
+                    "Teardown task failed ({}); continuing",
+                    error
+                );
+                result = result.and_then(|_| {
+                    Err(color_eyre::eyre::eyre!(
+                        "Teardown task for step '{}' failed ({})",
+                        step_name,
+                        error,
+                    )
+                    .into())
+                });
+                continue;
             }
 
-            let exit_status = match child.status().await {
+            let exit_status = match exit_status {
                 Ok(exit_status) => exit_status,
                 Err(error) => {
                     warn!(

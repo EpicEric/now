@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Pass envvars to `now-step` via stdin
+
 ## 0.4.0 (2026-09-29)
 
 ### Breaking changes

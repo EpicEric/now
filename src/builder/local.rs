@@ -436,21 +436,15 @@ impl NowBuilder for LocalBuilder {
         Ok(())
     }
 
-    fn run_derivation(
-        &self,
-        cwdir: &Path,
-        envs: HashMap<OsString, OsString>,
-        derivation: PathBuf,
-    ) -> color_eyre::Result<Child> {
+    fn run_derivation(&self, cwdir: &Path, derivation: PathBuf) -> color_eyre::Result<Child> {
         let mut command = Command::new(derivation.join("bin/now-step"));
         command
             .current_dir(cwdir)
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .env_clear()
-            .envs(&self.env)
-            .envs(envs);
+            .envs(&self.env);
         Ok(command.spawn()?)
     }
 

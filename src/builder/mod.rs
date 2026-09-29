@@ -15,12 +15,10 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
-    ffi::OsString,
     path::{Path, PathBuf},
     pin::Pin,
 };
 
-use ahash::HashMap;
 use futures::FutureExt;
 use smol::{
     channel,
@@ -142,12 +140,7 @@ pub(crate) trait NowBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()>;
 
-    fn run_derivation(
-        &self,
-        cwdir: &Path,
-        envs: HashMap<OsString, OsString>,
-        derivation: PathBuf,
-    ) -> color_eyre::Result<Child>;
+    fn run_derivation(&self, cwdir: &Path, derivation: PathBuf) -> color_eyre::Result<Child>;
 
     async fn fetch_derivation(
         &self,

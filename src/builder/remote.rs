@@ -20,7 +20,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use ahash::{HashMap, HashSet, HashSetExt};
+use ahash::{HashSet, HashSetExt};
 use async_trait::async_trait;
 use smol::{
     channel,
@@ -477,24 +477,10 @@ impl NowBuilder for RemoteBuilder {
         Ok(())
     }
 
-    fn run_derivation(
-        &self,
-        cwdir: &Path,
-        envs: HashMap<OsString, OsString>,
-        derivation: PathBuf,
-    ) -> color_eyre::Result<Child> {
+    fn run_derivation(&self, cwdir: &Path, derivation: PathBuf) -> color_eyre::Result<Child> {
         let mut full_command: OsString = "cd ".into();
         full_command.push(cwdir);
         full_command.push(" ; ");
-
-        for (key, value) in envs {
-            full_command.push(key);
-            full_command.push("=");
-            full_command.push(OsStr::from_bytes(
-                shlex::bytes::try_quote(value.as_encoded_bytes())?.as_ref(),
-            ));
-            full_command.push(" ");
-        }
 
         full_command.push(derivation.join("bin/now-step"));
 
@@ -508,9 +494,10 @@ impl NowBuilder for RemoteBuilder {
         command
             .arg(&self.ssh_uri)
             .arg(full_command)
-            .stdin(Stdio::null())
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+
         Ok(command.spawn()?)
     }
 
