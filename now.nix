@@ -46,7 +46,7 @@ in
             pkgs.zensical
           ];
           run = ''
-            trap 'kill 0' EXIT
+            trap 'kill 0' EXIT INT TERM
             watchexec -w now.nix -w nix/types.nix -r now run generate-nix-docs &
             watchexec -w now.nix -w src -r now run generate-cli-docs &
             zensical serve -f docs/zensical.toml
@@ -72,7 +72,9 @@ in
           sandbox.networkAccess = true;
           env.DOCS_HOST = runner.secret "DOCS_HOST";
           path = [ pkgs.rsync ];
-          run = "rsync --delete-after -acP docs/site/ $DOCS_HOST:www";
+          run = ''
+            rsync --delete-after -acP docs/site/ $DOCS_HOST:''${DOCS_DIRECTORY:-www}
+          '';
         }
       ];
     };
@@ -515,6 +517,7 @@ in
         {
           path = [ now ];
           shell = pkgs.nushell;
+          env.VAR_TO_PASS_TO_RUNNERS = "forty-two";
           run = ''
             if BUILDERS in $env {
               now run --all-jobs --builders $env.BUILDERS --workflow .now/tests/matrix.nix

@@ -111,7 +111,7 @@ MESSAGE="Hello" now run
 
 !!! warning
 
-    `runner.var` variables will be baked into derivations at build time. Don't use these for sensitive data.
+    `runner.var` variables will be baked into derivations at build time, meaning that they will end up in the Nix store. Don't use these for sensitive data.
 
 !!! note
 

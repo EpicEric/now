@@ -17,8 +17,9 @@
     local = {
       steps = [
         {
+          env.SECRET_VALUE = runner.var "VAR_TO_PASS_TO_RUNNERS";
           run = ''
-            printf "Hello from localhost!\npwd: "
+            printf "Hello from localhost!\nsecret value: $SECRET_VALUE\npwd: "
             pwd
           '';
         }
@@ -38,8 +39,9 @@
     remote = runner.matrix [ { requiredSystemFeatures = [ "now" ]; } ] {
       steps = [
         {
+          env.SECRET_VALUE = runner.var "VAR_TO_PASS_TO_RUNNERS";
           run = ''
-            printf "Hello from the remote!\npwd: "
+            printf "Hello from the remote!\nsecret value: $SECRET_VALUE\npwd: "
             pwd
           '';
         }
