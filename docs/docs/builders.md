@@ -84,3 +84,26 @@ Jobs declare `requiredSystemFeatures` to ensure they land on a suitable machine.
 ### Extra platforms
 
 Local runners can also run jobs for platforms listed in `extra-platforms` in the Nix configuration (e.g., via QEMU binfmt emulation). This allows an `x86_64-linux` machine to run `aarch64-linux` jobs without a remote builder.
+
+## Environment variables
+
+There are a couple of differences in how environment variables are handled by local and remote runners:
+
+| Behavior                   | Local runner                                                                                             | Remote runners                                                                                                                                            |
+| -------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Which variables get passed | All variables in the current shell, as well as those defined in the step's `env`.                        | All variables in the remote SSH user's shell, as well as those defined in the step's `env`.                                                               |
+| Ambient env security       | The full local shell environment is visible to steps (`SSH_AUTH_SOCK`, cloud credentials, tokens, etc.). | The full remote SSH user's environment is visible to steps (`SSH_CONNECTION`, `SSH_CLIENT`, agent-forwarded `SSH_AUTH_SOCK`, remote user's tokens, etc.). |
+| `NOW_GCROOT_DIR`           | Set to the local Nix gcroot directory.                                                                   | Not set. Step scripts fall back to `mktemp -d` on the remote host.                                                                                        |
+| Cross-step `output_vars`   | Available to subsequent steps in the same job.                                                           | Available to subsequent steps in the same job.                                                                                                            |
+
+Still, there are a couple of behaviors that are the same regardless of the environment:
+
+- `FORCE_COLOR` / `NO_COLOR`: Set based on whether the local terminal supports color.
+- `CI` and `TERM`: Always `true` and `xterm-256color`, respectively.
+- `runner.var`: Inlined into derivations at eval time. Values are visible in `/nix/store` on the runner machine.
+- `runner.secret`: Passed at runtime, only to steps that request them. Redacted from step log output.
+- `step.output_var`: Available to subsequent steps in the same job.
+
+!!! note
+
+    Because local and remote runners inherit different ambient environments, a variable set in your local shell (e.g. `export AWS_ACCESS_KEY_ID=...`) will be available to local steps, but not to remote steps. If a step needs a variable regardless of which runner it lands on, declare it as a `var` (non-sensitive) or `secret` (sensitive).

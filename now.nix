@@ -171,18 +171,27 @@ in
               echo "icon: lucide/square-menu" >> $OUT
               echo "---" >> $OUT
               echo "# Options reference" >> $OUT
+              echo "" >> $OUT
               echo "!!! note" >> $OUT
               echo "" >> $OUT
               echo "    This documentation is auto-generated from the workflow definitions." >> $OUT
+              echo "" >> $OUT
               echo "## Workflow" >> $OUT
+              echo "" >> $OUT
               echo "A workflow is the main definition of your now commands. \
               It allows you to specify multiple scripts (jobs) in a single source of truth via Nix." >> $OUT
+              echo "" >> $OUT
               cat $DOCS_WORKFLOW | sed 's/## /### /g' >> $OUT
               echo "## Job" >> $OUT
+              echo "" >> $OUT
               cat $DOCS_JOB | sed 's/## /### /g' >> $OUT
+              echo "" >> $OUT
               echo "## Step" >> $OUT
+              echo "" >> $OUT
               cat $DOCS_STEP | sed 's/## /### /g' >> $OUT
+              echo "" >> $OUT
               echo "## Sandbox" >> $OUT
+              echo "" >> $OUT
               cat $DOCS_SANDBOX | sed 's/## /### /g' >> $OUT
 
               echo "Updated Nix docs."
