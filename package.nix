@@ -30,7 +30,7 @@ rustPlatform.buildRustPackage {
 
   src = lib.fileset.toSource {
     root = ./.;
-    fileset = lib.fileset.unions [
+    fileset = lib.fileset.intersection (lib.fileset.unions [
       ./.tack
       ./nix
       ./now-step
@@ -38,7 +38,7 @@ rustPlatform.buildRustPackage {
       ./build.rs
       ./Cargo.toml
       ./Cargo.lock
-    ];
+    ]) (lib.fileset.gitTracked ./.);
   };
 
   cargoLock.lockFile = ./Cargo.lock;

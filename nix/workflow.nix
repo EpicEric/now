@@ -16,11 +16,10 @@
 
 {
   system ? builtins.currentSystem,
+  now-step ? (import ./. { inherit system; }).now-step,
 }:
 
 let
-  inherit (import ./. { inherit system; }) now-step;
-
   normalizeJob =
     {
       job,
@@ -286,7 +285,6 @@ let
         }
       ) module.config.jobs;
     };
-
 in
 
 {
