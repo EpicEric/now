@@ -16,10 +16,13 @@
 
 {
   system ? builtins.currentSystem,
-  now-step ? (import ./. { inherit system; }).now-step,
 }:
 
 let
+  overlay = final: prev: {
+    now-step = prev.now-step or (final.callPackage ../now-step/package.nix { });
+  };
+
   normalizeJob =
     {
       job,
@@ -78,7 +81,7 @@ let
         e:
         normalize {
           inherit (e) job;
-          pkgs = e.pkgs or pkgs;
+          pkgs = if e ? pkgs then e.pkgs.extend overlay else pkgs;
           specialArgs = e.specialArgs or { };
           requiredSystemFeatures = e.requiredSystemFeatures or [ ];
         }
@@ -157,9 +160,9 @@ let
         (writeShellApplication {
           name = "now-step";
           checkPhase = "";
-          runtimeInputs = [ now-step ] ++ step.path;
+          runtimeInputs = step.path;
           text = ''
-            now-step ${
+            ${lib.getExe pkgs.now-step} ${
               if step."__nowUpload_${evalId}" == null && step.outputVar == null then "" else "--preserve-stdout"
             } ${
               pkgs.callPackage ./sandbox.nix {
@@ -181,9 +184,9 @@ let
           (writeShellApplication {
             name = "now-step";
             checkPhase = "";
-            runtimeInputs = [ now-step ] ++ step.path;
+            runtimeInputs = step.path;
             text = ''
-              now-step ${
+              ${lib.getExe pkgs.now-step} ${
                 pkgs.callPackage ./sandbox.nix {
                   inherit nowSandbox;
                   nowScript = script step.teardown;
@@ -365,7 +368,7 @@ let
         variants: job:
         map (v: {
           inherit job;
-          pkgs = v.pkgs or pkgs;
+          pkgs = if v ? pkgs then v.pkgs.extend overlay else pkgs;
           specialArgs = removeAttrs v [
             "pkgs"
             "requiredSystemFeatures"
@@ -472,11 +475,19 @@ let
       workflow
     ];
     specialArgs = {
-      runner = runnerFn { pkgs = import <nixpkgs> { inherit system; }; };
+      runner = runnerFn {
+        pkgs = import <nixpkgs> {
+          inherit system;
+          overlays = [ overlay ];
+        };
+      };
     };
   };
 
-  pkgs = import bootstrap.config.nixpkgs { inherit system; };
+  pkgs = import bootstrap.config.nixpkgs {
+    inherit system;
+    overlays = [ overlay ];
+  };
 in
 nowConfig {
   inherit evalId pkgs;

@@ -286,6 +286,7 @@ in
         "test-matrix"
         "test-nix-config"
         "test-nixpkgs"
+        "test-overlay"
         "test-skip"
         "test-tempdir"
         "test-timeout"
@@ -575,6 +576,25 @@ in
           shell = pkgs.nushell;
           run = ''
             now run --workflow .now/tests/nixpkgs.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-overlay = {
+      name = "Test overlay";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            now run --workflow .now/tests/overlay.nix
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
               exit 1
