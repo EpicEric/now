@@ -10,6 +10,7 @@
 
 - Pass envvars to `now-step` via stdin
 - Don't pass `NOW_GCROOT_DIR` to remote builders
+- Handle SSH host keys for remote builders
 
 ## 0.4.0 (2026-09-29)
 

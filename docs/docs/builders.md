@@ -46,7 +46,7 @@ Each builder line is parsed as a space-separated tuple:
 | `1`                          | Speed factor (unused)                                                                    |
 | `kvm,benchmark`              | Comma-separated system features the builder advertises (`-` means none)                  |
 | `now`                        | Comma-separated mandatory features the builder requires jobs to request (`-` means none) |
-| `...`                        | SSH host key (unused)                                                                    |
+| `...`                        | Base64-encoded SSH host key                                                              |
 
 ### Local-only and remote-only modes
 

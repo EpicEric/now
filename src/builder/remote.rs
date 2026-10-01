@@ -16,6 +16,7 @@
 
 use std::{
     ffi::{OsStr, OsString},
+    io::Read as _,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
 };
@@ -44,6 +45,7 @@ pub(crate) struct RemoteBuilder {
     pub(crate) semaphore: Semaphore,
     pub(crate) lock: RwLock<()>,
     pub(crate) control_path: PathBuf,
+    pub(crate) known_hosts: Option<PathBuf>,
     pub(crate) ssh_uri: String,
     pub(crate) ssh_identity: Option<String>,
     pub(crate) host_system: String,
@@ -52,10 +54,13 @@ pub(crate) struct RemoteBuilder {
     pub(crate) required_features: HashSet<String>,
 }
 
-pub(crate) fn ssh_options(control_path: &Path) -> impl Iterator<Item = OsString> {
+pub(crate) fn ssh_options(
+    control_path: &Path,
+    known_hosts: Option<&PathBuf>,
+) -> impl Iterator<Item = OsString> {
     let mut control_path_option: OsString = "ControlPath=".into();
     control_path_option.push(control_path);
-    [
+    let mut options = vec![
         "-o".into(),
         "ControlMaster=auto".into(),
         "-o".into(),
@@ -64,8 +69,20 @@ pub(crate) fn ssh_options(control_path: &Path) -> impl Iterator<Item = OsString>
         "ControlPersist=300".into(),
         "-o".into(),
         "BatchMode=yes".into(),
-    ]
-    .into_iter()
+    ];
+    if let Some(known_hosts) = known_hosts {
+        let mut user_known_hosts_file_option: OsString = "UserKnownHostsFile=".into();
+        user_known_hosts_file_option.push(known_hosts);
+        options.extend_from_slice(&[
+            "-o".into(),
+            user_known_hosts_file_option,
+            "-o".into(),
+            "GlobalKnownHostsFile=/dev/null".into(),
+            "-o".into(),
+            "StrictHostKeyChecking=yes".into(),
+        ]);
+    }
+    options.into_iter()
 }
 
 impl RemoteBuilder {
@@ -95,8 +112,12 @@ impl RemoteBuilder {
             let Some(ssh_uri) = iter.next() else {
                 continue;
             };
+            let ssh_uri = match ssh_uri.split_once('?') {
+                Some((left, _)) => left,
+                None => ssh_uri,
+            };
             let ssh_uri = if let Some(plain_uri) = ssh_uri.strip_prefix("ssh-ng://") {
-                format!("ssh://{plain_uri}")
+                format!("ssh://{}", plain_uri)
             } else if ssh_uri.starts_with("ssh://") {
                 ssh_uri.to_string()
             } else {
@@ -154,18 +175,35 @@ impl RemoteBuilder {
                 HashSet::new()
             };
 
-            let _ssh_host_key = iter.next();
+            let remote_path = project_source.join(format!("remotes/ssh-{}", get_random_string(10)));
+            smol::fs::create_dir_all(&remote_path).await?;
+
+            let known_hosts = if let Some(key) = iter.next()
+                && key != "-"
+            {
+                let known_hosts_path = remote_path.join("known_hosts");
+                let mut decoder = base64::read::DecoderReader::new(
+                    key.as_bytes(),
+                    &base64::engine::general_purpose::STANDARD,
+                );
+                let mut buf = Vec::new();
+                decoder.read_to_end(&mut buf)?;
+                smol::fs::write(&known_hosts_path, &buf).await?;
+                Some(known_hosts_path)
+            } else {
+                None
+            };
 
             let (cancellation, receiver) = channel::bounded(1);
 
-            let control_path = project_source.join(format!("ssh-{}", get_random_string(10)));
+            let control_path = remote_path.join("socket");
 
             // Get host system for remote
             let mut command = Command::new("ssh");
             if let Some(ssh_identity) = ssh_identity.as_ref() {
                 command.arg("-i").arg(ssh_identity);
             }
-            for arg in ssh_options(&control_path) {
+            for arg in ssh_options(&control_path, known_hosts.as_ref()) {
                 command.arg(arg);
             }
             command
@@ -199,6 +237,7 @@ impl RemoteBuilder {
                 semaphore: Semaphore::new(maximum_builds),
                 lock: RwLock::default(),
                 control_path,
+                known_hosts,
                 ssh_uri,
                 ssh_identity,
                 host_system,
@@ -243,7 +282,7 @@ impl NowBuilder for RemoteBuilder {
                     ssh_command.push(ssh_identity);
                     ssh_command.push(" ");
                 }
-                for arg in ssh_options(&self.control_path) {
+                for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
                     ssh_command.push(arg);
                     ssh_command.push(" ");
                 }
@@ -300,7 +339,7 @@ impl NowBuilder for RemoteBuilder {
                     ssh_command.push(ssh_identity);
                     ssh_command.push(" ");
                 }
-                for arg in ssh_options(&self.control_path) {
+                for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
                     ssh_command.push(arg);
                     ssh_command.push(" ");
                 }
@@ -334,7 +373,7 @@ impl NowBuilder for RemoteBuilder {
                 if let Some(ssh_identity) = self.ssh_identity.as_ref() {
                     command.arg("-i").arg(ssh_identity);
                 }
-                for arg in ssh_options(&self.control_path) {
+                for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
                     command.arg(arg);
                 }
                 command
@@ -361,7 +400,7 @@ impl NowBuilder for RemoteBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         let mut ssh_opts = OsString::new();
-        for arg in ssh_options(&self.control_path) {
+        for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
             ssh_opts.push(arg);
             ssh_opts.push(" ");
         }
@@ -416,7 +455,7 @@ impl NowBuilder for RemoteBuilder {
         if let Some(ssh_identity) = self.ssh_identity.as_ref() {
             command.arg("-i").arg(ssh_identity);
         }
-        for arg in ssh_options(&self.control_path) {
+        for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
             command.arg(arg);
         }
         command
@@ -445,7 +484,7 @@ impl NowBuilder for RemoteBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         let mut ssh_opts = OsString::new();
-        for arg in ssh_options(&self.control_path) {
+        for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
             ssh_opts.push(arg);
             ssh_opts.push(" ");
         }
@@ -488,7 +527,7 @@ impl NowBuilder for RemoteBuilder {
         if let Some(ssh_identity) = self.ssh_identity.as_ref() {
             command.arg("-i").arg(ssh_identity);
         }
-        for arg in ssh_options(&self.control_path) {
+        for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
             command.arg(arg);
         }
         command
@@ -507,7 +546,7 @@ impl NowBuilder for RemoteBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         let mut ssh_opts = OsString::new();
-        for arg in ssh_options(&self.control_path) {
+        for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
             ssh_opts.push(arg);
             ssh_opts.push(" ");
         }
@@ -555,7 +594,7 @@ impl NowBuilder for RemoteBuilder {
                 if let Some(ssh_identity) = self.ssh_identity.as_ref() {
                     command.arg("-i").arg(ssh_identity);
                 }
-                for arg in ssh_options(&self.control_path) {
+                for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
                     command.arg(arg);
                 }
                 command

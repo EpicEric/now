@@ -70,9 +70,9 @@ Here's a full example of `now`'s features:
             # You can set environment variables for this step (or for the whole job)
             env = {
               FOO = "Hello!";
-              # Runtime-specified variable (interpolation allowed; empty if missing)
+              # Runtime-required variable (interpolation allowed)
               BAR = "${runner.var "BAR"} (copy)";
-              # Runtime-specified secret (interpolation not allowed; must be specified)
+              # Runtime-required secret (interpolation not allowed)
               BAZ = runner.secret "BAZ";
             };
             # You can also specify which shell to use
@@ -81,6 +81,7 @@ Here's a full example of `now`'s features:
               import os
 
               print(os.environ["FOO"])
+              print(os.environ["BAR"])
             '';
             # Teardown always gets run even if the next steps fail
             teardown = ''
@@ -136,7 +137,12 @@ Here's a full example of `now`'s features:
               deriv = pkgs.hello;
             })
             {
-              run = "echo $DRV";
+              run = "echo Here's the result";
+              # outputVar saves the step's stdout to the given envvar
+              outputVar = "MY_OUTPUT";
+            }
+            {
+              run = "echo $MY_OUTPUT: $DRV";
             }
           ];
         }
