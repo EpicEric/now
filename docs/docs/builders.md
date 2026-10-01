@@ -106,4 +106,4 @@ Still, there are a couple of behaviors that are the same regardless of the envir
 
 !!! note
 
-    Because local and remote runners inherit different ambient environments, a variable set in your local shell (e.g. `export AWS_ACCESS_KEY_ID=...`) will be available to local steps, but not to remote steps. If a step needs a variable regardless of which runner it lands on, declare it as a `var` (non-sensitive) or `secret` (sensitive).
+    Because local and remote runners inherit different ambient environments, a variable set in your local shell (e.g. `export AWS_ACCESS_KEY_ID=...`) will be available to local steps, but not to remote steps. If a step needs a variable regardless of the type of runner, declare it as a `runner.var` (non-sensitive) or `runner.secret` (sensitive).

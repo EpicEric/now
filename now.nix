@@ -26,7 +26,7 @@ in
           ];
           sandbox = {
             enable = true;
-            writablePath = true;
+            writableDirectory = true;
           };
         }
       ];
@@ -64,7 +64,7 @@ in
       sandbox.enable = true;
       steps = [
         {
-          sandbox.writablePath = true;
+          sandbox.writableDirectory = true;
           path = [ pkgs.zensical ];
           run = "zensical build -f docs/zensical.toml";
         }
@@ -156,7 +156,7 @@ in
             };
           })
           {
-            sandbox.writablePath = true;
+            sandbox.writableDirectory = true;
             env = {
               DOCS_WORKFLOW = runner.download "docs-workflow";
               DOCS_JOB = runner.download "docs-job";
@@ -224,7 +224,7 @@ in
               '';
         })
         {
-          sandbox.writablePath = true;
+          sandbox.writableDirectory = true;
           env = {
             DOCS_CLI = runner.download "docs-cli";
             OUT = "docs/docs/cli.md";

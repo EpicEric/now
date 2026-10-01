@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Breaking changes
+
+- Rename `sandbox.writablePath` to `sandbox.writableDirectory`
+
 ### Changed
 
 - Pass envvars to `now-step` via stdin

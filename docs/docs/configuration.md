@@ -2,7 +2,7 @@
 icon: lucide/book-marked
 ---
 
-# Configuration reference
+# Configuration guide
 
 ## Workflow
 
@@ -258,7 +258,7 @@ Both `runner.steps.build` and `runner.steps.upload` accept a few optional attrib
   })
   ```
 
-- `sandbox`: overrides for the step's [sandbox configuration](#sandboxing). `writableNixStore` and `networkAccess` default to `true` (required to build/upload at all) and can't usefully be turned off, but everything else (`enable`, `useHome`, `writablePath`) can be set as needed:
+- `sandbox`: overrides for the step's [sandbox configuration](#sandboxing). `writableNixStore` and `networkAccess` default to `true` (required to build/upload at all) and can't usefully be turned off, but everything else (`enable`, `useHome`, `writableDirectory`) can be set as needed:
 
   ```nix
   (runner.steps.upload {
@@ -312,9 +312,9 @@ Available strategies:
 
 | Strategy      | Local behavior                                                          | Remote behavior                                                          |
 | ------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `"default"`   | Use the current directory as-is.                                        | Copy tracked files to a temporary directory on the remote.               |
-| `"clone"`     | Copy tracked files to a local temp directory.                           | Copy tracked files to a temporary directory on the remote.               |
-| `"none"`      | Create an empty temporary directory.                                    | Create an empty temp directory on the remote.                            |
+| `"default"`   | Use the current directory as-is.                                        | Copy tracked files to a remote temporary directory.                      |
+| `"clone"`     | Copy tracked files to a local temporary directory.                      | Copy tracked files to a remote temporary directory.                      |
+| `"none"`      | Create an empty temporary directory.                                    | Create an empty remote temporary directory.                              |
 | `"all"`       | Use the current directory as-is.                                        | Copy all files (including ignored ones) to a remote temporary directory. |
 | `"clone-all"` | Copy all files (including ignored ones) to a local temporary directory. | Copy all files (including ignored ones) to a remote temporary directory. |
 
@@ -340,10 +340,6 @@ The `"all"` and `"clone-all"` variants include files that would normally be excl
   };
 }
 ```
-
-The default is `"default"`, which works well for local runs where the current
-directory is already the project root. For remote builders, `"clone"` is the
-safest choice as it ensures a clean, isolated copy of the repository.
 
 ### Conditional jobs
 
@@ -463,7 +459,7 @@ You can configure it at both the job and step level. Step settings override job 
       # Override sandbox settings for this step
       # Sandboxing still applies from the job configuration
       sandbox = {
-        writablePath = true;
+        writableDirectory = true;
         networkAccess = true;
       };
       run = ''

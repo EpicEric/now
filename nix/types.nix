@@ -27,10 +27,10 @@ let
           ${"__nowDownload_${evalId}"} = lib.mkOption { type = types.str; };
         }
       )
-    )
-    // {
-      description = "attribute set of (string, a call to runner.secret, or a call to runner.download)";
-    };
+      // {
+        description = "string, a call to runner.secret, or a call to runner.download";
+      }
+    );
 
   sandbox = types.submodule {
     options = {
@@ -59,7 +59,7 @@ let
           (eg. `[ ".config/application" ]`).
         '';
       };
-      writablePath = lib.mkOption {
+      writableDirectory = lib.mkOption {
         type = types.bool;
         default = false;
         description = "Whether the sandboxed step can write to the checked-out directory.";
@@ -67,7 +67,7 @@ let
       writableNixStore = lib.mkOption {
         type = types.bool;
         default = false;
-        description = "Whether the sandboxed step can write to the Nix store.";
+        description = "Whether the sandboxed step can create derivations on the Nix store.";
       };
     };
   };
@@ -196,7 +196,7 @@ let
                 - `"all"` - same as `"default"`, but ignored files are also copied
                 over to remote builders.
                 - `"clone-all"` - same as `"clone"`, but ignored files are also copied
-                over.
+                over to remote builders.
               '';
             };
             timeout = lib.mkOption {

@@ -2,11 +2,15 @@
 icon: lucide/square-menu
 ---
 # Options reference
+
 !!! note
 
     This documentation is auto-generated from the workflow definitions.
+
 ## Workflow
+
 A workflow is the main definition of your now commands. It allows you to specify multiple scripts (jobs) in a single source of truth via Nix.
+
 ### default
 
 Default job(s) to run for this workflow\.
@@ -90,6 +94,7 @@ path to nixpkgs
 
 
 ## Job
+
 ### job
 
 A job is a set of tasks built and run on a single local or remote runner,
@@ -118,7 +123,7 @@ Options are:
  - ` "all" ` - same as ` "default" `, but ignored files are also copied
    over to remote builders\.
  - ` "clone-all" ` - same as ` "clone" `, but ignored files are also copied
-   over\.
+   over to remote builders\.
 
 
 
@@ -307,7 +312,9 @@ null
 ```
 
 
+
 ## Step
+
 ### step
 
 A step is a single, atomic task that’s run as part of a job\.
@@ -514,7 +521,9 @@ null
 ```
 
 
+
 ## Sandbox
+
 ### sandbox
 
 The sandbox submodule allows you to specify extra restrictions at
@@ -621,11 +630,11 @@ false
 
 
 
-### sandbox\.writableNixStore
+### sandbox\.writableDirectory
 
 
 
-Whether the sandboxed step can write to the Nix store\.
+Whether the sandboxed step can write to the checked-out directory\.
 
 
 
@@ -642,11 +651,11 @@ false
 
 
 
-### sandbox\.writablePath
+### sandbox\.writableNixStore
 
 
 
-Whether the sandboxed step can write to the checked-out directory\.
+Whether the sandboxed step can create derivations on the Nix store\.
 
 
 

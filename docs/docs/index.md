@@ -54,4 +54,4 @@ now is separated into three levels:
 - Jobs: Each individual recipe in a workflow. These can depend on other jobs and run on multiple machines at once.
 - Steps: The individual scripts run as part of your jobs, normally written in a scripting language like bash or Python.
 
-The `now.nix` file format lets you specify these using Nix. For more information, check out the ["Configuration" page](./configuration.md).
+The `now.nix` file format lets you specify all three of these using Nix.

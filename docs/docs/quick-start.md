@@ -6,7 +6,7 @@ icon: lucide/rocket
 
 ## Installation
 
-The recommended way to install now is via Nix or via [crates.io](https://crates.io/crates/now-runner/).
+The recommended way to install now is via Nix or [crates.io](https://crates.io/crates/now-runner/).
 
 !!! tip
 

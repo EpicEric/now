@@ -1,5 +1,5 @@
 <p align="center">
-    <a href="https://now.dev.br" target="_blank"><img src="./images/logo.png" alt="now logo" /></a> <br>
+    <a href="https://now.dev.br" target="_blank"><img src="https://now.dev.br/images/logo.png" alt="now logo" /></a> <br>
 </p>
 
 ---

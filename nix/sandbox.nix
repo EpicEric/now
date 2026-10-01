@@ -46,7 +46,7 @@ if nowSandbox.enable then
           --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
         ''} \
         ${
-          if nowSandbox.writablePath then
+          if nowSandbox.writableDirectory then
             ''--bind "$PWD" "$PWD" --chdir "$PWD"''
           else
             ''--ro-bind "$PWD" "$PWD" --chdir "$PWD"''
@@ -147,7 +147,7 @@ if nowSandbox.enable then
           }
 
           ${
-            if nowSandbox.writablePath then
+            if nowSandbox.writableDirectory then
               ''
                 (allow file-read* file-write* (subpath (param "PWD")))
               ''
