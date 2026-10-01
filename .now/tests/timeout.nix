@@ -3,12 +3,12 @@
 
   jobs = {
     timeout = { ... }: {
-      timeout = "5s";
+      timeout = "3s";
       steps = [
         {
           run = ''
-            echo "Sleeping for 1 second..."
-            sleep 1
+            echo "Sleeping for 0.1 seconds..."
+            sleep 0.1
             echo "Done!"
           '';
           teardown = ''

@@ -97,3 +97,10 @@ pub(crate) fn trim_string(original: &str, max_chars: usize) -> String {
     }
     output
 }
+
+pub(crate) fn parse_bool_from_str(input: &str) -> bool {
+    matches!(
+        input.trim().to_lowercase().as_str(),
+        "1" | "true" | "yes" | "y"
+    )
+}

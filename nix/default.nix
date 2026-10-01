@@ -18,9 +18,10 @@
   system ? builtins.currentSystem,
   inputs ? import ../.tack,
   pkgs ? import inputs.nixpkgs { inherit system; },
+  withLocalStep ? true,
 }:
 let
-  now = pkgs.callPackage ../package.nix { };
+  now = pkgs.callPackage ../package.nix { inherit withLocalStep; };
   now-step = pkgs.callPackage ../now-step/package.nix { };
 in
 {

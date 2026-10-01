@@ -33,7 +33,7 @@ use tracing::instrument;
 use crate::{
     project::{ProjectSource, create_nix_project_source},
     secret::SecretString,
-    utils::{wait_for_output, write_output_to_stderr},
+    utils::{parse_bool_from_str, wait_for_output, write_output_to_stderr},
     workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow, WorkflowSource},
 };
 
@@ -226,9 +226,15 @@ impl NowEnvironment {
         let nix_env_path = format!("(/. + {})", serde_json::to_string(&nix_env_str)?);
 
         let eval_id_json = serde_json::to_string(eval_id())?;
+        let with_local_step =
+            option_env!("NOW_WITH_LOCAL_STEP").is_some_and(|var| parse_bool_from_str(var));
 
         let nix_command = format!(
-            "import {nix_env_path} {{ }} {{ workflow = {workflow_path}; evalId = {eval_id_json}; }}"
+            "import {nix_env_path} {{ }} {{ \
+                workflow = {workflow_path}; \
+                evalId = {eval_id_json}; \
+                withLocalStep = {with_local_step}; \
+            }}"
         );
 
         let mut command = Command::new("nix");

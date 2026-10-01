@@ -21,11 +21,9 @@
 {
   workflow,
   evalId,
+  withLocalStep ? false,
 }:
-import ./workflow.nix { inherit system; } {
-  inherit
-    workflow
-    evalId
-    ;
+import ./workflow.nix { inherit system withLocalStep; } {
+  inherit workflow evalId;
   var = name: "@@__nowVar_${evalId}_${name}@@";
 }

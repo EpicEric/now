@@ -670,7 +670,7 @@ in
               exit 1
             }
 
-            if not ($output | str contains "timed out after 5s") {
+            if not ($output | str contains "timed out after 3s") {
               print $"(ansi red_bold)ERROR:(ansi reset) Expected a timeout error"
               exit 1
             }

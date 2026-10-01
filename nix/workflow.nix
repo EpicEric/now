@@ -16,11 +16,16 @@
 
 {
   system ? builtins.currentSystem,
+  withLocalStep ? false,
 }:
 
 let
   overlay = final: prev: {
-    now-step = prev.now-step or (final.callPackage ../now-step/package.nix { });
+    now-step =
+      if withLocalStep then
+        final.callPackage ../now-step/package.nix { }
+      else
+        prev.now-step or (final.callPackage ../now-step/package.nix { });
   };
 
   normalizeJob =

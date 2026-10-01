@@ -6,6 +6,10 @@
 
 - Rename `sandbox.writablePath` to `sandbox.writableDirectory`
 
+### Added
+
+- Use `now-step` from nixpkgs, unless it's missing or `NOW_WITH_LOCAL_STEP` is set to `true` at build time
+
 ### Changed
 
 - Pass envvars to `now-step` via stdin

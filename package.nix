@@ -23,6 +23,7 @@
   rsync,
   rustPlatform,
   stdenv,
+  withLocalStep ? true,
 }:
 rustPlatform.buildRustPackage {
   pname = "now";
@@ -45,6 +46,8 @@ rustPlatform.buildRustPackage {
 
   strictDeps = true;
   __structuredAttrs = true;
+
+  NOW_WITH_LOCAL_STEP = lib.optionalString withLocalStep "true";
 
   nativeBuildInputs = [
     installShellFiles
