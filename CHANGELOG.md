@@ -8,7 +8,8 @@
 
 ### Added
 
-- Use `now-step` from nixpkgs, unless it's missing or `NOW_WITH_LOCAL_STEP` is set to `true` at build time
+- Add `now-step` via overlay to `pkgs` instances
+  - The default behavior is to prefer any pre-existing version of `now-step`. This can be overriden at build time with `NOW_WITH_LOCAL_STEP=true`.
 
 ### Changed
 

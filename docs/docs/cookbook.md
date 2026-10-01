@@ -185,7 +185,7 @@ jobs:
 }
 ```
 
-Steps are cross-compiled to and run on `aarch64-linux` runners (specified with the `--builders` flag).
+Steps are cross-compiled to, and run on, `aarch64-linux` runners (specified with the `--builders` flag).
 
 To also specify the build system's architecture, use `import <nixpkgs> { buildSystem = "..."; }`.
 

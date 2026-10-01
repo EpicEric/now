@@ -1,0 +1,10 @@
+.now-logo {
+    transition-duration: 100ms;
+    transition-timing-function: ease-in-out;
+    transition-property: rotate scale;
+}
+
+.now-logo:hover {
+    rotate: 1deg;
+    scale: 1.05;
+}

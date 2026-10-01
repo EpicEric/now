@@ -23,6 +23,7 @@ nav = [
 ]
 extra_css = [
   "stylesheets/extra.css",
+  "stylesheets/now-logo.css",
   "stylesheets/to-html.css",
 ]
 
