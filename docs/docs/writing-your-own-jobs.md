@@ -24,20 +24,27 @@ Or if you're using a flake:
 now run --flake path/to/flake#now
 ```
 
-## Writing your own jobs
+## Creating your second job
 
-Open the `now.nix` that `now init` created (or find the `now` output that you added to your flake). The part you'll change most is the `run` string, which contains the script that gets run by a shell:
+Open the `now.nix` that `now init` created, and add `my-second-job` to the `jobs` attribute set. Then, modify it however you want. The part you'll want to change most is the `run` string, which contains the script that gets run by `bash`:
 
 ```nix
-{
-  jobs.my-second-job = { pkgs, ... }: {
-    steps = [
-      {
-        run = ''
-          echo "Do your thing here"
-        '';
-      }
-    ];
+{ runner, lib, ... }: {
+  default = [ "default" ];
+  jobs = {
+    default = { pkgs, ... }: {
+      # ...
+    };
+
+    my-second-job = { pkgs, ... }: {
+      steps = [
+        {
+          run = ''
+            echo "Do your thing here"
+          '';
+        }
+      ];
+    };
   };
 }
 ```
@@ -54,7 +61,7 @@ Your job function automatically receives a `pkgs` argument, populated with an in
 
 ```nix
 {
-  jobs.build-docs = { pkgs, ... }: {
+  build-docs = { pkgs, ... }: {
     steps = [
       {
         path = [ pkgs.zola ];
@@ -69,7 +76,7 @@ Or you can run your script on an entirely different shell.
 
 ```nix
 {
-  jobs.countdown = { pkgs, ... }: {
+  countdown = { pkgs, ... }: {
     steps = [
       {
         shell = pkgs.nushell;
@@ -88,12 +95,12 @@ Or you can run your script on an entirely different shell.
 
 ## Two ways to write a job
 
-A job can be a plain attribute set (for steps that only need bash), or a function that receives `pkgs`:
+A job can be a plain attribute set (for steps that only need `bash`), or a function that receives `pkgs`:
 
 ```nix
 {
   jobs.hello-plain = {
-    steps = [ { run = "echo hi"; } ];
+    steps = [ { run = "echo 'hi'"; } ];
   };
 
   jobs.hello-function = { pkgs, ... }: {
@@ -108,7 +115,7 @@ Before running, you can check that your workflow is valid:
 
 ```bash
 now list           # list the available jobs
-now eval           # print the workflow as JSON
+now eval           # serialize the workflow to JSON
 now run --dry-run  # see the jobs flow without actually running any steps
 ```
 

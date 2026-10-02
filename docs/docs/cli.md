@@ -1,6 +1,7 @@
 ---
 icon: lucide/terminal
 ---
+
 # CLI reference
 
 !!! note

@@ -141,7 +141,7 @@ impl WorkflowSource {
                 debug_assert!(path.is_absolute());
                 let workflow_str = path
                     .to_str()
-                    .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
+                    .ok_or_else(|| color_eyre::eyre::eyre!("path is not UTF-8"))?;
                 Ok(format!("(/. + {})", serde_json::to_string(&workflow_str)?))
             }
             WorkflowSource::Flake { path, attribute } => {
@@ -421,7 +421,7 @@ impl NowEnvironment {
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;
         let eval_id = serde_json::to_string(eval_id())?;
         let with_local_step =
-            option_env!("NOW_WITH_LOCAL_STEP").is_some_and(|var| parse_bool_from_str(var));
+            option_env!("NOW_WITH_LOCAL_STEP").is_some_and(parse_bool_from_str);
 
         let nix_command = format!(
             "(import {nix_workflow_path} {{ \

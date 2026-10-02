@@ -45,7 +45,7 @@
               # Create file with token
               touch $NIKS3_AUTH_TOKEN_FILE
               chmod 600 $NIKS3_AUTH_TOKEN_FILE
-              echo $NIKS3_AUTH_TOKEN > $NIKS3_AUTH_TOKEN_FILE
+              echo "$NIKS3_AUTH_TOKEN" > $NIKS3_AUTH_TOKEN_FILE
 
               # Push derivations to cache
               niks3 push $NOW $NOW_STEP

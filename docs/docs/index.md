@@ -6,7 +6,7 @@ icon: lucide/rectangle-ellipsis
 
 ![now logo](./images/logo.png){.now-logo}
 
-now is a command runner based on [Nix](https://nixos.org/). It allows for distributed builds of reproducible scripts, with control over how and where they should run.
+`now` is a command runner based on [Nix](https://nixos.org/). It allows for local and/or distributed builds of reproducible scripts, with control over how and where they should run.
 
 ## Examples
 
@@ -36,7 +36,7 @@ now is a command runner based on [Nix](https://nixos.org/). It allows for distri
             {
               path = [ pkgs.zola ];
               run = ''
-                echo Press Ctrl-C to quit.
+                echo 'Press Ctrl-C to quit.'
                 zola serve
               '';
             }
@@ -173,7 +173,7 @@ now is a command runner based on [Nix](https://nixos.org/). It allows for distri
                   DOCKERHUB_USERNAME = runner.var "DOCKERHUB_USERNAME";
                 };
                 run = ''
-                  echo $DOCKERHUB_PUSH_TOKEN | docker login --password-stdin --username $DOCKERHUB_USERNAME docker.io
+                  echo "$DOCKERHUB_PUSH_TOKEN" | docker login --password-stdin --username $DOCKERHUB_USERNAME docker.io
                 '';
                 teardown = ''
                   docker logout docker.io
@@ -195,9 +195,9 @@ now is a command runner based on [Nix](https://nixos.org/). It allows for distri
 
 ## Core concepts
 
-now is separated into three levels:
+`now` is separated into three levels:
 
-- :lucide-workflow:{ .md .middle } **Workflows:** The specification of now and its recipes. Inspired by [GitHub Actions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax), with a touch of [`just`](https://just.systems/man/en/).
+- :lucide-workflow:{ .md .middle } **Workflows:** The specification of now and its recipes, inspired by [GitHub Actions](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
 - :lucide-clipboard-list:{ .md .middle } **Jobs:** Each individual recipe in a workflow. These can depend on other jobs and run on multiple machines at once.
 - :lucide-layers:{ .md .middle } **Steps:** The individual scripts run as part of your jobs, normally written in a scripting language like bash or Python.
 

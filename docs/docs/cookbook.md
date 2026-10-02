@@ -4,6 +4,8 @@ icon: lucide/cooking-pot
 
 # Cookbook
 
+A collection of common patterns used with `now`.
+
 ## Using `now`'s binary cache
 
 A cache containing pre-built binaries is available with the following configuration:
@@ -28,8 +30,8 @@ on:
     branches: ["main"]
 
 jobs:
-  push-to-cache:
-    name: Push to cache
+  now:
+    name: Run CI through now
     strategy:
       fail-fast: false
       matrix:
@@ -51,13 +53,12 @@ jobs:
           add-channel: "true"
       - name: Push to cache
         env:
-          CACHE_URL: ${{ vars.CACHE_URL }}
-          CACHE_TOKEN: ${{ secrets.CACHE_TOKEN }}
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |
-          nix run git+https://codeberg.org/now-runner/now -- run push-to-cache
+          nix run git+https://codeberg.org/now-runner/now -- run ci
 ```
 
-## Running jobs as a pre-commit hook
+## Installing jobs as a pre-commit hook
 
 === "bash / zsh"
 
@@ -89,6 +90,33 @@ jobs:
     now run format
     '# | save --force .git/hooks/pre-commit
     chmod +x .git/hooks/pre-commit
+    ```
+
+=== "now"
+
+    ```nix
+    {
+      install-pre-commit-hook = {
+        sandbox.enable = true;
+        steps = [
+          {
+            run = ''
+              echo '#! /usr/bin/env nix'
+              echo '#! nix shell git+https://codeberg.org/now-runner/now#now --command /bin/sh'
+              echo 'now run format'
+            '';
+            outputVar = "PRE_COMMIT_HOOK";
+          }
+          {
+            run = ''
+              echo "$PRE_COMMIT_HOOK" > .git/hooks/pre-commit
+              chmod +x .git/hooks/pre-commit
+            '';
+            sandbox.writableDirectory = true;
+          }
+        ];
+      };
+    }
     ```
 
 !!! tip
@@ -185,7 +213,7 @@ jobs:
 }
 ```
 
-Steps are cross-compiled to, and run on, `aarch64-linux` runners (specified with the `--builders` flag).
+Steps are cross-compiled to, and run on, `aarch64-linux` runners (which are specified with the `--builders` flag).
 
 To also specify the build system's architecture, use `import <nixpkgs> { buildSystem = "..."; }`.
 
@@ -203,7 +231,7 @@ One way is to combine `watch`/`watchexec`/`fswatch` and bash's `trap`, for examp
       # ...
     };
 
-    serve-docs = {
+    serve-docs = { pkgs, ... }: {
       steps = [
         {
           path = [
@@ -220,6 +248,41 @@ One way is to combine `watch`/`watchexec`/`fswatch` and bash's `trap`, for examp
         }
       ];
     };
+  };
+}
+```
+
+## Separating workflows into multiple files
+
+```nix
+let
+  pkgs = import <nixpkgs> { };
+
+  # Assuming `extraSteps = { step1 = args: ...; step2 = args: ...; };`
+  extraSteps = import (
+    pkgs.fetchFromCodeberg {
+      owner = "EpicEric9";
+      repo = "now-steps";
+      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    }
+  );
+in
+{ runner, ... }: {
+  # Workflows in `imports` get merged
+  imports = [
+    ./.now/foo.nix
+    ./.now/bar.nix
+  ];
+
+  my-job = { pkgs, ... }: {
+    steps = [
+      (extraSteps.step1 {
+        # ...
+      })
+      (extraSteps.step2 {
+        # ...
+      })
+    ];
   };
 }
 ```

@@ -6,154 +6,30 @@
 
 Nix-based distributed command runner.
 
-Check out <https://now.dev.br> for full documentation.
+Check out <https://now.dev.br> for full documentation, including a quick start guide.
+
+You can find examples of how now is used in [`now.nix`](./now.nix) and [`.now/`](./.now).
 
 ## Status
 
-Still an early work-in-progress. Expect frequent breaking changes and broken functionality.
+Still a work-in-progress. Expect breaking changes between minor versions.
 
 > [!Note]
 > LLM disclaimer: This repo includes minor contributions from large language models, all of them thoroughly reviewed by a human.
 
-## Quick start
+## Features
 
-```bash
-# Binary cache:
-#   extra-substituters = https://cache.eric.dev.br
-#   extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=
-nix run git+https://codeberg.org/now-runner/now -- init
-```
-
-This creates a `now.nix` file in the current directory. To run it:
-
-```bash
-nix run git+https://codeberg.org/now-runner/now -- run
-```
-
-For options and examples:
-
-```bash
-nix run git+https://codeberg.org/now-runner/now -- --help
-```
-
-## Workflows
-
-Here's a full example of `now`'s features:
-
-```nix
-{ runner, lib, ... }:
-{
-  name = "Optional name for the workflow";
-  default = [ "job-1" ]; # Default jobs to run when jobs aren't specified
-  jobs = {
-    # Jobs are a sequence of steps run on a single machine, in parallel with other jobs
-    job-1 =
-      { pkgs, ... }:
-      {
-        name = "Optional name for the job";
-        steps = [
-          {
-            name = "Optional name for the step";
-            # Script to run in this step
-            run = ''
-              python3 --version > file
-            '';
-            # Packages included in the PATH of the script
-            path = [
-              pkgs.python313
-            ];
-          }
-          (lib.mkIf (false) {
-            name = "Skipped job";
-          })
-          {
-            # You can set environment variables for this step (or for the whole job)
-            env = {
-              FOO = "Hello!";
-              # Runtime-required variable (interpolation allowed)
-              BAR = "${runner.var "BAR"} (copy)";
-              # Runtime-required secret (interpolation not allowed)
-              BAZ = runner.secret "BAZ";
-            };
-            # You can also specify which shell to use
-            shell = pkgs.python313;
-            run = ''
-              import os
-
-              print(os.environ["FOO"])
-              print(os.environ["BAR"])
-            '';
-            # Teardown always gets run even if the next steps fail
-            teardown = ''
-              import os
-
-              # Any printed secrets get anonymized
-              print(os.environ["BAZ"])
-            '';
-          }
-          # Special step to build and upload the provided derivation to the Nix store of other runners
-          (runner.steps.upload {
-            name = "my-derivation";
-            deriv = pkgs.writeText "my-derivation.txt" pkgs.stdenv.hostPlatform.system;
-            # Optional: Nix config options, env vars, and sandboxing for this step
-            nixConfig.extra-substituters = "https://cache.eric.dev.br";
-            env.FOO = "bar";
-            sandbox.enable = true;
-          })
-        ];
-      };
-
-    another-job =
-      # Use runner.matrix to specify multiple remote jobs
-      runner.matrix
-      [
-        {
-          # Specify the target system(s) of the remote via pkgs
-          pkgs = import <nixpkgs> { system = "aarch64-linux"; };
-        }
-        {
-          # Specify the system features of the remote
-          requiredSystemFeatures = [ "kvm" ];
-        }
-        {
-          # Specify other optional parameters
-          spam = "with eggs";
-        }
-      ]
-      (
-        { pkgs, spam ? null, ... }:
-        {
-          name = "Matrix job (${if spam != null then spam else pkgs.stdenv.hostPlatform.system})";
-          # If failFast = true (default), the first failing matrix terminates the job
-          strategy.failFast = false;
-          # Establish that this job must run after another
-          needs = [ "job-1" ];
-          # Downloads the previous upload with the same name into the runner's Nix store
-          env.DRV = runner.download "my-derivation";
-          steps = [
-            # Special step that simply builds the provided derivation
-            (runner.steps.build {
-              name = "some-name";
-              deriv = pkgs.hello;
-            })
-            {
-              run = "echo Here's the result";
-              # outputVar saves the step's stdout to the given envvar
-              outputVar = "MY_OUTPUT";
-            }
-            {
-              run = "echo $MY_OUTPUT: $DRV";
-            }
-          ];
-        }
-      )
-  };
-}
-```
+- Write workflows, jobs, and steps in Nix for full flexibility
+- Distributed execution across local and remote SSH builders
+- Declare job dependency graphs, or how concurrent get distributed with job matrices
+- Granular control with sandboxing and checkout strategies
+- Manage environment secrets and variables
+- Share artifacts between jobs via the Nix store
+- Per-job timeouts, teardown scripts, dry-runs, and more
 
 ## Tests
 
-now is tested with itself. At the root of this repo:
+now is tested with itself. At the root of this repo, run:
 
 ```bash
 BUILDERS='ssh://localhost - - 1 1 now now -' nix run . -- run test

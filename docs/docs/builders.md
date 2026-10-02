@@ -4,7 +4,7 @@ icon: lucide/server
 
 # Local and remote builders
 
-Runners are the machines that execute your workflow jobs. A runner can be the local machine or a remote machine accessible over SSH. The system that builds a job's derivations (the **builder**) and the system that runs them (the **runner**) can, but not always, be the same machine.
+Runners are the machines that execute your workflow jobs. A runner can be the local machine or a remote machine accessible over SSH. The system that builds a job's derivations (the **builder**) and the system that runs them (the **runner**) can be, but not necessarily are, the same machine.
 
 ## Distinction between builders and runners
 

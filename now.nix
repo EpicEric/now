@@ -170,6 +170,7 @@ in
               echo "---" > $OUT
               echo "icon: lucide/square-menu" >> $OUT
               echo "---" >> $OUT
+              echo "" >> $OUT
               echo "# Options reference" >> $OUT
               echo "" >> $OUT
               echo "!!! note" >> $OUT
@@ -235,6 +236,7 @@ in
             echo "---" > $OUT
             echo "icon: lucide/terminal" >> $OUT
             echo "---" >> $OUT
+            echo "" >> $OUT
             echo "# CLI reference" >> $OUT
             echo "" >> $OUT
             echo "!!! note" >> $OUT

@@ -1,6 +1,7 @@
 ---
 icon: lucide/square-menu
 ---
+
 # Options reference
 
 !!! note

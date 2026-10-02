@@ -227,7 +227,7 @@ impl NowEnvironment {
 
         let eval_id_json = serde_json::to_string(eval_id())?;
         let with_local_step =
-            option_env!("NOW_WITH_LOCAL_STEP").is_some_and(|var| parse_bool_from_str(var));
+            option_env!("NOW_WITH_LOCAL_STEP").is_some_and(parse_bool_from_str);
 
         let nix_command = format!(
             "import {nix_env_path} {{ }} {{ \

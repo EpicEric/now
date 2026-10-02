@@ -199,7 +199,7 @@ in
                   DOCKERHUB_USERNAME = runner.var "DOCKERHUB_USERNAME";
                 };
                 run = ''
-                  echo $DOCKERHUB_PUSH_TOKEN | docker login --password-stdin --username $DOCKERHUB_USERNAME docker.io
+                  echo "$DOCKERHUB_PUSH_TOKEN" | docker login --password-stdin --username $DOCKERHUB_USERNAME docker.io
                 '';
                 teardown = ''
                   docker logout docker.io
@@ -215,7 +215,7 @@ in
                   GITHUB_USERNAME = runner.var "GITHUB_USERNAME";
                 };
                 run = ''
-                  echo $GITHUB_TOKEN | docker login --pasword-stdin --username $GITHUB_USERNAME ghcr.io
+                  echo "$GITHUB_TOKEN" | docker login --pasword-stdin --username $GITHUB_USERNAME ghcr.io
                 '';
                 teardown = ''
                   docker logout ghcr.io

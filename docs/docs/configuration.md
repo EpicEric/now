@@ -30,11 +30,11 @@ You can pass a `default = [ "foo" "bar" ];` attribute to specify which default j
   jobs = {
     my-default = {
       name = "My default job";
-      steps = [ { run = "echo Run with \\`now run\\` or \\`now run my-default\\`"; } ]
+      steps = [ { run = "echo 'Run with `now run` or `now run my-default`'"; } ]
     };
     other = {
       name = "Another job run manually";
-      steps = [ { run = "echo Run with \\`now run other\\`"; } ]
+      steps = [ { run = "echo 'Run with `now run other`'"; } ]
     };
   };
 }
@@ -73,7 +73,11 @@ Each variant can set:
       env.SYSTEM = pkgs.stdenv.hostPlatform.system;
       strategy.failFast = false;
       steps = [
-        { run = "echo running on $SYSTEM"; }
+        {
+          run = ''
+            echo "running on $SYSTEM"
+          '';
+        }
       ];
     });
 }
@@ -95,7 +99,7 @@ The `strategy` submodule controls how matrix runs coordinate:
       {
         env.MESSAGE = "${runner.var "MESSAGE"} (from the environment)";
         run = ''
-          echo $MESSAGE
+          echo "$MESSAGE"
         '';
       }
     ];
@@ -289,7 +293,7 @@ The main option of a job is the `steps` list, which specifies the sequence of st
     steps = [
       {
         run = ''
-          echo Hello world > output.txt
+          echo "Hello world" > output.txt
         '';
       }
       {
@@ -334,7 +338,7 @@ The `"all"` and `"clone-all"` variants include files that would normally be excl
       # This job doesn't need the project directory at all
       checkout = "none";
       steps = [
-        { run = "echo running in an empty directory"; }
+        { run = "echo 'running in an empty directory'"; }
       ];
     };
   };
@@ -351,7 +355,7 @@ Jobs support Nix's `lib.mkIf` for conditional inclusion. When the condition is f
     x64-linux-only =
       (lib.mkIf (builtins.currentSystem == "x86_64-linux") {
         steps = [
-          { run = "echo this only runs on x86_64-linux"; }
+          { run = "echo 'this only runs on x86_64-linux'"; }
         ];
       });
   };
@@ -376,9 +380,9 @@ Individual steps can be conditionally included with `lib.mkIf`. When the conditi
 {
   jobs.conditional-job = { lib, pkgs, ... }: {
     steps = [
-      { run = "echo this always runs"; }
+      { run = "echo 'this always runs'"; }
       (lib.mkIf (pkgs.stdenv.hostPlatform.isLinux) {
-        run = "echo this only runs on Linux";
+        run = "echo 'this only runs on Linux'";
       })
     ];
   };
@@ -405,10 +409,10 @@ Each value in `env` can be:
     ARTIFACT_PATH = runner.download "my-artifact";
   };
   run = ''
-    echo $PLAIN
-    echo $FROM_ENV
-    echo $SECRET_TOKEN
-    echo $ARTIFACT_PATH
+    echo "$PLAIN"
+    echo "$FROM_ENV"
+    echo "$SECRET_TOKEN"
+    echo "$ARTIFACT_PATH"
   '';
 }
 ```
