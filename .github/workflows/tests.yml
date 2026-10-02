@@ -1,6 +1,7 @@
 on:
   push:
     branches: ["main"]
+  pull_request:
 
 permissions:
   contents: read
@@ -17,8 +18,18 @@ jobs:
         uses: NixOS/nix-installer-action@62c1943b776c509394b550f3f983adc14e9212d6 # v1.0.0
         with:
           add-channel: "true"
+      - name: Set up SSH
+        run: |
+          sudo systemctl start ssh
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keygen -qt ed25519 -N "" -f ~/.ssh/id_ed25519
+          cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+          ssh-keyscan localhost | tee -a ~/.ssh/known_hosts
+          ssh ssh://$USER@localhost true
       - name: Run now
         env:
           BUILDERS: 'ssh://localhost - - 1 1 now now -'
         run: |
+          export BUILDERS="ssh://$USER@localhost - $HOME/.ssh/id_ed25519 1 1 now now -"
           nix run . -- run test

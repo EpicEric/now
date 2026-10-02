@@ -39,28 +39,40 @@ use crate::{
     workflow::NowCheckout,
 };
 
+pub(crate) struct SshOptions {
+    pub(crate) uri: String,
+    pub(crate) control_path: PathBuf,
+    pub(crate) identity: Option<String>,
+    pub(crate) known_hosts: Option<PathBuf>,
+}
+
 pub(crate) struct RemoteBuilder {
     pub(crate) cancellation: channel::Sender<()>,
     pub(crate) receiver: channel::Receiver<()>,
     pub(crate) semaphore: Semaphore,
     pub(crate) lock: RwLock<()>,
-    pub(crate) control_path: PathBuf,
-    pub(crate) known_hosts: Option<PathBuf>,
-    pub(crate) ssh_uri: String,
-    pub(crate) ssh_identity: Option<String>,
+    pub(crate) ssh_options: SshOptions,
     pub(crate) host_system: String,
     pub(crate) build_systems: HashSet<String>,
     pub(crate) system_features: HashSet<String>,
     pub(crate) required_features: HashSet<String>,
 }
 
-pub(crate) fn ssh_options(
-    control_path: &Path,
-    known_hosts: Option<&PathBuf>,
+pub(crate) fn get_ssh_options(
+    SshOptions {
+        control_path,
+        identity: ssh_identity,
+        known_hosts,
+        ..
+    }: &SshOptions,
 ) -> impl Iterator<Item = OsString> {
+    let mut options = Vec::new();
+    if let Some(ssh_identity) = ssh_identity {
+        options.extend_from_slice(&["-i".into(), ssh_identity.into()]);
+    }
     let mut control_path_option: OsString = "ControlPath=".into();
     control_path_option.push(control_path);
-    let mut options = vec![
+    options.extend_from_slice(&[
         "-o".into(),
         "ControlMaster=auto".into(),
         "-o".into(),
@@ -69,7 +81,7 @@ pub(crate) fn ssh_options(
         "ControlPersist=300".into(),
         "-o".into(),
         "BatchMode=yes".into(),
-    ];
+    ]);
     if let Some(known_hosts) = known_hosts {
         let mut user_known_hosts_file_option: OsString = "UserKnownHostsFile=".into();
         user_known_hosts_file_option.push(known_hosts);
@@ -178,12 +190,12 @@ impl RemoteBuilder {
             let remote_path = project_source.join(format!("remotes/ssh-{}", get_random_string(10)));
             smol::fs::create_dir_all(&remote_path).await?;
 
-            let known_hosts = if let Some(key) = iter.next()
-                && key != "-"
+            let known_hosts = if let Some(known_hosts_key) = iter.next()
+                && known_hosts_key != "-"
             {
                 let known_hosts_path = remote_path.join("known_hosts");
                 let mut decoder = base64::read::DecoderReader::new(
-                    key.as_bytes(),
+                    known_hosts_key.as_bytes(),
                     &base64::engine::general_purpose::STANDARD,
                 );
                 let mut buf = Vec::new();
@@ -198,17 +210,21 @@ impl RemoteBuilder {
 
             let control_path = remote_path.join("socket");
 
+            let ssh_options = SshOptions {
+                uri: ssh_uri,
+                control_path,
+                identity: ssh_identity,
+                known_hosts,
+            };
+
             // Get host system for remote
             let mut command = Command::new("ssh");
-            if let Some(ssh_identity) = ssh_identity.as_ref() {
-                command.arg("-i").arg(ssh_identity);
-            }
-            for arg in ssh_options(&control_path, known_hosts.as_ref()) {
+            for arg in get_ssh_options(&ssh_options) {
                 command.arg(arg);
             }
             command
                 .args([
-                    &ssh_uri,
+                    &ssh_options.uri,
                     "nix",
                     "--extra-experimental-features",
                     "'nix-command flakes'",
@@ -228,7 +244,10 @@ impl RemoteBuilder {
                 String::from_utf8(output.stdout)?
             } else {
                 write_output_to_stderr(&output)?;
-                return Err(color_eyre::eyre::eyre!("Failed to connect to {}", ssh_uri));
+                return Err(color_eyre::eyre::eyre!(
+                    "Failed to connect to {}",
+                    ssh_options.uri
+                ));
             };
 
             vec.push(RemoteBuilder {
@@ -236,10 +255,7 @@ impl RemoteBuilder {
                 receiver,
                 semaphore: Semaphore::new(maximum_builds),
                 lock: RwLock::default(),
-                control_path,
-                known_hosts,
-                ssh_uri,
-                ssh_identity,
+                ssh_options,
                 host_system,
                 build_systems,
                 system_features,
@@ -262,7 +278,7 @@ impl NowBuilder for RemoteBuilder {
     }
 
     fn get_name(&self) -> String {
-        self.ssh_uri.clone()
+        self.ssh_options.uri.clone()
     }
 
     fn is_remote(&self) -> bool {
@@ -277,12 +293,7 @@ impl NowBuilder for RemoteBuilder {
             NowCheckout::Default | NowCheckout::Clone => {
                 let tmpdir = format!("/tmp/now-{}", get_random_string(10));
                 let mut ssh_command: OsString = "ssh ".into();
-                if let Some(ssh_identity) = self.ssh_identity.as_ref() {
-                    ssh_command.push("-i ");
-                    ssh_command.push(ssh_identity);
-                    ssh_command.push(" ");
-                }
-                for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
+                for arg in get_ssh_options(&self.ssh_options) {
                     ssh_command.push(arg);
                     ssh_command.push(" ");
                 }
@@ -294,7 +305,10 @@ impl NowBuilder for RemoteBuilder {
                     .args(["-arz", "--files-from=-", "."])
                     .arg(format!(
                         "{}:{}",
-                        self.ssh_uri.strip_prefix("ssh://").unwrap_or(&self.ssh_uri),
+                        self.ssh_options
+                            .uri
+                            .strip_prefix("ssh://")
+                            .unwrap_or(&self.ssh_options.uri),
                         tmpdir
                     ))
                     .stdin(Stdio::piped())
@@ -334,12 +348,8 @@ impl NowBuilder for RemoteBuilder {
             NowCheckout::All | NowCheckout::CloneAll => {
                 let tmpdir = format!("/tmp/now-{}", get_random_string(10));
                 let mut ssh_command: OsString = "ssh ".into();
-                if let Some(ssh_identity) = self.ssh_identity.as_ref() {
-                    ssh_command.push("-i ");
-                    ssh_command.push(ssh_identity);
-                    ssh_command.push(" ");
-                }
-                for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
+
+                for arg in get_ssh_options(&self.ssh_options) {
                     ssh_command.push(arg);
                     ssh_command.push(" ");
                 }
@@ -351,7 +361,10 @@ impl NowBuilder for RemoteBuilder {
                     .args(["-arz", "."])
                     .arg(format!(
                         "{}:{}",
-                        self.ssh_uri.strip_prefix("ssh://").unwrap_or(&self.ssh_uri),
+                        self.ssh_options
+                            .uri
+                            .strip_prefix("ssh://")
+                            .unwrap_or(&self.ssh_options.uri),
                         tmpdir
                     ))
                     .stdin(Stdio::null())
@@ -370,14 +383,11 @@ impl NowBuilder for RemoteBuilder {
                 let tmpdir = format!("/tmp/now-{}", get_random_string(10));
 
                 let mut command = Command::new("ssh");
-                if let Some(ssh_identity) = self.ssh_identity.as_ref() {
-                    command.arg("-i").arg(ssh_identity);
-                }
-                for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
+                for arg in get_ssh_options(&self.ssh_options) {
                     command.arg(arg);
                 }
                 command
-                    .args([&self.ssh_uri, "mkdir", &tmpdir])
+                    .args([&self.ssh_options.uri, "mkdir", &tmpdir])
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
@@ -400,7 +410,7 @@ impl NowBuilder for RemoteBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         let mut ssh_opts = OsString::new();
-        for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
+        for arg in get_ssh_options(&self.ssh_options) {
             ssh_opts.push(arg);
             ssh_opts.push(" ");
         }
@@ -413,7 +423,7 @@ impl NowBuilder for RemoteBuilder {
             "--to",
         ]);
         command
-            .arg(&self.ssh_uri)
+            .arg(&self.ssh_options.uri)
             .args(derivations)
             .env("NIX_SSHOPTS", ssh_opts)
             .stdin(Stdio::null())
@@ -427,7 +437,7 @@ impl NowBuilder for RemoteBuilder {
             return Err(color_eyre::eyre::eyre!(
                 "Failed to copy '{}' derivations to {}",
                 job_name,
-                self.ssh_uri
+                self.ssh_options.uri
             ));
         }
         Ok(())
@@ -452,14 +462,11 @@ impl NowBuilder for RemoteBuilder {
         full_command.push(derivation);
 
         let mut command = Command::new("ssh");
-        if let Some(ssh_identity) = self.ssh_identity.as_ref() {
-            command.arg("-i").arg(ssh_identity);
-        }
-        for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
+        for arg in get_ssh_options(&self.ssh_options) {
             command.arg(arg);
         }
         command
-            .arg(&self.ssh_uri)
+            .arg(&self.ssh_options.uri)
             .arg(full_command)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -473,7 +480,7 @@ impl NowBuilder for RemoteBuilder {
             Err(color_eyre::eyre::eyre!(
                 "Failed to realize derivation '{}' in {}",
                 derivation.to_string_lossy(),
-                self.ssh_uri
+                self.ssh_options.uri
             ))
         }
     }
@@ -484,7 +491,7 @@ impl NowBuilder for RemoteBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         let mut ssh_opts = OsString::new();
-        for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
+        for arg in get_ssh_options(&self.ssh_options) {
             ssh_opts.push(arg);
             ssh_opts.push(" ");
         }
@@ -497,7 +504,7 @@ impl NowBuilder for RemoteBuilder {
                 "copy",
                 "--to",
             ])
-            .arg(&self.ssh_uri)
+            .arg(&self.ssh_options.uri)
             .args(downloads)
             .env("NIX_SSHOPTS", ssh_opts)
             .stdin(Stdio::null())
@@ -510,7 +517,7 @@ impl NowBuilder for RemoteBuilder {
             write_output_to_stderr(&output)?;
             return Err(color_eyre::eyre::eyre!(
                 "Failed to copy uploads to {}",
-                self.ssh_uri
+                self.ssh_options.uri
             ));
         }
         Ok(())
@@ -524,14 +531,11 @@ impl NowBuilder for RemoteBuilder {
         full_command.push(derivation.join("bin/now-step"));
 
         let mut command = Command::new("ssh");
-        if let Some(ssh_identity) = self.ssh_identity.as_ref() {
-            command.arg("-i").arg(ssh_identity);
-        }
-        for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
+        for arg in get_ssh_options(&self.ssh_options) {
             command.arg(arg);
         }
         command
-            .arg(&self.ssh_uri)
+            .arg(&self.ssh_options.uri)
             .arg(full_command)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -546,7 +550,7 @@ impl NowBuilder for RemoteBuilder {
         cancellation: &channel::Receiver<()>,
     ) -> color_eyre::Result<()> {
         let mut ssh_opts = OsString::new();
-        for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
+        for arg in get_ssh_options(&self.ssh_options) {
             ssh_opts.push(arg);
             ssh_opts.push(" ");
         }
@@ -560,7 +564,7 @@ impl NowBuilder for RemoteBuilder {
                 "--no-check-sigs",
                 "--from",
             ])
-            .arg(&self.ssh_uri)
+            .arg(&self.ssh_options.uri)
             .arg(derivation)
             .env("NIX_SSHOPTS", ssh_opts)
             .stdin(Stdio::null())
@@ -574,7 +578,7 @@ impl NowBuilder for RemoteBuilder {
             return Err(color_eyre::eyre::eyre!(
                 "Failed to copy '{}' derivation from {}",
                 derivation.to_string_lossy(),
-                self.ssh_uri
+                self.ssh_options.uri
             ));
         }
         Ok(())
@@ -591,14 +595,11 @@ impl NowBuilder for RemoteBuilder {
                 rm_command.push(path);
 
                 let mut command = Command::new("ssh");
-                if let Some(ssh_identity) = self.ssh_identity.as_ref() {
-                    command.arg("-i").arg(ssh_identity);
-                }
-                for arg in ssh_options(&self.control_path, self.known_hosts.as_ref()) {
+                for arg in get_ssh_options(&self.ssh_options) {
                     command.arg(arg);
                 }
                 command
-                    .arg(&self.ssh_uri)
+                    .arg(&self.ssh_options.uri)
                     .arg(rm_command)
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
@@ -612,7 +613,7 @@ impl NowBuilder for RemoteBuilder {
                     write_output_to_stderr(&output)?;
                     Err(color_eyre::eyre::eyre!(
                         "Failed to remove checked out directory in {}",
-                        self.ssh_uri
+                        self.ssh_options.uri
                     ))
                 }
             }

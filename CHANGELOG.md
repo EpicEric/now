@@ -11,6 +11,10 @@
 - Add `now-step` via overlay to `pkgs` instances
   - The default behavior is to prefer any pre-existing version of `now-step`. This can be overriden at build time with `NOW_WITH_LOCAL_STEP=true`.
 
+### Fixed
+
+- Fix provided SSH identity not being used for remote realizations
+
 ### Changed
 
 - Pass envvars to `now-step` via stdin
