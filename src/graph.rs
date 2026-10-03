@@ -71,7 +71,7 @@ impl NowWorkflowGraph {
                         joined_jobs.push_str(job);
                     }
                     return Err(color_eyre::eyre::eyre!("No job specified")
-                        .note("Available options: {joined_jobs}"));
+                        .note(format!("Available options: {joined_jobs}")));
                 } else {
                     Some(items)
                 }
@@ -98,8 +98,11 @@ impl NowWorkflowGraph {
                         }
                         joined_jobs.push_str(job);
                     }
-                    return Err(color_eyre::eyre::eyre!("No default job(s) in workflow")
-                        .note("Specify a job directly. Available options: {joined_jobs}"));
+                    return Err(
+                        color_eyre::eyre::eyre!("No default job(s) in workflow").note(format!(
+                            "Specify a job directly. Available options: {joined_jobs}"
+                        )),
+                    );
                 }
             }
         };

@@ -28,8 +28,6 @@ jobs:
           ssh-keyscan localhost | tee -a ~/.ssh/known_hosts
           ssh ssh://$USER@localhost true
       - name: Run now
-        env:
-          BUILDERS: 'ssh://localhost - - 1 1 now now -'
         run: |
           export BUILDERS="ssh://$USER@localhost - $HOME/.ssh/id_ed25519 1 1 now now -"
           nix run . -- run test

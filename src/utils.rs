@@ -98,9 +98,9 @@ pub(crate) fn trim_string(original: &str, max_chars: usize) -> String {
     output
 }
 
-pub(crate) fn parse_bool_from_str(input: &str) -> bool {
-    matches!(
-        input.trim().to_lowercase().as_str(),
-        "1" | "true" | "yes" | "y"
-    )
+pub(crate) fn parse_bool_from_bytes<T: AsRef<[u8]>>(input: T) -> bool {
+    let input = input.as_ref().trim_ascii();
+    [&b"1"[..], &b"true"[..], &b"yes"[..], &b"y"[..]]
+        .iter()
+        .any(|truthy_slice| input.eq_ignore_ascii_case(truthy_slice))
 }

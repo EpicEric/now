@@ -33,7 +33,7 @@ use tracing::instrument;
 use crate::{
     project::{ProjectSource, create_nix_project_source},
     secret::SecretString,
-    utils::{parse_bool_from_str, wait_for_output, write_output_to_stderr},
+    utils::{parse_bool_from_bytes, wait_for_output, write_output_to_stderr},
     workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow, WorkflowSource},
 };
 
@@ -226,7 +226,7 @@ impl NowEnvironment {
         let nix_env_path = format!("(/. + {})", serde_json::to_string(&nix_env_str)?);
 
         let eval_id_json = serde_json::to_string(eval_id())?;
-        let with_local_step = option_env!("NOW_WITH_LOCAL_STEP").is_some_and(parse_bool_from_str);
+        let with_local_step = option_env!("NOW_WITH_LOCAL_STEP").is_some_and(parse_bool_from_bytes);
 
         let nix_command = format!(
             "import {nix_env_path} {{ }} {{ \
@@ -386,7 +386,7 @@ impl NowEnvironment {
             }
         }
 
-        if self.tracing || supports_color::on_cached(supports_color::Stream::Stderr).is_none() {
+        if self.tracing || supports_color::on(supports_color::Stream::Stderr).is_none() {
             map.insert("NO_COLOR".into(), "1".into());
         } else {
             map.insert("FORCE_COLOR".into(), "1".into());
