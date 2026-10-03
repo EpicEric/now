@@ -20,6 +20,7 @@ use std::{
     num::NonZeroUsize,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use ahash::{HashMap, HashSet};
@@ -79,6 +80,7 @@ impl LocalBuilder {
         builders: Option<String>,
         run_mode: NowRunMode,
         cores: Option<NonZeroUsize>,
+        keep_alive: Option<Duration>,
     ) -> color_eyre::Result<Self> {
         let mut command = Command::new("nix");
         command
@@ -108,6 +110,7 @@ impl LocalBuilder {
                     &config,
                     builders,
                     environment.nix_project_source.as_ref(),
+                    keep_alive,
                 )
                 .await?
             }
@@ -117,6 +120,7 @@ impl LocalBuilder {
                     &config,
                     builders,
                     environment.nix_project_source.as_ref(),
+                    keep_alive,
                 )
                 .await?;
                 if remote_builders.is_empty() {

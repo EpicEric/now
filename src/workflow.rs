@@ -187,6 +187,7 @@ pub(crate) struct NowWorkflowParams {
     pub(crate) dry_run: bool,
     pub(crate) abort: bool,
     pub(crate) timeout: Option<Duration>,
+    pub(crate) keep_alive: Option<Duration>,
     pub(crate) jobs_to_run: NowJobsToRun,
     pub(crate) builders: Option<String>,
     pub(crate) cores: Option<NonZeroUsize>,
@@ -218,6 +219,7 @@ impl NowEnvironment {
             dry_run,
             abort,
             timeout,
+            keep_alive,
             jobs_to_run,
             builders,
             cores,
@@ -225,7 +227,7 @@ impl NowEnvironment {
             skip,
         }: NowWorkflowParams,
     ) -> color_eyre::Result<()> {
-        let builder = LocalBuilder::new(self, builders, run_mode, cores).await?;
+        let builder = LocalBuilder::new(self, builders, run_mode, cores, keep_alive).await?;
         let runner = builder.get_name();
 
         info!(

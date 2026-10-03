@@ -19,6 +19,7 @@ use std::{
     io::Read as _,
     os::unix::ffi::OsStrExt,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use ahash::{HashSet, HashSetExt};
@@ -44,6 +45,7 @@ pub(crate) struct SshOptions {
     pub(crate) control_path: PathBuf,
     pub(crate) identity: Option<String>,
     pub(crate) known_hosts: Option<PathBuf>,
+    pub(crate) keep_alive: Option<String>,
 }
 
 pub(crate) struct RemoteBuilder {
@@ -63,13 +65,18 @@ pub(crate) fn get_ssh_options(
         control_path,
         identity: ssh_identity,
         known_hosts,
+        keep_alive,
         ..
     }: &SshOptions,
 ) -> impl Iterator<Item = OsString> {
     let mut options = Vec::new();
+
+    // Identity
     if let Some(ssh_identity) = ssh_identity {
         options.extend_from_slice(&["-i".into(), ssh_identity.into()]);
     }
+
+    // Control master
     let mut control_path_option: OsString = "ControlPath=".into();
     control_path_option.push(control_path);
     options.extend_from_slice(&[
@@ -82,6 +89,20 @@ pub(crate) fn get_ssh_options(
         "-o".into(),
         "BatchMode=yes".into(),
     ]);
+
+    // Keepalive
+    if let Some(keep_alive) = keep_alive {
+        let mut server_alive_interval: OsString = "ServerAliveInterval=".into();
+        server_alive_interval.push(keep_alive);
+        options.extend_from_slice(&[
+            "-o".into(),
+            server_alive_interval,
+            "-o".into(),
+            "ServerAliveCountMax=3".into(),
+        ]);
+    }
+
+    // Known hosts
     if let Some(known_hosts) = known_hosts {
         let mut user_known_hosts_file_option: OsString = "UserKnownHostsFile=".into();
         user_known_hosts_file_option.push(known_hosts);
@@ -94,6 +115,7 @@ pub(crate) fn get_ssh_options(
             "StrictHostKeyChecking=yes".into(),
         ]);
     }
+
     options.into_iter()
 }
 
@@ -102,6 +124,7 @@ impl RemoteBuilder {
         config: &NixConfig,
         builders: Option<String>,
         project_source: &Path,
+        keep_alive: Option<Duration>,
     ) -> color_eyre::Result<Vec<Self>> {
         let builders = if let Some(builders) = builders {
             builders
@@ -217,6 +240,7 @@ impl RemoteBuilder {
                 control_path,
                 identity: ssh_identity,
                 known_hosts,
+                keep_alive: keep_alive.map(|duration| duration.as_secs().to_string()),
             };
 
             // Get host system for remote

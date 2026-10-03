@@ -170,6 +170,13 @@ Run one or more jobs
       <b>--timeout</b> &lt;DURATION&gt;
           Timeout for the entire workflow, eg. `1h`
 
+      <b>--keep-alive</b> &lt;KEEP_ALIVE&gt;
+          How often to send keep-alive messages to remote hosts. After not receiving a response 3 times, the job fails.
+          
+          Only set if the duration is greater than or equal to `1s`.
+          
+          Cannot be used together with the `--local-only` option.
+
   <b>-c</b>, <b>--cwdir</b> &lt;CWDIR&gt;
           In which directory to run the workflow.
           
@@ -194,7 +201,7 @@ Run one or more jobs
           
           Jobs that cannot run in the local builder will fail.
           
-          Cannot be used together with either the `--builders` or `--remote-only` options.
+          Cannot be used together with either the `--builders`, `--remote-only`, or `--keep-alive` options.
 
       <b>--remote-only</b>
           When specified, runs all jobs in remote builders, only using the local runner for job orchestration.

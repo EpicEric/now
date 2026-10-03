@@ -195,6 +195,15 @@ pub(crate) enum Command {
         #[arg(long, value_name = "DURATION")]
         timeout: Option<humantime::Duration>,
 
+        /// How often to send keep-alive messages to remote hosts.
+        /// After not receiving a response 3 times, the job fails.
+        ///
+        /// Only set if the duration is greater than or equal to `1s`.
+        ///
+        /// Cannot be used together with the `--local-only` option.
+        #[arg(long)]
+        keep_alive: Option<humantime::Duration>,
+
         /// In which directory to run the workflow.
         ///
         /// Defaults to the current directory if --workflow is set,
@@ -229,8 +238,9 @@ pub(crate) enum Command {
         ///
         /// Jobs that cannot run in the local builder will fail.
         ///
-        /// Cannot be used together with either the `--builders` or `--remote-only` options.
-        #[arg(long, conflicts_with_all = ["builders", "remote_only"])]
+        /// Cannot be used together with either the `--builders`, `--remote-only`,
+        /// or `--keep-alive` options.
+        #[arg(long, conflicts_with_all = ["builders", "remote_only", "keep_alive"])]
         local_only: bool,
 
         /// When specified, runs all jobs in remote builders,

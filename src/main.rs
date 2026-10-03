@@ -14,7 +14,10 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::{Path, PathBuf};
+use std::{
+    convert::Into,
+    path::{Path, PathBuf},
+};
 
 use color_eyre::eyre::OptionExt;
 use tracing::{debug, level_filters::LevelFilter};
@@ -267,6 +270,7 @@ fn main() -> color_eyre::Result<()> {
             gcroot_dir,
             abort,
             timeout,
+            keep_alive,
             cwdir,
             builders,
             cores,
@@ -335,7 +339,8 @@ fn main() -> color_eyre::Result<()> {
                         ctrl_c,
                         dry_run,
                         abort,
-                        timeout: timeout.map(std::convert::Into::into),
+                        timeout: timeout.map(Into::into),
+                        keep_alive: keep_alive.map(Into::into),
                         jobs_to_run: jobs,
                         builders,
                         cores,
