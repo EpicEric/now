@@ -24,6 +24,7 @@
 - Don't pass `NOW_GCROOT_DIR` to remote builders
 - Handle SSH host keys for remote builders
 - Force ANSI colors when running on certain CI runners
+- Improve logging when no jobs in the workflow match
 
 ## 0.4.0 (2026-09-29)
 

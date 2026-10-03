@@ -22,6 +22,7 @@ use std::{
 use color_eyre::eyre::OptionExt;
 use tracing::{debug, level_filters::LevelFilter};
 use tracing_duper::DuperLayer;
+use tracing_error::ErrorLayer;
 use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::{
@@ -289,10 +290,12 @@ fn main() -> color_eyre::Result<()> {
                             .with_span_timings(true)
                             .with_filter(env_filter),
                     )
+                    .with(ErrorLayer::default())
                     .init();
             } else {
                 tracing_subscriber::registry()
                     .with(NowSubscriberLayer::default().with_filter(env_filter))
+                    .with(ErrorLayer::default())
                     .init();
             }
 

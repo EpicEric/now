@@ -48,33 +48,48 @@ pub(crate) struct NowWorkflowGraph {
 }
 
 impl NowWorkflowGraph {
+    fn closest_matches(&self, needle: &str) -> Vec<&String> {
+        let mut matches: Vec<&String> = self
+            .dag
+            .node_weights()
+            .filter_map(|node| match node {
+                DagNode::Job(text) if strsim::normalized_levenshtein(text, needle) >= 0.5 => {
+                    Some(text)
+                }
+                DagNode::Job(_) | DagNode::Root => None,
+            })
+            .collect();
+        matches.sort();
+        matches
+    }
+
+    fn available_jobs(&self) -> String {
+        let mut jobs: Vec<&String> = self
+            .dag
+            .node_weights()
+            .filter_map(|node| match node {
+                DagNode::Root => None,
+                DagNode::Job(text) => Some(text),
+            })
+            .collect();
+        jobs.sort();
+        let mut joined_jobs = String::new();
+        for job in jobs {
+            if !joined_jobs.is_empty() {
+                joined_jobs.push_str(", ");
+            }
+            joined_jobs.push_str(job);
+        }
+        joined_jobs
+    }
+
     pub(crate) fn prune(&mut self, jobs: NowJobsToRun) -> color_eyre::Result<()> {
         // Filter out non-target jobs
         let jobs = match jobs {
             NowJobsToRun::All => None,
             NowJobsToRun::Selected(items) => {
-                if items.is_empty() {
-                    let mut jobs: Vec<&String> = self
-                        .dag
-                        .node_weights()
-                        .filter_map(|node| match node {
-                            DagNode::Root => None,
-                            DagNode::Job(text) => Some(text),
-                        })
-                        .collect();
-                    jobs.sort();
-                    let mut joined_jobs = String::new();
-                    for job in jobs {
-                        if !joined_jobs.is_empty() {
-                            joined_jobs.push_str(", ");
-                        }
-                        joined_jobs.push_str(job);
-                    }
-                    return Err(color_eyre::eyre::eyre!("No job specified")
-                        .note(format!("Available options: {joined_jobs}")));
-                } else {
-                    Some(items)
-                }
+                debug_assert!(!items.is_empty());
+                Some(items)
             }
             NowJobsToRun::Default => {
                 if let Some(default_jobs) = self.default_jobs.as_ref()
@@ -98,11 +113,12 @@ impl NowWorkflowGraph {
                         }
                         joined_jobs.push_str(job);
                     }
-                    return Err(
-                        color_eyre::eyre::eyre!("No default job(s) in workflow").note(format!(
-                            "Specify a job directly. Available options: {joined_jobs}"
-                        )),
-                    );
+                    return Err(color_eyre::eyre::eyre!("No default jobs in workflow").note(
+                        format!(
+                            "Specify a job directly. Available options: {}",
+                            self.available_jobs(),
+                        ),
+                    ));
                 }
             }
         };
@@ -118,7 +134,12 @@ impl NowWorkflowGraph {
                     }
                 }
                 if matching_jobs.is_empty() {
-                    return Err(color_eyre::eyre::eyre!("No jobs matched '{job_glob}'"));
+                    let mut error = color_eyre::eyre::eyre!("No jobs matched '{job_glob}'")
+                        .note(format!("Available options: {}", self.available_jobs()));
+                    for maybe_match in self.closest_matches(&job_glob) {
+                        error = error.suggestion(format!("Did you mean '{maybe_match}'?"))
+                    }
+                    return Err(error);
                 }
                 job_nodes.extend(matching_jobs);
             }
