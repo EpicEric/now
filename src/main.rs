@@ -196,13 +196,13 @@ fn main() -> color_eyre::Result<()> {
                 let _ = sender.try_send(());
             });
 
-            let environment = smol::block_on(NowEnvironment::get(
-                &workflow,
-                ctrl_c,
-                None,
-                env_file.as_ref(),
-                None,
-            ))?;
+            let environment = smol::block_on(
+                NowEnvironment::builder()
+                    .workflow(&workflow)
+                    .ctrl_c(ctrl_c)
+                    .maybe_env_file(env_file)
+                    .build(),
+            )?;
 
             if tree {
                 let workflow = smol::block_on(environment.evaluate_workflow(&workflow))?;
@@ -245,8 +245,12 @@ fn main() -> color_eyre::Result<()> {
             })?;
 
             smol::block_on(async {
-                let environment =
-                    NowEnvironment::get(&workflow, ctrl_c, None, env_file.as_ref(), None).await?;
+                let environment = NowEnvironment::builder()
+                    .workflow(&workflow)
+                    .ctrl_c(ctrl_c)
+                    .maybe_env_file(env_file)
+                    .build()
+                    .await?;
                 let evaluated = environment.evaluate_workflow(&workflow).await?;
                 println!("{}", serde_json::to_string(&evaluated)?);
                 Ok::<(), color_eyre::Report>(())
@@ -317,14 +321,14 @@ fn main() -> color_eyre::Result<()> {
             };
 
             smol::block_on::<color_eyre::Result<()>>(async {
-                let mut environment = NowEnvironment::get(
-                    &workflow,
-                    ctrl_c.clone(),
-                    tracing,
-                    env_file.as_ref(),
-                    gcroot_dir,
-                )
-                .await?;
+                let mut environment = NowEnvironment::builder()
+                    .workflow(&workflow)
+                    .ctrl_c(ctrl_c.clone())
+                    .maybe_tracing(tracing)
+                    .maybe_env_file(env_file)
+                    .maybe_gcroot_dir(gcroot_dir)
+                    .build()
+                    .await?;
                 environment
                     .run_workflow(NowWorkflowParams {
                         workflow,

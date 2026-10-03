@@ -42,12 +42,15 @@ impl Drop for ProjectSource {
     }
 }
 
-pub(crate) fn create_nix_project_source() -> color_eyre::Result<ProjectSource> {
-    let project_source = ProjectSource(temp_dir().join(format!("now-{}", get_random_string(10))));
+impl ProjectSource {
+    pub(crate) fn new() -> color_eyre::Result<Self> {
+        let project_source =
+            ProjectSource(temp_dir().join(format!("now-{}", get_random_string(10))));
 
-    let tar = GzDecoder::new(PROJECT_ARCHIVE);
-    let mut archive = Archive::new(tar);
-    archive.unpack(&project_source.0)?;
+        let tar = GzDecoder::new(PROJECT_ARCHIVE);
+        let mut archive = Archive::new(tar);
+        archive.unpack(&project_source.0)?;
 
-    Ok(project_source)
+        Ok(project_source)
+    }
 }

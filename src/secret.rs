@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 pub(crate) struct SecretString(String);
 
@@ -31,15 +31,6 @@ impl SecretString {
 impl std::fmt::Debug for SecretString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("SecretString").field(&"***").finish()
-    }
-}
-
-impl Serialize for SecretString {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.0)
     }
 }
 

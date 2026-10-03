@@ -32,7 +32,7 @@ use tracing::instrument;
 
 use crate::{
     command::TracingMode,
-    project::{ProjectSource, create_nix_project_source},
+    project::ProjectSource,
     secret::SecretString,
     utils::{parse_bool_from_bytes, wait_for_output, write_output_to_stderr},
     workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow, WorkflowSource},
@@ -101,13 +101,25 @@ struct ParsedWorkflow {
     jobs: BTreeMap<String, String>,
 }
 
+#[bon::bon]
 impl NowEnvironment {
-    #[instrument(skip(ctrl_c))]
-    pub(crate) async fn get(
+    #[builder]
+    pub(crate) fn new(
         workflow: &WorkflowSource,
         ctrl_c: Receiver<()>,
         tracing: Option<TracingMode>,
-        env_file: Option<&PathBuf>,
+        env_file: Option<PathBuf>,
+        gcroot_dir: Option<PathBuf>,
+    ) -> impl Future<Output = color_eyre::Result<Self>> {
+        Self::create(workflow, ctrl_c, tracing, env_file, gcroot_dir)
+    }
+
+    #[instrument(skip(ctrl_c))]
+    async fn create(
+        workflow: &WorkflowSource,
+        ctrl_c: Receiver<()>,
+        tracing: Option<TracingMode>,
+        env_file: Option<PathBuf>,
         gcroot_dir: Option<PathBuf>,
     ) -> color_eyre::Result<NowEnvironment> {
         let mut env_vars: HashMap<OsString, OsString> = HashMap::new();
@@ -128,7 +140,7 @@ impl NowEnvironment {
                 Err(color_eyre::eyre::eyre!("Evaluation aborted"))
             },
             async {
-                let nix_project_source = smol::unblock(create_nix_project_source).await?;
+                let nix_project_source = smol::unblock(ProjectSource::new).await?;
 
                 let parsed_workflow =
                     Self::parse_workflow(workflow, nix_project_source.as_ref()).await?;

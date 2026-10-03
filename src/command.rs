@@ -286,7 +286,12 @@ fn job_completer() -> Vec<CompletionCandidate> {
             let _ = sender.try_send(());
         });
 
-        let environment = smol::block_on(NowEnvironment::get(&workflow, ctrl_c, None, None, None))?;
+        let environment = smol::block_on(
+            NowEnvironment::builder()
+                .workflow(&workflow)
+                .ctrl_c(ctrl_c)
+                .build(),
+        )?;
 
         let mut jobs_iter = jobs_iter.rev();
         let current_job = jobs_iter.next();
