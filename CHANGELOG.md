@@ -25,6 +25,7 @@
 - Handle SSH host keys for remote builders
 - Force ANSI colors when running on certain CI runners
 - Improve logging when no jobs in the workflow match
+- Improve traces in jobs
 
 ## 0.4.0 (2026-09-29)
 

@@ -53,7 +53,7 @@ thiserror = "2.0.19"
 tracing = "0.1.44"
 tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-tracing_duper = "0.2.0"
+tracing_duper = "0.2.2"
 uutils_term_grid = "0.8.0"
 
 [build-dependencies]

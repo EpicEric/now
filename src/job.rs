@@ -28,6 +28,7 @@ use futures::{
     stream::{FuturesOrdered, FuturesUnordered},
 };
 use petgraph::matrix_graph::NodeIndex;
+use serde::Serialize;
 use smol::{
     channel::TryRecvError,
     io::{AsyncBufReadExt, BufReader},
@@ -84,8 +85,11 @@ fn dummy_command() -> color_eyre::Result<Child> {
     Ok(command.spawn()?)
 }
 
+#[derive(Serialize)]
+struct ExitCode(Option<i32>);
+
 impl NowEnvironment {
-    #[instrument(skip_all, fields(job = job.name))]
+    #[instrument(skip_all, fields(job = job.name, dry_run))]
     async fn run_job(
         &self,
         local_builder: &LocalBuilder,
@@ -142,12 +146,13 @@ impl NowEnvironment {
                     }
 
                     let teardown = if let Some(teardown_drv) = step.teardown_drv.as_ref() {
-                        let _span = tracing::debug_span!(
+                        let _span = tracing::info_span!(
                             "step-teardown-realize",
                             job = job.name,
                             step = step.name,
                             r#type = "step-teardown-realize",
-                        );
+                        )
+                        .entered();
                         if dry_run {
                             Some(PathBuf::from("/dummy"))
                         } else {
@@ -167,12 +172,13 @@ impl NowEnvironment {
                         None
                     };
                     let run = {
-                        let _span = tracing::debug_span!(
+                        let _span = tracing::info_span!(
                             "step-run-realize",
                             job = job.name,
                             step = step.name,
                             r#type = "step-run-realize",
-                        );
+                        )
+                        .entered();
                         if dry_run {
                             PathBuf::from("/dummy")
                         } else {
@@ -258,12 +264,13 @@ impl NowEnvironment {
             }
 
             for (step, run, teardown) in steps {
-                let _span = tracing::debug_span!(
+                let _span = tracing::info_span!(
                     "step-run",
                     job = job.name,
                     step = step.name,
                     r#type = "step-run",
-                );
+                )
+                .entered();
                 let mut downloads: Vec<PathBuf> = Vec::new();
                 {
                     let uploads = self.uploads.lock().expect("not poisoned");
@@ -333,6 +340,11 @@ impl NowEnvironment {
                 let exit_status = exit_status?;
 
                 if !exit_status.success() {
+                    warn!(
+                        "$duper.exit_code" =
+                            duper::serde::ser::to_string_compact(&ExitCode(exit_status.code()))
+                                .expect("valid Duper")
+                    );
                     return Err(color_eyre::eyre::eyre!(
                         "Step '{}' failed ({})",
                         &step.name,
@@ -394,12 +406,13 @@ impl NowEnvironment {
         .map_err(Into::into);
 
         for (step_name, teardown, step_env) in teardown_stack.into_iter().rev() {
-            let _span = tracing::debug_span!(
+            let _span = tracing::info_span!(
                 "step-teardown",
                 job = job.name,
                 step = step_name,
                 r#type = "step-teardown",
-            );
+            )
+            .entered();
 
             let env_vars = match self.generate_env_vars_for_step(&step_env, &output_vars) {
                 Ok(env_vars) => env_vars,
@@ -506,6 +519,9 @@ impl NowEnvironment {
             };
             if !exit_status.success() {
                 warn!(
+                    "$duper.exit_code" =
+                        duper::serde::ser::to_string_compact(&ExitCode(exit_status.code()))
+                            .expect("valid Duper"),
                     runner = runner_name,
                     is_remote,
                     step = step_name,
@@ -525,14 +541,22 @@ impl NowEnvironment {
         }
 
         drop(checkout_child.take());
-        result.and(if dry_run {
+        let result = result.and(if dry_run {
             Ok(())
         } else {
             runner
                 .undo_checkout(job.checkout, &cwdir)
                 .await
                 .map_err(Into::into)
-        })
+        });
+
+        if result.is_ok() {
+            info!("success" = true);
+        } else {
+            info!("success" = false);
+        }
+
+        result
     }
 
     pub(crate) fn run_job_single<'a>(
