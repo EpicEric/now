@@ -85,6 +85,7 @@ async fn eval_id_from_workflow_source(workflow: &WorkflowSource) -> color_eyre::
 
 pub(crate) struct NowEnvironment {
     pub(crate) nix_project_source: ProjectSource,
+    pub(crate) tracing: bool,
     pub(crate) secrets: HashMap<String, SecretString>,
     pub(crate) vars: HashMap<String, String>,
     pub(crate) jobs: BTreeMap<String, String>,
@@ -104,6 +105,7 @@ impl NowEnvironment {
     pub(crate) async fn get(
         workflow: &WorkflowSource,
         ctrl_c: Receiver<()>,
+        tracing: bool,
         env_file: Option<&PathBuf>,
         gcroot_dir: Option<PathBuf>,
     ) -> color_eyre::Result<NowEnvironment> {
@@ -196,6 +198,7 @@ impl NowEnvironment {
 
                 Ok(Self {
                     nix_project_source,
+                    tracing,
                     secrets,
                     vars,
                     jobs: parsed_workflow.jobs,
@@ -383,13 +386,10 @@ impl NowEnvironment {
             }
         }
 
-        match supports_color::on_cached(supports_color::Stream::Stderr) {
-            Some(_) => {
-                map.insert("FORCE_COLOR".into(), "1".into());
-            }
-            None => {
-                map.insert("NO_COLOR".into(), "1".into());
-            }
+        if self.tracing || supports_color::on_cached(supports_color::Stream::Stderr).is_none() {
+            map.insert("NO_COLOR".into(), "1".into());
+        } else {
+            map.insert("FORCE_COLOR".into(), "1".into());
         }
 
         map.extend(

@@ -398,7 +398,8 @@ fn job_completer() -> Vec<CompletionCandidate> {
             let _ = sender.try_send(());
         });
 
-        let environment = smol::block_on(NowEnvironment::get(&workflow, ctrl_c, None, None))?;
+        let environment =
+            smol::block_on(NowEnvironment::get(&workflow, ctrl_c, false, None, None))?;
 
         let mut jobs_iter = jobs_iter.rev();
         let current_job = jobs_iter.next();
@@ -423,8 +424,10 @@ fn job_completer() -> Vec<CompletionCandidate> {
 
 fn main() -> color_eyre::Result<()> {
     clap_complete::CompleteEnv::with_factory(Command::command).complete();
+    let command = Command::parse();
+    color_eyre::install()?;
 
-    match Command::parse() {
+    match command {
         Command::Init { workflow } => {
             let mut path = workflow.unwrap_or(PathBuf::from("."));
             if path.is_dir()
@@ -469,6 +472,7 @@ fn main() -> color_eyre::Result<()> {
             let environment = smol::block_on(NowEnvironment::get(
                 &workflow,
                 ctrl_c,
+                false,
                 env_file.as_ref(),
                 None,
             ))?;
@@ -515,7 +519,7 @@ fn main() -> color_eyre::Result<()> {
 
             smol::block_on(async {
                 let environment =
-                    NowEnvironment::get(&workflow, ctrl_c, env_file.as_ref(), None).await?;
+                    NowEnvironment::get(&workflow, ctrl_c, false, env_file.as_ref(), None).await?;
                 let evaluated = environment.evaluate_workflow(&workflow).await?;
                 println!("{}", serde_json::to_string(&evaluated)?);
                 Ok::<(), color_eyre::Report>(())
@@ -586,9 +590,14 @@ fn main() -> color_eyre::Result<()> {
             };
 
             smol::block_on::<color_eyre::Result<()>>(async {
-                let mut environment =
-                    NowEnvironment::get(&workflow, ctrl_c.clone(), env_file.as_ref(), gcroot_dir)
-                        .await?;
+                let mut environment = NowEnvironment::get(
+                    &workflow,
+                    ctrl_c.clone(),
+                    tracing,
+                    env_file.as_ref(),
+                    gcroot_dir,
+                )
+                .await?;
                 environment
                     .run_workflow(NowWorkflowParams {
                         workflow,

@@ -14,6 +14,7 @@
 ### Fixed
 
 - Fix provided SSH identity not being used for remote realizations
+- Improve ANSI color handling
 
 ### Changed
 
