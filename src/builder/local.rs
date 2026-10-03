@@ -175,7 +175,7 @@ impl LocalBuilder {
             builders.push(self as &dyn NowBuilder);
         }
 
-        for builder in self.remote_builders.iter() {
+        for builder in &self.remote_builders {
             if builder.build_systems.contains(&job.build_system)
                 && builder
                     .required_features
@@ -219,7 +219,7 @@ impl LocalBuilder {
             return true;
         }
 
-        for builder in self.remote_builders.iter() {
+        for builder in &self.remote_builders {
             if builder.host_system == job.host_system
                 && builder
                     .required_features
@@ -253,7 +253,7 @@ impl LocalBuilder {
             runners.push(self as &dyn NowBuilder);
         }
 
-        for builder in self.remote_builders.iter() {
+        for builder in &self.remote_builders {
             if builder.host_system == job.host_system
                 && builder
                     .required_features
@@ -466,11 +466,11 @@ impl NowBuilder for LocalBuilder {
     async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
         match checkout {
             NowCheckout::Default | NowCheckout::All => {
-                debug_assert!(path.canonicalize()? == std::env::current_dir()?.canonicalize()?);
+                debug_assert_eq!(path.canonicalize()?, std::env::current_dir()?.canonicalize()?);
                 Ok(())
             }
             NowCheckout::None | NowCheckout::Clone | NowCheckout::CloneAll => {
-                assert!(path.canonicalize()? != std::env::current_dir()?.canonicalize()?);
+                assert_ne!(path.canonicalize()?, std::env::current_dir()?.canonicalize()?);
                 assert!(path.starts_with(temp_dir()));
                 let mut command = Command::new("rm");
                 command.arg("-rf").arg(path);

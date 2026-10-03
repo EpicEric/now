@@ -164,7 +164,7 @@ impl From<&WorkflowSource> for String {
     fn from(value: &WorkflowSource) -> Self {
         match value {
             WorkflowSource::Path(path) => path.to_string_lossy().into_owned(),
-            WorkflowSource::Flake { path, attribute } => format!("{}#{}", path, attribute),
+            WorkflowSource::Flake { path, attribute } => format!("{path}#{attribute}"),
         }
     }
 }
@@ -288,11 +288,11 @@ impl NowEnvironment {
                     let node_weight = &tree[node_index];
                     match node_weight {
                         DagNode::Root => {
-                            debug_assert!(tree.node_count() == 1);
+                            debug_assert_eq!(tree.node_count(), 1);
                         }
                         DagNode::Job(_) => match nodes.remove(&node_index) {
                             Some(NowJobContainer::Single(job)) => {
-                                futures.push(self.run_job_single(&builder, job, node_index, dry_run))
+                                futures.push(self.run_job_single(&builder, job, node_index, dry_run));
                             }
                             Some(NowJobContainer::Multiple(job_vec)) => {
                                 futures.push(self.run_jobs_multiple(&builder, job_vec, node_index, dry_run));
@@ -323,7 +323,8 @@ impl NowEnvironment {
                                 }
                                 break;
                             }
-                            Err(error @ JobError::NoMatchingBuilders { .. } | error @ JobError::NoMatchingRunners { .. }) if skip => {
+                            Err(error @
+(JobError::NoMatchingBuilders { .. } | JobError::NoMatchingRunners { .. })) if skip => {
                                 let skip_log = match error {
                                     JobError::NoMatchingBuilders {
                                         job_name,
@@ -335,7 +336,7 @@ impl NowEnvironment {
                                         host_system,
                                         required_system_features,
                                     } => format!("No runners match for job '{job_name}' (hostSystem = {host_system}, requiredSystemFeatures = {required_system_features:?}); skipping."),
-                                    _ => unreachable!(),
+                                    JobError::Other(_) => unreachable!(),
                                 };
                                 warn!(runner, is_remote = false, "{}", skip_log);
                                 let mut nodes_to_skip: Vec<_> =
@@ -384,7 +385,7 @@ impl NowEnvironment {
                                     builder.cancel_builders();
                                 }
                                 result = match result {
-                                    Ok(_) => Err(color_eyre::Report::from(error)),
+                                    Ok(()) => Err(color_eyre::Report::from(error)),
                                     Err(report) => Err(report.error(error)),
                                 }
                             }
@@ -394,7 +395,7 @@ impl NowEnvironment {
                             info!(runner, is_remote = false, "Done.");
                         }
                         return result;
-                    };
+                    }
                 }
             }
         });
@@ -420,8 +421,7 @@ impl NowEnvironment {
 
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;
         let eval_id = serde_json::to_string(eval_id())?;
-        let with_local_step =
-            option_env!("NOW_WITH_LOCAL_STEP").is_some_and(parse_bool_from_str);
+        let with_local_step = option_env!("NOW_WITH_LOCAL_STEP").is_some_and(parse_bool_from_str);
 
         let nix_command = format!(
             "(import {nix_workflow_path} {{ \

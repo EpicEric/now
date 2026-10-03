@@ -124,22 +124,19 @@ impl NowEnvironment {
                 .iter()
                 .map(|step| async {
                     let step = step.clone();
-                    let (_lock, _guard, receiver, builder) =
-                        match local_builder.get_builder(&job).await? {
-                            Some(BuilderGuard {
-                                lock,
-                                guard,
-                                receiver,
-                                builder,
-                            }) => (lock, guard, receiver, builder),
-                            None => {
-                                return Err(JobError::NoMatchingBuilders {
-                                    job_name: job.name.clone(),
-                                    build_system: job.build_system.clone(),
-                                    required_system_features: job.required_system_features.clone(),
-                                });
-                            }
-                        };
+                    let Some(BuilderGuard {
+                        lock: _lock,
+                        guard: _guard,
+                        receiver,
+                        builder,
+                    }) = local_builder.get_builder(&job).await?
+                    else {
+                        return Err(JobError::NoMatchingBuilders {
+                            job_name: job.name.clone(),
+                            build_system: job.build_system.clone(),
+                            required_system_features: job.required_system_features.clone(),
+                        });
+                    };
                     if matches!(receiver.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
                         return Err(color_eyre::eyre::eyre!("Runner aborted").into());
                     }
@@ -205,19 +202,17 @@ impl NowEnvironment {
             (steps, derivations)
         };
 
-        let (_guard, receiver, runner) = match local_builder.get_runner(&job).await? {
-            Some(RunnerGuard {
-                lock: guard,
-                receiver,
-                builder: runner,
-            }) => (guard, receiver, runner),
-            None => {
-                return Err(JobError::NoMatchingRunners {
-                    job_name: job.name.clone(),
-                    host_system: job.host_system.clone(),
-                    required_system_features: job.required_system_features.clone(),
-                });
-            }
+        let Some(RunnerGuard {
+            lock: _guard,
+            receiver,
+            builder: runner,
+        }) = local_builder.get_runner(&job).await?
+        else {
+            return Err(JobError::NoMatchingRunners {
+                job_name: job.name.clone(),
+                host_system: job.host_system.clone(),
+                required_system_features: job.required_system_features.clone(),
+            });
         };
         if matches!(receiver.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
             return Err(color_eyre::eyre::eyre!("Runner aborted").into());
@@ -331,7 +326,7 @@ impl NowEnvironment {
                     Ok(())
                 };
 
-                let (exit_status, (_, stdin_task)): (_, (_, color_eyre::Result<()>)) =
+                let (exit_status, ((), stdin_task)): (_, (_, color_eyre::Result<()>)) =
                     smol::future::zip(child.status(), smol::future::zip(log_task, stdin_task))
                         .await;
                 stdin_task?;
@@ -377,7 +372,7 @@ impl NowEnvironment {
                     self.uploads
                         .lock()
                         .expect("not poisoned")
-                        .insert(upload_key.to_string(), upload_path);
+                        .insert(upload_key.clone(), upload_path);
                 }
             }
             Ok(())
@@ -417,7 +412,7 @@ impl NowEnvironment {
                         "Teardown failed ({}); continuing",
                         error
                     );
-                    result = result.and_then(|_| {
+                    result = result.and_then(|()| {
                         Err(color_eyre::eyre::eyre!(
                             "Teardown for step '{}' failed ({})",
                             step_name,
@@ -464,7 +459,7 @@ impl NowEnvironment {
                 Ok(())
             };
 
-            let (exit_status, (_, stdin_task)): (_, (_, color_eyre::Result<()>)) =
+            let (exit_status, ((), stdin_task)): (_, (_, color_eyre::Result<()>)) =
                 smol::future::zip(child.status(), smol::future::zip(log_task, stdin_task)).await;
 
             if let Err(error) = stdin_task {
@@ -476,7 +471,7 @@ impl NowEnvironment {
                     "Teardown task failed ({}); continuing",
                     error
                 );
-                result = result.and_then(|_| {
+                result = result.and_then(|()| {
                     Err(color_eyre::eyre::eyre!(
                         "Teardown task for step '{}' failed ({})",
                         step_name,
@@ -498,7 +493,7 @@ impl NowEnvironment {
                         "Teardown failed ({}); continuing",
                         error
                     );
-                    result = result.and_then(|_| {
+                    result = result.and_then(|()| {
                         Err(color_eyre::eyre::eyre!(
                             "Teardown for step '{}' failed ({})",
                             step_name,
@@ -518,7 +513,7 @@ impl NowEnvironment {
                     "Teardown failed ({}); continuing",
                     exit_status
                 );
-                result = result.and_then(|_| {
+                result = result.and_then(|()| {
                     Err(color_eyre::eyre::eyre!(
                         "Teardown for step '{}' failed ({})",
                         step_name,

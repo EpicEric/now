@@ -30,6 +30,7 @@ in
   shell = pkgs.mkShell {
     packages = [
       pkgs.cargo
+      pkgs.cargo-audit
       pkgs.clippy
       pkgs.rust-analyzer
       pkgs.rustc

@@ -84,16 +84,15 @@ impl NowWorkflowGraph {
             for job_glob in target_jobs {
                 let glob = glob::Pattern::new(&job_glob)?;
                 let mut matching_jobs = vec![];
-                for (job_id, value) in self.graph_nodes.iter() {
+                for (job_id, value) in &self.graph_nodes {
                     if glob.matches(job_id) {
                         matching_jobs.push(*value);
                     }
                 }
                 if matching_jobs.is_empty() {
                     return Err(color_eyre::eyre::eyre!("No jobs matched '{job_glob}'"));
-                } else {
-                    job_nodes.extend(matching_jobs);
                 }
+                job_nodes.extend(matching_jobs);
             }
 
             // Collect the set of nodes to keep
@@ -157,7 +156,7 @@ impl NowWorkflow {
         let mut edges: HashMap<String, HashSet<String>> = HashMap::new();
 
         let mut joined_jobs = String::new();
-        for (job_id, job) in self.jobs.into_iter() {
+        for (job_id, job) in self.jobs {
             if !joined_jobs.is_empty() {
                 joined_jobs.push_str(", ");
             }
@@ -210,8 +209,7 @@ impl NowWorkflow {
                 graph_nodes
                     .iter()
                     .find(|(_, value)| **value == cycle.node_id())
-                    .map(|(key, _)| key.clone())
-                    .unwrap_or("unknown".into())
+                    .map_or("unknown".into(), |(key, _)| key.clone())
             )
         })?;
 

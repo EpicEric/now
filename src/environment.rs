@@ -80,10 +80,7 @@ async fn eval_id_from_workflow_source(workflow: &WorkflowSource) -> color_eyre::
     }
 
     let digest = Sha256::digest(data);
-    Ok(digest[..16]
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect())
+    Ok(hex::encode(&digest[..16]))
 }
 
 pub(crate) struct NowEnvironment {
@@ -117,7 +114,7 @@ impl NowEnvironment {
                     result.ok().map(|(key, value)| (key.into(), value.into()))
                 }),
             );
-        };
+        }
         env_vars.extend(std::env::vars_os());
 
         let _ = EVAL_ID.set(eval_id_from_workflow_source(workflow).await?);
@@ -204,7 +201,7 @@ impl NowEnvironment {
                     jobs: parsed_workflow.jobs,
                     local_env: env_vars,
                     gcroot_dir,
-                    uploads: Default::default(),
+                    uploads: Mutex::default(),
                 })
             },
         )
@@ -226,8 +223,7 @@ impl NowEnvironment {
         let nix_env_path = format!("(/. + {})", serde_json::to_string(&nix_env_str)?);
 
         let eval_id_json = serde_json::to_string(eval_id())?;
-        let with_local_step =
-            option_env!("NOW_WITH_LOCAL_STEP").is_some_and(parse_bool_from_str);
+        let with_local_step = option_env!("NOW_WITH_LOCAL_STEP").is_some_and(parse_bool_from_str);
 
         let nix_command = format!(
             "import {nix_env_path} {{ }} {{ \
@@ -283,7 +279,7 @@ impl NowEnvironment {
                 NowJobContainer::Single(job) => (job_fn)(job),
                 NowJobContainer::Multiple(job_vec) => {
                     for job in job_vec {
-                        (job_fn)(job)
+                        (job_fn)(job);
                     }
                 }
             }
@@ -297,12 +293,11 @@ impl NowEnvironment {
                     "Invalid workflow: secret '{}' cannot also be used as a regular variable",
                     String::from_utf8_lossy(secret.as_encoded_bytes())
                 ));
-            } else {
-                return Err(color_eyre::eyre::eyre!(
-                    "Invalid workflow: secret '{}' and {intersection_count} other(s) cannot also be used as regular variables",
-                    String::from_utf8_lossy(secret.as_encoded_bytes())
-                ));
             }
+            return Err(color_eyre::eyre::eyre!(
+                "Invalid workflow: secret '{}' and {intersection_count} other(s) cannot also be used as regular variables",
+                String::from_utf8_lossy(secret.as_encoded_bytes())
+            ));
         }
 
         let jobs = workflow

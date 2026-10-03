@@ -47,9 +47,9 @@ impl<S> Default for NowSubscriberLayer<S> {
         Self {
             make_writer: std::io::stderr,
             builder_name_limit: 40,
-            cache: Default::default(),
-            hasher: Default::default(),
-            _subscriber: Default::default(),
+            cache: papaya::HashMap::default(),
+            hasher: ahash::RandomState::default(),
+            _subscriber: PhantomData,
         }
     }
 }
@@ -70,8 +70,7 @@ where
         if let Some(log_line) = fields_visitor.finish() {
             let _ = writeln!(
                 self.make_writer.make_writer_for(event.metadata()),
-                "{}",
-                log_line
+                "{log_line}"
             );
         }
     }
@@ -105,10 +104,10 @@ impl<'a> NowSubscriberVisitor<'a> {
     }
 }
 
-impl<'a> Visit for NowSubscriberVisitor<'a> {
+impl Visit for NowSubscriberVisitor<'_> {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn core::fmt::Debug) {
         if field.name() == "message" {
-            self.message = Some(format!("{:?}", value));
+            self.message = Some(format!("{value:?}"));
         }
     }
 
@@ -127,7 +126,7 @@ impl<'a> Visit for NowSubscriberVisitor<'a> {
     }
 }
 
-impl<'a> tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscriberVisitor<'a> {
+impl tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscriberVisitor<'_> {
     fn finish(self) -> Option<String> {
         let message = self.message?;
         let Some(runner) = self.runner else {

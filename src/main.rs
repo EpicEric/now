@@ -366,9 +366,8 @@ fn find_workflow(
             if now_path.exists() && !now_path.is_dir() {
                 std::env::set_current_dir(cwdir_path)?;
                 return Ok(WorkflowSource::Path(now_path));
-            } else {
-                cwdir = cwdir_path.parent();
             }
+            cwdir = cwdir_path.parent();
         }
         Err(color_eyre::eyre::eyre!(
             "No workflow found recursively from '{}'",
@@ -446,7 +445,7 @@ fn main() -> color_eyre::Result<()> {
             println!(
                 "'{}' has been initialized with a basic workflow",
                 path.to_string_lossy(),
-            )
+            );
         }
 
         Command::List {
@@ -580,7 +579,7 @@ fn main() -> color_eyre::Result<()> {
                         ctrl_c,
                         dry_run,
                         abort,
-                        timeout: timeout.map(|timeout| timeout.into()),
+                        timeout: timeout.map(std::convert::Into::into),
                         jobs,
                         all_jobs,
                         builders,

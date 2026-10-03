@@ -124,7 +124,7 @@ impl<'de> Deserialize<'de> for NowStep {
                         "env" => env = Some(map.next_value()?),
                         "outputVar" => output_var = map.next_value()?,
                         _ if matches!(key.split_once(eval_id()), Some(("__nowUpload_", ""))) => {
-                            upload_key = map.next_value()?
+                            upload_key = map.next_value()?;
                         }
                         _ => {} // Ignore unknown keys
                     }
@@ -346,7 +346,7 @@ mod serde_tests {
             eval_id()
         );
         let job: NowJobContainer = serde_json::from_str(&json).unwrap();
-        assert!(matches!(job, NowJobContainer::Single(_)))
+        assert!(matches!(job, NowJobContainer::Single(_)));
     }
 
     #[test]

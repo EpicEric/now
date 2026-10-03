@@ -129,7 +129,7 @@ impl RemoteBuilder {
                 None => ssh_uri,
             };
             let ssh_uri = if let Some(plain_uri) = ssh_uri.strip_prefix("ssh-ng://") {
-                format!("ssh://{}", plain_uri)
+                format!("ssh://{plain_uri}")
             } else if ssh_uri.starts_with("ssh://") {
                 ssh_uri.to_string()
             } else {
@@ -141,7 +141,7 @@ impl RemoteBuilder {
             {
                 systems
                     .split(',')
-                    .map(|system| system.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect()
             } else {
                 [config.system.value.clone()].into_iter().collect()
@@ -170,7 +170,7 @@ impl RemoteBuilder {
             {
                 system_features
                     .split(',')
-                    .map(|feature| feature.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect()
             } else {
                 HashSet::new()
@@ -181,7 +181,7 @@ impl RemoteBuilder {
             {
                 required_features
                     .split(',')
-                    .map(|feature| feature.to_string())
+                    .map(std::string::ToString::to_string)
                     .collect()
             } else {
                 HashSet::new()
@@ -260,7 +260,7 @@ impl RemoteBuilder {
                 build_systems,
                 system_features,
                 required_features,
-            })
+            });
         }
 
         Ok(vec)

@@ -19,7 +19,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use flate2::write::GzEncoder;
+use flate2::{Compression, write::GzEncoder};
 use tar::Builder;
 
 fn main() {
@@ -27,7 +27,7 @@ fn main() {
     let archive_path = Path::new(&out_dir).join("project.tar.gz");
 
     let file = File::create(&archive_path).expect("should create archive in OUT_DIR");
-    let tar_gz = GzEncoder::new(file, Default::default());
+    let tar_gz = GzEncoder::new(file, Compression::default());
     let mut tar = Builder::new(tar_gz);
 
     for dir in ["nix", "now-step", ".tack"] {
