@@ -199,7 +199,7 @@ fn main() -> color_eyre::Result<()> {
             let environment = smol::block_on(NowEnvironment::get(
                 &workflow,
                 ctrl_c,
-                false,
+                None,
                 env_file.as_ref(),
                 None,
             ))?;
@@ -246,7 +246,7 @@ fn main() -> color_eyre::Result<()> {
 
             smol::block_on(async {
                 let environment =
-                    NowEnvironment::get(&workflow, ctrl_c, false, env_file.as_ref(), None).await?;
+                    NowEnvironment::get(&workflow, ctrl_c, None, env_file.as_ref(), None).await?;
                 let evaluated = environment.evaluate_workflow(&workflow).await?;
                 println!("{}", serde_json::to_string(&evaluated)?);
                 Ok::<(), color_eyre::Report>(())
@@ -274,7 +274,7 @@ fn main() -> color_eyre::Result<()> {
             let env_filter = EnvFilter::builder()
                 .with_default_directive(LevelFilter::INFO.into())
                 .from_env_lossy();
-            if tracing {
+            if tracing.is_some() {
                 tracing_subscriber::registry()
                     .with(
                         DuperLayer::default()

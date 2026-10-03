@@ -31,6 +31,7 @@ use smol::{channel::Receiver, process::Command};
 use tracing::instrument;
 
 use crate::{
+    command::TracingMode,
     project::{ProjectSource, create_nix_project_source},
     secret::SecretString,
     utils::{parse_bool_from_bytes, wait_for_output, write_output_to_stderr},
@@ -85,7 +86,7 @@ async fn eval_id_from_workflow_source(workflow: &WorkflowSource) -> color_eyre::
 
 pub(crate) struct NowEnvironment {
     pub(crate) nix_project_source: ProjectSource,
-    pub(crate) tracing: bool,
+    pub(crate) tracing: Option<TracingMode>,
     pub(crate) secrets: HashMap<String, SecretString>,
     pub(crate) vars: HashMap<String, String>,
     pub(crate) jobs: BTreeMap<String, String>,
@@ -105,7 +106,7 @@ impl NowEnvironment {
     pub(crate) async fn get(
         workflow: &WorkflowSource,
         ctrl_c: Receiver<()>,
-        tracing: bool,
+        tracing: Option<TracingMode>,
         env_file: Option<&PathBuf>,
         gcroot_dir: Option<PathBuf>,
     ) -> color_eyre::Result<NowEnvironment> {
@@ -386,10 +387,20 @@ impl NowEnvironment {
             }
         }
 
-        if self.tracing || supports_color::on(supports_color::Stream::Stderr).is_none() {
-            map.insert("NO_COLOR".into(), "1".into());
-        } else {
-            map.insert("FORCE_COLOR".into(), "1".into());
+        match self.tracing {
+            Some(TracingMode::Colors) => {
+                map.insert("FORCE_COLOR".into(), "1".into());
+            }
+            Some(TracingMode::NoColors) => {
+                map.insert("NO_COLOR".into(), "1".into());
+            }
+            None => {
+                if supports_color::on(supports_color::Stream::Stderr).is_none() {
+                    map.insert("NO_COLOR".into(), "1".into());
+                } else {
+                    map.insert("FORCE_COLOR".into(), "1".into());
+                }
+            }
         }
 
         map.extend(

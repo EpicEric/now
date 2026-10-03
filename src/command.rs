@@ -20,11 +20,20 @@ use std::{
 };
 
 use ahash::HashSet;
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, Parser, ValueEnum};
 use clap_complete::{ArgValueCandidates, ArgValueCompleter, CompletionCandidate, PathCompleter};
 use color_eyre::eyre::OptionExt;
 
 use crate::{environment::NowEnvironment, find_workflow};
+
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub(crate) enum TracingMode {
+    /// (default) Don't include ANSI colors in output.
+    #[default]
+    NoColors,
+    /// Include ANSI colors in output.
+    Colors,
+}
 
 static LONG_ABOUT: &str = "now - Nix-based distributed command runner.
 
@@ -238,9 +247,16 @@ pub(crate) enum Command {
 
         /// Whether to emit traces in Duper instead of colored logs.
         ///
+        /// You can also set whether ANSI colors are included in the traces or not.
+        ///
         /// For more information on Duper: <https://duper.dev.br>
-        #[arg(long)]
-        tracing: bool,
+        #[arg(
+            long,
+            value_enum,
+            num_args = 0..=1,
+            default_missing_value = "no-colors",
+        )]
+        tracing: Option<TracingMode>,
     },
 }
 
@@ -270,8 +286,7 @@ fn job_completer() -> Vec<CompletionCandidate> {
             let _ = sender.try_send(());
         });
 
-        let environment =
-            smol::block_on(NowEnvironment::get(&workflow, ctrl_c, false, None, None))?;
+        let environment = smol::block_on(NowEnvironment::get(&workflow, ctrl_c, None, None, None))?;
 
         let mut jobs_iter = jobs_iter.rev();
         let current_job = jobs_iter.next();

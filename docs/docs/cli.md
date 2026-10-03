@@ -20,14 +20,14 @@ now - Nix-based distributed command runner.
   <span style='opacity:0.67'># Load envvars from a dotenv file and run the default job(s)</span>
   now run --env-file .env
 
-  <span style='opacity:0.67'># Run the &quot;deploy&quot; job (and all dependencies) from the specified workflow,
-  # and specify a remote builder for the run</span>
+  <span style='opacity:0.67'># Run the &quot;deploy&quot; job (and all dependencies) from the specified workflow,</span>
+  <span style='opacity:0.67'># and specify a remote builder for the run</span>
   now run deploy \
     --builders &quot;ssh://mac aarch64-darwin&quot; \
     --workflow .now/remote.nix
 
-  <span style='opacity:0.67'># Abort immediately on the first failing job,
-  # and don&#39;t checkout the current directory</span>
+  <span style='opacity:0.67'># Abort immediately on the first failing job,</span>
+  <span style='opacity:0.67'># and don&#39;t checkout the current directory</span>
   now run --abort --checkout none
 
 <b><u>Usage:</u></b> <b>now</b> &lt;COMMAND&gt;
@@ -204,10 +204,16 @@ Run one or more jobs
       <b>--skip</b>
           When specified, skips jobs that don&#39;t match any builders or runners and their dependencies, instead of failing
 
-      <b>--tracing</b>
+      <b>--tracing</b> [&lt;TRACING&gt;]
           Whether to emit traces in Duper instead of colored logs.
           
+          You can also set whether ANSI colors are included in the traces or not.
+          
           For more information on Duper: &lt;https://duper.dev.br&gt;
+
+          Possible values:
+          - <b>no-colors</b>: (default) Don&#39;t include ANSI colors in output
+          - <b>colors</b>:    Include ANSI colors in output
 
   <b>-h</b>, <b>--help</b>
           Print help (see a summary with &#39;-h&#39;)
