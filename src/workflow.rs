@@ -141,7 +141,7 @@ impl WorkflowSource {
                 debug_assert!(path.is_absolute());
                 let workflow_str = path
                     .to_str()
-                    .ok_or_else(|| color_eyre::eyre::eyre!("path is not UTF-8"))?;
+                    .ok_or_else(|| color_eyre::eyre::eyre!("Workflow path is not UTF-8"))?;
                 Ok(format!("(/. + {})", serde_json::to_string(&workflow_str)?))
             }
             WorkflowSource::Flake { path, attribute } => {
@@ -169,18 +169,28 @@ impl From<&WorkflowSource> for String {
     }
 }
 
+pub(crate) enum NowJobsToRun {
+    Default,
+    Selected(Vec<String>),
+    All,
+}
+
+pub(crate) enum NowRunMode {
+    All,
+    LocalOnly,
+    RemoteOnly,
+}
+
 pub(crate) struct NowWorkflowParams {
     pub(crate) workflow: WorkflowSource,
     pub(crate) ctrl_c: Receiver<()>,
     pub(crate) dry_run: bool,
     pub(crate) abort: bool,
     pub(crate) timeout: Option<Duration>,
-    pub(crate) jobs: Option<Vec<String>>,
-    pub(crate) all_jobs: bool,
+    pub(crate) jobs_to_run: NowJobsToRun,
     pub(crate) builders: Option<String>,
     pub(crate) cores: Option<NonZeroUsize>,
-    pub(crate) local_only: bool,
-    pub(crate) remote_only: bool,
+    pub(crate) run_mode: NowRunMode,
     pub(crate) skip: bool,
 }
 
@@ -208,16 +218,14 @@ impl NowEnvironment {
             dry_run,
             abort,
             timeout,
-            jobs,
-            all_jobs,
+            jobs_to_run,
             builders,
             cores,
-            local_only,
-            remote_only,
+            run_mode,
             skip,
         }: NowWorkflowParams,
     ) -> color_eyre::Result<()> {
-        let builder = LocalBuilder::new(self, builders, local_only, remote_only, cores).await?;
+        let builder = LocalBuilder::new(self, builders, run_mode, cores).await?;
         let runner = builder.get_name();
 
         info!(
@@ -234,9 +242,8 @@ impl NowEnvironment {
         } else {
             info!(runner, is_remote = false, "Building tree for workflow...");
         }
-        let jobs = jobs.or_else(|| workflow.default.clone());
         let mut graph = workflow.build_graph()?;
-        graph.prune(jobs, all_jobs)?;
+        graph.prune(jobs_to_run)?;
         let NowWorkflowGraph {
             dag: mut tree,
             mut nodes,
@@ -412,11 +419,11 @@ impl NowEnvironment {
     ) -> color_eyre::Result<NowWorkflow> {
         let workflow_path = workflow.nix_expression()?;
 
-        let nix_workflow = self.nix_project_source.as_ref().join("nix/workflow.nix");
-        let nix_workflow_canonical = std::fs::canonicalize(&nix_workflow)?;
+        let nix_workflow = self.nix_project_source.as_ref().join("now/workflow.nix");
+        let nix_workflow_canonical = smol::fs::canonicalize(&nix_workflow).await?;
         let nix_workflow_str = nix_workflow_canonical
             .to_str()
-            .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
+            .expect("project source path should be UTF-8");
         let nix_workflow_path = format!("(/. + {})", serde_json::to_string(&nix_workflow_str)?);
 
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;

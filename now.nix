@@ -97,7 +97,7 @@ in
               options = removeAttrs (evalOptions type).options [ "_module" ];
             }).optionsCommonMark;
 
-          types = import ./nix/types.nix { inherit (pkgs) lib; };
+          types = import ./now/types.nix { inherit (pkgs) lib; };
         in
         [
           (runner.steps.upload {

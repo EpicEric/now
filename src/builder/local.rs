@@ -42,7 +42,7 @@ use crate::{
     },
     environment::NowEnvironment,
     utils::{get_random_string, wait_for_output, write_output_to_stderr},
-    workflow::{NowCheckout, NowJob},
+    workflow::{NowCheckout, NowJob, NowRunMode},
 };
 
 pub(crate) struct LocalBuilder {
@@ -56,7 +56,7 @@ pub(crate) struct LocalBuilder {
     pub(crate) system: String,
     pub(crate) system_features: HashSet<String>,
     pub(crate) remote_builders: Vec<RemoteBuilder>,
-    pub(crate) remote_only: bool,
+    pub(crate) run_mode: NowRunMode,
     pub(crate) gcroot_dir: PathBuf,
 }
 
@@ -77,8 +77,7 @@ impl LocalBuilder {
     pub(crate) async fn new(
         environment: &NowEnvironment,
         builders: Option<String>,
-        local_only: bool,
-        remote_only: bool,
+        run_mode: NowRunMode,
         cores: Option<NonZeroUsize>,
     ) -> color_eyre::Result<Self> {
         let mut command = Command::new("nix");
@@ -103,19 +102,29 @@ impl LocalBuilder {
             return Err(color_eyre::eyre::eyre!("Failed to fetch Nix config"));
         };
 
-        let remote_builders = if local_only {
-            vec![]
-        } else {
-            RemoteBuilder::get_remote_builders(
-                &config,
-                builders,
-                environment.nix_project_source.as_ref(),
-            )
-            .await?
+        let remote_builders = match run_mode {
+            NowRunMode::All => {
+                RemoteBuilder::get_remote_builders(
+                    &config,
+                    builders,
+                    environment.nix_project_source.as_ref(),
+                )
+                .await?
+            }
+            NowRunMode::LocalOnly => vec![],
+            NowRunMode::RemoteOnly => {
+                let remote_builders = RemoteBuilder::get_remote_builders(
+                    &config,
+                    builders,
+                    environment.nix_project_source.as_ref(),
+                )
+                .await?;
+                if remote_builders.is_empty() {
+                    return Err(color_eyre::eyre::eyre!("No remote builders available"));
+                }
+                remote_builders
+            }
         };
-        if remote_only && remote_builders.is_empty() {
-            return Err(color_eyre::eyre::eyre!("No remote builders available"));
-        }
 
         let (cancellation, receiver) = channel::bounded(1);
 
@@ -147,7 +156,7 @@ impl LocalBuilder {
             system: config.system.value,
             system_features: config.system_features.value.into_iter().collect(),
             remote_builders,
-            remote_only,
+            run_mode,
             gcroot_dir: environment.gcroot_dir.clone(),
         })
     }
@@ -165,14 +174,18 @@ impl LocalBuilder {
     ) -> color_eyre::Result<Option<BuilderGuard<'_>>> {
         let mut builders = vec![];
 
-        if !self.remote_only
-            && job.build_system == self.system
-            && job
-                .required_system_features
-                .iter()
-                .all(|feature| self.system_features.contains(feature))
-        {
-            builders.push(self as &dyn NowBuilder);
+        match self.run_mode {
+            NowRunMode::All | NowRunMode::LocalOnly => {
+                if job.build_system == self.system
+                    && job
+                        .required_system_features
+                        .iter()
+                        .all(|feature| self.system_features.contains(feature))
+                {
+                    builders.push(self as &dyn NowBuilder);
+                }
+            }
+            NowRunMode::RemoteOnly => {}
         }
 
         for builder in &self.remote_builders {
@@ -209,14 +222,19 @@ impl LocalBuilder {
     }
 
     pub(crate) fn has_runner(&self, job: &NowJob) -> bool {
-        if !self.remote_only
-            && (job.host_system == self.system || self.extra_platforms.contains(&job.host_system))
-            && job
-                .required_system_features
-                .iter()
-                .all(|feature| self.system_features.contains(feature))
-        {
-            return true;
+        match self.run_mode {
+            NowRunMode::All | NowRunMode::LocalOnly => {
+                if (job.host_system == self.system
+                    || self.extra_platforms.contains(&job.host_system))
+                    && job
+                        .required_system_features
+                        .iter()
+                        .all(|feature| self.system_features.contains(feature))
+                {
+                    return true;
+                }
+            }
+            NowRunMode::RemoteOnly => {}
         }
 
         for builder in &self.remote_builders {
@@ -243,14 +261,19 @@ impl LocalBuilder {
     ) -> color_eyre::Result<Option<RunnerGuard<'_>>> {
         let mut runners = vec![];
 
-        if !self.remote_only
-            && (job.host_system == self.system || self.extra_platforms.contains(&job.host_system))
-            && job
-                .required_system_features
-                .iter()
-                .all(|feature| self.system_features.contains(feature))
-        {
-            runners.push(self as &dyn NowBuilder);
+        match self.run_mode {
+            NowRunMode::All | NowRunMode::LocalOnly => {
+                if (job.host_system == self.system
+                    || self.extra_platforms.contains(&job.host_system))
+                    && job
+                        .required_system_features
+                        .iter()
+                        .all(|feature| self.system_features.contains(feature))
+                {
+                    runners.push(self as &dyn NowBuilder);
+                }
+            }
+            NowRunMode::RemoteOnly => {}
         }
 
         for builder in &self.remote_builders {
@@ -466,11 +489,17 @@ impl NowBuilder for LocalBuilder {
     async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
         match checkout {
             NowCheckout::Default | NowCheckout::All => {
-                debug_assert_eq!(path.canonicalize()?, std::env::current_dir()?.canonicalize()?);
+                debug_assert_eq!(
+                    path.canonicalize()?,
+                    std::env::current_dir()?.canonicalize()?
+                );
                 Ok(())
             }
             NowCheckout::None | NowCheckout::Clone | NowCheckout::CloneAll => {
-                assert_ne!(path.canonicalize()?, std::env::current_dir()?.canonicalize()?);
+                assert_ne!(
+                    path.canonicalize()?,
+                    std::env::current_dir()?.canonicalize()?
+                );
                 assert!(path.starts_with(temp_dir()));
                 let mut command = Command::new("rm");
                 command.arg("-rf").arg(path);

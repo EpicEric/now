@@ -30,7 +30,7 @@ use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::Subscribe
 use crate::{
     environment::NowEnvironment,
     subscriber::NowSubscriberLayer,
-    workflow::{NowWorkflowParams, WorkflowSource},
+    workflow::{NowJobsToRun, NowRunMode, NowWorkflowParams, WorkflowSource},
 };
 
 mod builder;
@@ -385,7 +385,7 @@ fn job_completer() -> Vec<CompletionCandidate> {
 
         let matches = command_matches
             .subcommand_matches("run")
-            .ok_or_eyre("not run subcommand")?;
+            .ok_or_eyre("Not run subcommand")?;
 
         let maybe_workflow = matches.try_get_one::<PathBuf>("workflow")?;
         let maybe_flake = matches.try_get_one::<String>("flake")?;
@@ -569,6 +569,22 @@ fn main() -> color_eyre::Result<()> {
                 let _ = sender.try_send(());
             })?;
 
+            let run_mode = if local_only {
+                NowRunMode::LocalOnly
+            } else if remote_only {
+                NowRunMode::RemoteOnly
+            } else {
+                NowRunMode::All
+            };
+
+            let jobs = if let Some(jobs) = jobs {
+                NowJobsToRun::Selected(jobs)
+            } else if all_jobs {
+                NowJobsToRun::All
+            } else {
+                NowJobsToRun::Default
+            };
+
             smol::block_on::<color_eyre::Result<()>>(async {
                 let mut environment =
                     NowEnvironment::get(&workflow, ctrl_c.clone(), env_file.as_ref(), gcroot_dir)
@@ -580,12 +596,10 @@ fn main() -> color_eyre::Result<()> {
                         dry_run,
                         abort,
                         timeout: timeout.map(std::convert::Into::into),
-                        jobs,
-                        all_jobs,
+                        jobs_to_run: jobs,
                         builders,
                         cores,
-                        local_only,
-                        remote_only,
+                        run_mode,
                         skip,
                     })
                     .await

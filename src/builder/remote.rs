@@ -25,7 +25,7 @@ use ahash::{HashSet, HashSetExt};
 use async_trait::async_trait;
 use smol::{
     channel,
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     lock::{
         RwLock, Semaphore,
         futures::{Acquire, Read, Write},
@@ -106,10 +106,12 @@ impl RemoteBuilder {
         let builders = if let Some(builders) = builders {
             builders
         } else if let Some(file) = config.builders.value.strip_prefix('@') {
-            if !std::fs::exists(file)? {
+            let Ok(mut file) = smol::fs::File::open(file).await else {
                 return Ok(vec![]);
-            }
-            String::from_utf8(std::fs::read(file)?)?
+            };
+            let mut buf = Vec::new();
+            file.read_to_end(&mut buf).await?;
+            String::from_utf8(buf)?
         } else {
             config.builders.value.clone()
         };

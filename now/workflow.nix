@@ -20,13 +20,18 @@
 }:
 
 let
-  overlay = final: prev: {
-    now-step =
-      if withLocalStep then
-        final.callPackage ../now-step/package.nix { }
-      else
-        prev.now-step or (final.callPackage ../now-step/package.nix { });
-  };
+  overlay =
+    final: prev:
+    let
+      pkgs = import (import ../.tack).nixpkgs { inherit system; };
+    in
+    {
+      now-step =
+        if withLocalStep then
+          pkgs.callPackage ../now-step/package.nix { }
+        else
+          prev.now-step or (final.callPackage ../now-step/package.nix { });
+    };
 
   normalizeJob =
     {

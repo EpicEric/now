@@ -17,11 +17,12 @@
 use std::fmt::Display;
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use color_eyre::Section;
 use petgraph::{acyclic::Acyclic, algo::Cycle, dot, graph::NodeIndex, stable_graph::StableDiGraph};
 use serde::Serialize;
 use tracing::instrument;
 
-use crate::workflow::{NowJobContainer, NowWorkflow};
+use crate::workflow::{NowJobContainer, NowJobsToRun, NowWorkflow};
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) enum DagNode {
@@ -43,42 +44,66 @@ pub(crate) struct NowWorkflowGraph {
     pub(crate) nodes: HashMap<NodeIndex<u32>, NowJobContainer>,
     root: NodeIndex<u32>,
     graph_nodes: HashMap<String, NodeIndex<u32>>,
+    default_jobs: Option<Vec<String>>,
 }
 
 impl NowWorkflowGraph {
-    pub(crate) fn prune(
-        &mut self,
-        target_jobs: Option<Vec<String>>,
-        all_jobs: bool,
-    ) -> color_eyre::Result<()> {
+    pub(crate) fn prune(&mut self, jobs: NowJobsToRun) -> color_eyre::Result<()> {
         // Filter out non-target jobs
-        let jobs = if all_jobs {
-            None
-        } else if let Some(target_jobs) = target_jobs
-            && !target_jobs.is_empty()
-        {
-            Some(target_jobs)
-        } else {
-            let mut jobs: Vec<&String> = self
-                .dag
-                .node_weights()
-                .filter_map(|node| match node {
-                    DagNode::Root => None,
-                    DagNode::Job(text) => Some(text),
-                })
-                .collect();
-            jobs.sort();
-            let mut joined_jobs = String::new();
-            for job in jobs {
-                if !joined_jobs.is_empty() {
-                    joined_jobs.push_str(", ");
+        let jobs = match jobs {
+            NowJobsToRun::All => None,
+            NowJobsToRun::Selected(items) => {
+                if items.is_empty() {
+                    let mut jobs: Vec<&String> = self
+                        .dag
+                        .node_weights()
+                        .filter_map(|node| match node {
+                            DagNode::Root => None,
+                            DagNode::Job(text) => Some(text),
+                        })
+                        .collect();
+                    jobs.sort();
+                    let mut joined_jobs = String::new();
+                    for job in jobs {
+                        if !joined_jobs.is_empty() {
+                            joined_jobs.push_str(", ");
+                        }
+                        joined_jobs.push_str(job);
+                    }
+                    return Err(color_eyre::eyre::eyre!("No job specified")
+                        .note("Available options: {joined_jobs}"));
+                } else {
+                    Some(items)
                 }
-                joined_jobs.push_str(job);
             }
-            return Err(color_eyre::eyre::eyre!(
-                "No job specified. Available options: {joined_jobs}"
-            ));
+            NowJobsToRun::Default => {
+                if let Some(default_jobs) = self.default_jobs.as_ref()
+                    && !default_jobs.is_empty()
+                {
+                    Some(default_jobs.clone())
+                } else {
+                    let mut jobs: Vec<&String> = self
+                        .dag
+                        .node_weights()
+                        .filter_map(|node| match node {
+                            DagNode::Root => None,
+                            DagNode::Job(text) => Some(text),
+                        })
+                        .collect();
+                    jobs.sort();
+                    let mut joined_jobs = String::new();
+                    for job in jobs {
+                        if !joined_jobs.is_empty() {
+                            joined_jobs.push_str(", ");
+                        }
+                        joined_jobs.push_str(job);
+                    }
+                    return Err(color_eyre::eyre::eyre!("No default job(s) in workflow")
+                        .note("Specify a job directly. Available options: {joined_jobs}"));
+                }
+            }
         };
+
         if let Some(target_jobs) = jobs {
             let mut job_nodes: HashSet<NodeIndex<u32>> = HashSet::new();
             for job_glob in target_jobs {
@@ -218,6 +243,7 @@ impl NowWorkflow {
             nodes,
             root,
             graph_nodes,
+            default_jobs: self.default,
         })
     }
 }

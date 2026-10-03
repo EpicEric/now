@@ -30,7 +30,7 @@ fn main() {
     let tar_gz = GzEncoder::new(file, Compression::default());
     let mut tar = Builder::new(tar_gz);
 
-    for dir in ["nix", "now-step", ".tack"] {
+    for dir in ["now", "now-step", ".tack"] {
         let dir_path = PathBuf::from(dir);
         for result in ignore::Walk::new(&dir_path) {
             if let Ok(dir_entry) = result

@@ -33,7 +33,7 @@ rustPlatform.buildRustPackage {
     root = ./.;
     fileset = lib.fileset.intersection (lib.fileset.unions [
       ./.tack
-      ./nix
+      ./now
       ./now-step
       ./src
       ./build.rs

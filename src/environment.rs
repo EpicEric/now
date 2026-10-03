@@ -215,11 +215,11 @@ impl NowEnvironment {
     ) -> color_eyre::Result<ParsedWorkflow> {
         let workflow_path = workflow.nix_expression()?;
 
-        let nix_env = nix_project_source.join("nix/env.nix");
-        let nix_env_canonical = std::fs::canonicalize(&nix_env)?;
+        let nix_env = nix_project_source.join("now/env.nix");
+        let nix_env_canonical = smol::fs::canonicalize(&nix_env).await?;
         let nix_env_str = nix_env_canonical
             .to_str()
-            .ok_or_else(|| color_eyre::eyre::eyre!("non-UTF8 path"))?;
+            .expect("project source path should be UTF-8");
         let nix_env_path = format!("(/. + {})", serde_json::to_string(&nix_env_str)?);
 
         let eval_id_json = serde_json::to_string(eval_id())?;
