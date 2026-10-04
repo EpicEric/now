@@ -59,6 +59,15 @@ When a job is ready to run, now automatically iterates over all available builde
 
 The selection algorithm races all qualifying builders/runners for a job, and the first one who becomes available is used.
 
+### Concurrency
+
+Builders and runners have two separate concurrency controls:
+
+- **Building** is concurrent: a machine can realize the derivations of multiple jobs at the same time, up to its limit. For remote builders, this is the `max-jobs` field of the builder specification; for the local builder, it's the `--cores` option (which defaults to the machine's number of physical cores).
+- **Running** is exclusive: a machine only executes the steps of one job at a time. When multiple jobs are ready on the same machine, they run one after another, or are scheduled to a different machine.
+
+For example, two independent jobs targeting the same remote builder realize their derivations in parallel (as long as the builder's `max-jobs` allows it), but their steps still run sequentially on that machine.
+
 ### Builder selection
 
 A builder must satisfy:

@@ -22,7 +22,7 @@ in
           ];
           run = ''
             trap 'kill 0' EXIT INT TERM
-            watchexec -w now.nix -w nix/types.nix -r now run generate-nix-docs &
+            watchexec -w now.nix -w now/types.nix -r now run generate-nix-docs &
             watchexec -w now.nix -w src -r now run generate-cli-docs &
             zensical serve -f docs/zensical.toml
           '';

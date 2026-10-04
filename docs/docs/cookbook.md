@@ -18,8 +18,8 @@ extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+
 Additionally, the `NIX_CONFIG` environment variable gets forwarded to local and remote builders, so you can use the cache in arbitrary jobs:
 
 ```bash
-NIX_CONFIG='extra-substituters=https://cache.eric.dev.br extra-trusted-public-keys=cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=' \
-  now run distributed-job --builders 'ssh://remote'
+export NIX_CONFIG='extra-substituters=https://cache.eric.dev.br extra-trusted-public-keys=cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE='
+now run distributed-job --builders 'ssh://remote'
 ```
 
 ## Using in GitHub Actions
@@ -200,10 +200,13 @@ jobs:
       }
     ]
     (
-      { pkgs, ... }:
-      {
-        path = [ pkgs.nix ];
-        run = "nix-info";
+      { pkgs, ... }: {
+        steps = [
+          {
+            path = [ pkgs.nix-info pkgs.nix ];
+            run = "nix-info";
+          }
+        ];
       }
     );
 }
@@ -218,6 +221,13 @@ To also specify the build system's architecture, use `import <nixpkgs> { buildSy
 One way is to combine `watch`/`watchexec`/`fswatch` and bash's `trap`, for example:
 
 ```nix
+let
+  # Build `now` itself, so the steps below can run it (see the quick start
+  # for alternative installation methods)
+  now = import (builtins.fetchGit {
+    url = "https://codeberg.org/now-runner/now";
+  }) { };
+in
 {
   jobs = {
     generate-nix-docs = {
@@ -231,13 +241,13 @@ One way is to combine `watch`/`watchexec`/`fswatch` and bash's `trap`, for examp
       steps = [
         {
           path = [
-            pkgs.now
+            now
             pkgs.watchexec
             pkgs.zensical
           ];
           run = ''
             trap 'kill 0' EXIT
-            watchexec -w now.nix -w nix/types.nix -r now run generate-nix-docs &
+            watchexec -w now.nix -w now/types.nix -r now run generate-nix-docs &
             watchexec -w now.nix -w src -r now run generate-cli-docs &
             zensical serve -f docs/zensical.toml
           '';
@@ -258,7 +268,7 @@ One way is to combine `watch`/`watchexec`/`fswatch` and bash's `trap`, for examp
     ./.now/bar.nix
   ];
 
-  my-job =
+  jobs.my-job =
     { pkgs, ... }:
     let
       # Assuming `extraSteps = { step1 = args: ...; step2 = args: ...; };`

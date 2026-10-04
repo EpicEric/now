@@ -51,8 +51,8 @@ static LONG_ABOUT: &str = "now - Nix-based distributed command runner.
     --workflow .now/remote.nix
 
   \x1b[2m# Abort immediately on the first failing job,\x1b[0m
-  \x1b[2m# and don't checkout the current directory\x1b[0m
-  now run --abort --checkout none";
+  \x1b[2m# and run all jobs on the local machine\x1b[0m
+  now run --abort --local-only";
 
 #[derive(Parser)]
 #[command(name = "now", version, about, long_about = LONG_ABOUT)]

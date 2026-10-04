@@ -30,11 +30,11 @@ You can pass a `default = [ "foo" "bar" ];` attribute to specify which default j
   jobs = {
     my-default = {
       name = "My default job";
-      steps = [ { run = "echo 'Run with `now run` or `now run my-default`'"; } ]
+      steps = [ { run = "echo 'Run with `now run` or `now run my-default`'"; } ];
     };
     other = {
       name = "Another job run manually";
-      steps = [ { run = "echo 'Run with `now run other`'"; } ]
+      steps = [ { run = "echo 'Run with `now run other`'"; } ];
     };
   };
 }
@@ -43,6 +43,37 @@ You can pass a `default = [ "foo" "bar" ];` attribute to specify which default j
 As a module, it can be specified as an attribute set, or a function that receives the [`runner` argument](#runner) returning an attrset.
 
 A full definition with additional options can be found in [the "Workflow" section of the "Options" page](./options.md#job).
+
+### nixpkgs
+
+The `nixpkgs` option determines which nixpkgs the workflow is built with. It defaults to `<nixpkgs>`, and the resulting `pkgs` instance is passed as an argument to your job functions. You can set it to any expression that evaluates to a nixpkgs source tree:
+
+```nix
+{
+  nixpkgs = builtins.fetchTarball {
+    url = "https://github.com/NixOS/nixpkgs/archive/<revision>.tar.gz";
+    sha256 = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  };
+
+  jobs = {
+    # ...
+  };
+}
+```
+
+When using a flake, the flake input can be passed directly (see [the quick start](./quick-start.md)):
+
+```nix
+{
+  inherit nixpkgs;
+
+  jobs = {
+    # ...
+  };
+}
+```
+
+Job functions receive a `pkgs` instance for the current system by default, but [`runner.matrix`](#runnermatrix) variants can override it on a per-variant basis.
 
 ### runner
 
@@ -210,7 +241,7 @@ TOKEN="s3cr3t" now run
 `runner.steps.tempdir name` is a step that creates a temporary directory, sets the provided `name` environment variable with its path, and automatically removes it and its contents on teardown.
 
 ```nix
-(runner.steps.tempdir MY_TEMP_DIR)  # Equivalent to `export MY_TEMP_DIR=/tmp/tmp.XXXXXXXXXX`
+(runner.steps.tempdir "MY_TEMP_DIR")  # Equivalent to `export MY_TEMP_DIR=/tmp/tmp.XXXXXXXXXX`
 ```
 
 ##### runner.steps.upload
@@ -243,39 +274,39 @@ Both `runner.steps.build` and `runner.steps.upload` accept a few optional attrib
 
 - `nixConfig`: an attrset of Nix configuration options (in the same format as `nix.conf`), made available to `nix-store --realise` via the `NIX_CONFIG` environment variable. Useful for pointing the step at extra binary caches:
 
-  ```nix
-  (runner.steps.build {
-    deriv = pkgs.hello;
-    nixConfig = {
-      extra-substituters = [ "https://cache.eric.dev.br" ];
-      extra-trusted-public-keys = [ "cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=" ];
-    };
-  })
-  ```
+    ```nix
+    (runner.steps.build {
+      deriv = pkgs.hello;
+      nixConfig = {
+        extra-substituters = [ "https://cache.eric.dev.br" ];
+        extra-trusted-public-keys = [ "cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=" ];
+      };
+    })
+    ```
 
 - `env`: additional environment variables for the step, merged with (and overriding) any `NIX_CONFIG` derived from `nixConfig`:
 
-  ```nix
-  (runner.steps.build {
-    deriv = pkgs.hello;
-    env.SOME_VAR = "value";
-  })
-  ```
+    ```nix
+    (runner.steps.build {
+      deriv = pkgs.hello;
+      env.SOME_VAR = "value";
+    })
+    ```
 
 - `sandbox`: overrides for the step's [sandbox configuration](#sandboxing). `writableNixStore` and `networkAccess` default to `true` (required to build/upload at all) and can't usefully be turned off, but everything else (`enable`, `useHome`, `writableDirectory`) can be set as needed:
 
-  ```nix
-  (runner.steps.upload {
-    name = "my-data";
-    deriv = pkgs.runCommand "data" {} ''
-      echo "hello" > $out
-    '';
-    sandbox = {
-      enable = true;
-      useHome = true;
-    };
-  })
-  ```
+    ```nix
+    (runner.steps.upload {
+      name = "my-data";
+      deriv = pkgs.runCommand "data" {} ''
+        echo "hello" > $out
+      '';
+      sandbox = {
+        enable = true;
+        useHome = true;
+      };
+    })
+    ```
 
 ## Jobs
 
@@ -362,6 +393,61 @@ Jobs support Nix's `lib.mkIf` for conditional inclusion. When the condition is f
 }
 ```
 
+### Job dependencies
+
+Jobs can declare other jobs as prerequisites via the `needs` option, which takes a single job name or a list of job names:
+
+```nix
+{
+  jobs = {
+    lint = {
+      steps = [
+        { run = "cargo clippy"; }
+      ];
+    };
+    test = {
+      needs = [ "lint" ];
+      steps = [
+        { run = "cargo test"; }
+      ];
+    };
+    deploy = {
+      needs = "test";
+      steps = [
+        { run = "./deploy.sh"; }
+      ];
+    };
+  };
+}
+```
+
+Dependencies are transitive: running a job also runs its whole dependency chain, and jobs that don't depend on each other can run concurrently. A job that `needs` a matrix job waits for all of its variants.
+
+A job only counts as done when all of its steps succeed. If a job fails, the jobs that depend on it are not run, though unrelated jobs continue unless `--abort` is passed. Referring to an unknown job name in `needs`, or creating a dependency cycle, results in an error.
+
+!!! tip
+
+    Run `now list --tree` to print the workflow's dependency graph in the graphviz `.dot` format.
+
+### Timeouts
+
+Jobs can be given a time limit via the `timeout` option, which takes a duration like `"30m"` or `"1h"`:
+
+```nix
+{
+  jobs.test = {
+    timeout = "10m";
+    steps = [
+      { run = "cargo test"; }
+    ];
+  };
+}
+```
+
+A job that exceeds its timeout is marked as failed, but its teardown scripts still run. The timer only covers running the steps, not realizing them.
+
+To limit a whole `now run` invocation instead of a single job, use the `--timeout` option.
+
 ### Matrix
 
 The `jobs` attribute can contain a single job definition or, when using `runner.matrix`, a list of job variants. Each variant runs independently and may target different platforms or system features. See [`runner.matrix`](#runnermatrix) for details.
@@ -396,8 +482,8 @@ Environment variables can be set at both the job and step level via the `env` at
 Each value in `env` can be:
 
 - A plain string, set literally.
-- `runner.var "NAME"`: reads the value from the runtime environment; evaluates to an empty string if unset. Supports string interpolation.
-- `runner.secret "NAME"`: reads a secret from the runtime environment. The value is anonymized in logs: any occurrence in step or teardown output is replaced with `***`. Does not support interpolation.
+- `runner.var "NAME"`: reads the value from the runtime environment; an error is raised if unset. Supports string interpolation.
+- `runner.secret "NAME"`: reads a secret from the runtime environment; an error is raised if unset. The value is anonymized in logs: any occurrence in step or teardown output is replaced with `***`. Does not support interpolation.
 - `runner.download "name"`: resolves to the store path of a previously uploaded derivation. Does not support interpolation.
 
 ```nix
@@ -417,6 +503,8 @@ Each value in `env` can be:
 }
 ```
 
+Environment variables are read from the current shell, as well as via the optional `--env-file` argument, which reads a dotenv file.
+
 You can also set environment variables in a job dynamically, by specifying the `outputVar` argument to a step. The standard output of that step is stored in the provided environment variable, which is made available to subsequent steps:
 
 ```nix
@@ -435,7 +523,7 @@ You can also set environment variables in a job dynamically, by specifying the `
       '';
     }
   ];
-};
+}
 ```
 
 #### Anonymization behavior
@@ -476,4 +564,4 @@ You can configure it at both the job and step level. Step settings override job 
 
 `sandbox = true;` is equivalent to `sandbox = { enable = true; };` with all other options at their defaults.
 
-A full definition with sandboxing options can be found in [the "Sandbox" section of the "Options" page](./options.md#sandbox).
+A full definition with all sandboxing options can be found in [the "Sandbox" section of the "Options" page](./options.md#sandbox).

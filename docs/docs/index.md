@@ -76,7 +76,7 @@ icon: lucide/rectangle-ellipsis
             };
           }
         ];
-      }
+      };
 
       format = { pkgs, ... }: {
         needs = [ "lint" ];
@@ -161,7 +161,7 @@ icon: lucide/rectangle-ellipsis
               (runner.steps.upload {
                 name = "docker-image-${system}";
                 deriv = pkgs.dockerTools.buildLayeredImage {
-                  name = "docker.io/${runner.var "DOCKERHUB_USERNAME"}/hello";
+                  name = "hello";
                   tag = system;
                   config.Entrypoint = [ (lib.getExe pkgs.hello) ];
                 };
@@ -182,14 +182,20 @@ icon: lucide/rectangle-ellipsis
               }
               {
                 name = "Push image";
-                env.DOCKER_IMAGE = runner.download "docker-image-${system}";
-                run = "docker push $DOCKER_IMAGE";
+                env = {
+                  DOCKER_IMAGE = runner.download "docker-image-${system}";
+                  DOCKERHUB_USERNAME = runner.var "DOCKERHUB_USERNAME";
+                };
+                run = ''
+                  docker load --input "$DOCKER_IMAGE"
+                  docker tag "hello:${system}" "docker.io/$DOCKERHUB_USERNAME/hello:${system}"
+                  docker push "docker.io/$DOCKERHUB_USERNAME/hello:${system}"
+                '';
                 path = [ pkgs.docker ];
               }
             ];
           }
         );
-      };
     }
     ```
 

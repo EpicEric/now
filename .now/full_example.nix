@@ -215,7 +215,7 @@ in
                   GITHUB_USERNAME = runner.var "GITHUB_USERNAME";
                 };
                 run = ''
-                  echo "$GITHUB_TOKEN" | docker login --pasword-stdin --username $GITHUB_USERNAME ghcr.io
+                  echo "$GITHUB_TOKEN" | docker login --password-stdin --username $GITHUB_USERNAME ghcr.io
                 '';
                 teardown = ''
                   docker logout ghcr.io
@@ -231,7 +231,7 @@ in
                     map ({ image, tag }: "${image}:${tag}") (
                       lib.cartesianProduct {
                         image = [
-                          "${runner.vars.DOCKERHUB_USERNAME}/now"
+                          "docker.io/${runner.var "DOCKERHUB_USERNAME"}/now"
                           "ghcr.io/${runner.var "GITHUB_USERNAME"}/now"
                         ];
                         tag = [

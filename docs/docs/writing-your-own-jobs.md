@@ -12,10 +12,15 @@ This page fills in some gaps from the [Quick start](./quick-start.md) so you can
 
 ## Where does `now.nix` go?
 
-`now run` looks for a `now.nix` file in the current directory. `now init` creates it there. If your workflow lives somewhere else, point `now` at it with `--workflow`:
+`now run` looks for a `now.nix` file in the current directory, and, if none is found, keeps looking in parent directories. `now init` creates it in the current directory.
+
+If your workflow lives somewhere else, point `now` at it with `--workflow`. This accepts either the workflow file itself or a directory containing a `now.nix`:
 
 ```bash
 now run --workflow path/to/now.nix
+
+# --workflow also accepts a directory containing a now.nix:
+now run --workflow path/to/project
 ```
 
 Or if you're using a flake:

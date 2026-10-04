@@ -27,8 +27,8 @@ now - Nix-based distributed command runner.
     --workflow .now/remote.nix
 
   <span style='opacity:0.67'># Abort immediately on the first failing job,</span>
-  <span style='opacity:0.67'># and don&#39;t checkout the current directory</span>
-  now run --abort --checkout none
+  <span style='opacity:0.67'># and run all jobs on the local machine</span>
+  now run --abort --local-only
 
 <b><u>Usage:</u></b> <b>now</b> &lt;COMMAND&gt;
 
