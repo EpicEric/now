@@ -37,7 +37,7 @@ in
       pkgs.rustfmt
       pkgs.tack
       pkgs.zensical
-      pkgs.zig_0_16
+      pkgs.zig_0_17
     ];
   };
 }
