@@ -25,7 +25,6 @@ use std::{
 };
 
 use ahash::{HashMap, HashSet, HashSetExt};
-use color_eyre::Section;
 use futures::stream::FuturesUnordered;
 use petgraph::{matrix_graph::NodeIndex, visit::EdgeRef};
 use serde::{Deserialize, Serialize};
@@ -35,6 +34,7 @@ use tracing::{debug, info, instrument, warn};
 use crate::{
     builder::{NowBuilder, local::LocalBuilder},
     environment::{NowEnvironment, eval_id},
+    eyre::Section,
     graph::{DagNode, NowWorkflowGraph},
     job::{JobError, JobResult},
     serde::now_job_timeout,
@@ -334,20 +334,33 @@ impl NowEnvironment {
                             }
                             Err(error @
 (JobError::NoMatchingBuilders { .. } | JobError::NoMatchingRunners { .. })) if skip => {
-                                let skip_log = match error {
+                                match error {
                                     JobError::NoMatchingBuilders {
                                         job_name,
                                         build_system,
                                         required_system_features,
-                                    } => format!("No builders match for job '{job_name}' (buildSystem = {build_system}, requiredSystemFeatures = {required_system_features:?}); skipping."),
+                                    } => warn!(
+                                        runner,
+                                        is_remote = false,
+                                        job_name,
+                                        build_system,
+                                        ?required_system_features,
+                                        "No builders match for job '{job_name}' (buildSystem = {build_system}, requiredSystemFeatures = {required_system_features:?}); skipping."
+                                    ),
                                     JobError::NoMatchingRunners {
                                         job_name,
                                         host_system,
                                         required_system_features,
-                                    } => format!("No runners match for job '{job_name}' (hostSystem = {host_system}, requiredSystemFeatures = {required_system_features:?}); skipping."),
+                                    } => warn!(
+                                        runner,
+                                        is_remote = false,
+                                        job_name,
+                                        host_system,
+                                        ?required_system_features,
+                                        "No runners match for job '{job_name}' (hostSystem = {host_system}, requiredSystemFeatures = {required_system_features:?}); skipping."
+                                    ),
                                     JobError::Other(_) => unreachable!(),
                                 };
-                                warn!(runner, is_remote = false, "{}", skip_log);
                                 let mut nodes_to_skip: Vec<_> =
                                     vec![node_index].into_iter().collect();
                                 while !nodes_to_skip.is_empty() {

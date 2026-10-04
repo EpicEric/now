@@ -17,12 +17,14 @@
 use std::fmt::Display;
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
-use color_eyre::Section;
 use petgraph::{acyclic::Acyclic, algo::Cycle, dot, graph::NodeIndex, stable_graph::StableDiGraph};
 use serde::Serialize;
 use tracing::instrument;
 
-use crate::workflow::{NowJobContainer, NowJobsToRun, NowWorkflow};
+use crate::{
+    eyre::Section,
+    workflow::{NowJobContainer, NowJobsToRun, NowWorkflow},
+};
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) enum DagNode {

@@ -101,15 +101,11 @@ jobs:
         steps = [
           {
             run = ''
-              echo '#! /usr/bin/env nix'
-              echo '#! nix shell git+https://codeberg.org/now-runner/now#now --command /bin/sh'
-              echo 'now run format'
-            '';
-            outputVar = "PRE_COMMIT_HOOK";
-          }
-          {
-            run = ''
-              echo "$PRE_COMMIT_HOOK" > .git/hooks/pre-commit
+              cat > .git/hooks/pre-commit <<EOF
+              #! /usr/bin/env nix
+              #! nix shell git+https://codeberg.org/now-runner/now#now --command /bin/sh
+              now run format
+              EOF
               chmod +x .git/hooks/pre-commit
             '';
             sandbox.writableDirectory = true;
@@ -252,21 +248,9 @@ One way is to combine `watch`/`watchexec`/`fswatch` and bash's `trap`, for examp
 }
 ```
 
-## Separating workflows into multiple files
+## Re-usable workflows and steps
 
 ```nix
-let
-  pkgs = import <nixpkgs> { };
-
-  # Assuming `extraSteps = { step1 = args: ...; step2 = args: ...; };`
-  extraSteps = import (
-    pkgs.fetchFromCodeberg {
-      owner = "EpicEric9";
-      repo = "now-steps";
-      hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-    }
-  );
-in
 { runner, ... }: {
   # Workflows in `imports` get merged
   imports = [
@@ -274,15 +258,27 @@ in
     ./.now/bar.nix
   ];
 
-  my-job = { pkgs, ... }: {
-    steps = [
-      (extraSteps.step1 {
-        # ...
-      })
-      (extraSteps.step2 {
-        # ...
-      })
-    ];
-  };
+  my-job =
+    { pkgs, ... }:
+    let
+      # Assuming `extraSteps = { step1 = args: ...; step2 = args: ...; };`
+      extraSteps = import (
+        pkgs.fetchFromCodeberg {
+          owner = "EpicEric9";
+          repo = "now-steps";
+          hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+        }
+      );
+    in
+    {
+      steps = [
+        (extraSteps.step1 {
+          # ...
+        })
+        (extraSteps.step2 {
+          # ...
+        })
+      ];
+    };
 }
 ```

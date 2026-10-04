@@ -21,7 +21,7 @@ use std::{
 
 use clap::{CommandFactory, Parser};
 
-use crate::{command::Command, utils::parse_bool_from_bytes};
+use crate::{command::Command, eyre::install_tracing_hook, utils::parse_bool_from_bytes};
 
 fn force_ansi_colors_on_ci_runners(env_vars: &ahash::HashMap<OsString, OsString>) {
     for key in [
@@ -58,7 +58,13 @@ fn force_ansi_colors_on_ci_runners(env_vars: &ahash::HashMap<OsString, OsString>
 pub(crate) fn setup() -> color_eyre::Result<Command> {
     clap_complete::CompleteEnv::with_factory(Command::command).complete();
     let command = Command::parse();
-    color_eyre::install()?;
+    if let Command::Run { tracing, .. } = &command
+        && tracing.is_some()
+    {
+        install_tracing_hook()?;
+    } else {
+        color_eyre::install()?;
+    }
 
     let env_vars: ahash::HashMap<_, _> = std::env::vars_os().collect();
     force_ansi_colors_on_ci_runners(&env_vars);

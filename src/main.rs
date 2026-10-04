@@ -28,6 +28,7 @@ use tracing_subscriber::{EnvFilter, Layer, layer::SubscriberExt, util::Subscribe
 use crate::{
     command::Command,
     environment::NowEnvironment,
+    eyre::log_report,
     subscriber::NowSubscriberLayer,
     workflow::{NowJobsToRun, NowRunMode, NowWorkflowParams, WorkflowSource},
 };
@@ -35,6 +36,7 @@ use crate::{
 mod builder;
 mod command;
 mod environment;
+mod eyre;
 mod graph;
 mod job;
 mod project;
@@ -327,7 +329,7 @@ fn main() -> color_eyre::Result<()> {
                 NowJobsToRun::Default
             };
 
-            smol::block_on::<color_eyre::Result<()>>(async {
+            let result = smol::block_on::<color_eyre::Result<()>>(async {
                 let mut environment = NowEnvironment::builder()
                     .workflow(&workflow)
                     .ctrl_c(ctrl_c.clone())
@@ -351,7 +353,13 @@ fn main() -> color_eyre::Result<()> {
                         skip,
                     })
                     .await
-            })?;
+            });
+            if let Err(error) = result {
+                if tracing.is_some() {
+                    log_report(&error);
+                }
+                return Err(error);
+            }
         }
     }
     Ok(())

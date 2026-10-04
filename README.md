@@ -10,12 +10,12 @@ Check out <https://now.dev.br> for full documentation, including a quick start g
 
 You can find examples of how now is used in [`now.nix`](./now.nix) and [`.now/`](./.now).
 
+> [!Note]
+> LLM disclaimer: This repo includes minor contributions from large language models, all of them thoroughly reviewed by a human.
+
 ## Status
 
 Still a work-in-progress. Expect breaking changes between minor versions.
-
-> [!Note]
-> LLM disclaimer: This repo includes minor contributions from large language models, all of them thoroughly reviewed by a human.
 
 ## Features
 
