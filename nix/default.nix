@@ -36,7 +36,7 @@ in
       pkgs.rustc
       pkgs.rustfmt
       pkgs.zensical
-      pkgs.zig_0_16
+      pkgs.zig_0_17
     ];
   };
 }

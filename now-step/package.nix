@@ -16,7 +16,7 @@
 
 {
   lib,
-  zig_0_16,
+  zig_0_17,
   stdenv,
 
   optimizeLevel ? "ReleaseSafe",
@@ -36,7 +36,7 @@ stdenv.mkDerivation {
   strictDeps = true;
   __structuredAttrs = true;
 
-  nativeBuildInputs = [ zig_0_16 ];
+  nativeBuildInputs = [ zig_0_17 ];
 
   zigBuildFlags = [
     "-Doptimize=${optimizeLevel}"
