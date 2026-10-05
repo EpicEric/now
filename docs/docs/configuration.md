@@ -530,6 +530,45 @@ You can also set environment variables in a job dynamically, by specifying the `
 
 When a step or teardown script outputs a value that was set via `runner.secret`, the step binary replaces every occurrence of that value with `***` in logs. This applies regardless of where the value appears, whether that's inside a larger string, as part of a URL, etc.
 
+## Locking a step's `PATH`
+
+By default, a step's script inherits the calling shell's `PATH`, with the packages in `path` prepended to it. If you want a step to only be able to use the packages in `path`, set `pathLockdown` to `true`:
+
+```nix
+{
+  jobs.build-site = { pkgs, ... }: {
+    steps = [
+      {
+        path = [ pkgs.zola ];
+        pathLockdown = true;
+        run = "zola build";
+      }
+    ];
+  };
+}
+```
+
+You can also set `pathLockdown` at the job level to apply it to every step in the job, then override it at the step level:
+
+```nix
+{
+  jobs.build-site = { pkgs, ... }: {
+    pathLockdown = true;
+    steps = [
+      {
+        pathLockdown = false;
+        # We can now use the environment PATH's `git`
+        run = "git pull https://codeberg.org/now-runner/now && cd now";
+      }
+      {
+        path = [ pkgs.zola ];
+        run = "zola build";
+      }
+    ];
+  };
+}
+```
+
 ### Sandboxing
 
 Sandboxing restricts what a step can access on the runner, providing isolation similar to Nix build sandboxes. On Linux, [`bubblewrap`](https://github.com/containers/bubblewrap) is used; on macOS, `sandbox-exec` is used.

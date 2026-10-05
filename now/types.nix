@@ -125,6 +125,14 @@ let
               default = [ ];
               description = "Packages added to the PATH of the script.";
             };
+            pathLockdown = lib.mkOption {
+              type = types.nullOr types.bool;
+              default = null;
+              description = ''
+                Whether to lock the script's PATH down to only the packages in `path`,
+                ignoring the calling shell's PATH.
+              '';
+            };
             env = lib.mkOption {
               type = env { inherit evalId; };
               default = { };
@@ -240,6 +248,14 @@ let
               description = ''
                 Default sandbox configuration for the steps in this job.
                 See [the submodule documentation](#sandbox).
+              '';
+            };
+            pathLockdown = lib.mkOption {
+              type = types.bool;
+              default = false;
+              description = ''
+                Whether to lock the script's PATH down to only the packages in each
+                steps' `path`, ignoring the calling shell's PATH.
               '';
             };
             steps = lib.mkOption {

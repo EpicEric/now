@@ -105,6 +105,7 @@ let
       pkgs,
       jobEnv,
       jobSandbox,
+      jobPathLockdown,
       step,
       evalId,
     }:
@@ -133,6 +134,9 @@ let
           "environment variable '${name}' is not a valid POSIX variable name";
         value
       ) (jobEnv // step.env);
+
+      stepPathLockdown = if step.pathLockdown == null then jobPathLockdown else step.pathLockdown;
+      lockedPath = lib.escapeShellArg (lib.makeBinPath step.path);
 
       nowSandbox =
         if lib.isBool step.sandbox then
@@ -172,6 +176,7 @@ let
           checkPhase = "";
           runtimeInputs = step.path;
           text = ''
+            ${lib.optionalString stepPathLockdown "export PATH=${lockedPath}"}
             ${lib.getExe pkgs.now-step} ${
               if step."__nowUpload_${evalId}" == null && step.outputVar == null then "" else "--preserve-stdout"
             } ${
@@ -196,6 +201,7 @@ let
             checkPhase = "";
             runtimeInputs = step.path;
             text = ''
+              ${lib.optionalString stepPathLockdown "export PATH=${lockedPath}"}
               ${lib.getExe pkgs.now-step} ${
                 pkgs.callPackage ./sandbox.nix {
                   inherit nowSandbox;
@@ -222,6 +228,7 @@ let
       pkgs,
       jobEnv,
       jobSandbox,
+      jobPathLockdown,
       step,
       evalId,
     }:
@@ -245,6 +252,7 @@ let
           pkgs
           jobEnv
           jobSandbox
+          jobPathLockdown
           evalId
           ;
         step = step';
@@ -289,6 +297,7 @@ let
                   placeholder_name = "${jobKey}-${toString i}";
                   jobEnv = job.env;
                   jobSandbox = job.sandbox;
+                  jobPathLockdown = job.pathLockdown;
                   inherit evalId;
                 }
               ) job.steps;

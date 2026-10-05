@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Add `pathLockdown` to jobs/steps
+
 ## 0.5.0 (2026-10-04)
 
 ### Breaking changes
