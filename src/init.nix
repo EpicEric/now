@@ -11,7 +11,7 @@
             python3 -c 'print("Hello from now!")'
           '';
           path = [
-            pkgs.python313
+            pkgs.python3
           ];
         }
       ];

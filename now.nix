@@ -257,6 +257,7 @@ in
         "test-dry-run"
         "test-env"
         "test-error"
+        "test-fhs"
         "test-flake"
         "test-glob"
         "test-jobs"
@@ -431,6 +432,25 @@ in
 
             if ($output | str contains "This shouldn't be printed at all!") {
               print $"(ansi red_bold)ERROR:(ansi reset) Steps after a failed step should not run"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-fhs = {
+      name = "Test FHS environment";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            now run --workflow .now/tests/fhs.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
               exit 1
             }
 

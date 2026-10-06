@@ -150,7 +150,7 @@ extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+
                     python3 -c 'print("Hello from now!")'
                   '';
                   path = [
-                    pkgs.python313
+                    pkgs.python3
                   ];
                 }
               ];

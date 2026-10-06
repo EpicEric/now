@@ -204,6 +204,28 @@ null
 
 
 
+### job\.pathLockdown
+
+
+
+Whether to lock the script’s PATH down to only the packages in each
+steps’ ` path `, ignoring the calling shell’s PATH\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+
+
 ### job\.sandbox
 
 
@@ -409,6 +431,28 @@ list of package
 
 ```nix
 [ ]
+```
+
+
+
+### step\.pathLockdown
+
+
+
+Whether to lock the script’s PATH down to only the packages in ` path `,
+ignoring the calling shell’s PATH\.
+
+
+
+*Type:*
+null or boolean
+
+
+
+*Default:*
+
+```nix
+null
 ```
 
 

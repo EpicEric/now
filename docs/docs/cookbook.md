@@ -292,3 +292,44 @@ in
     };
 }
 ```
+
+## Running steps in an FHS-compatible environment
+
+```nix
+{
+  default = "fhs";
+
+  jobs.fhs =
+    { pkgs, ... }:
+    let
+      fhsEnv =
+        pkgs.buildFHSEnv {
+          name = "fhs-bash";
+          targetPkgs = pkgs: [
+            pkgs.gtk3
+            pkgs.openssl
+            pkgs.stdenv.cc.cc.lib
+            pkgs.zlib
+          ];
+          runScript = "bash";
+          # Required to find the entrypoint of the FHS environment
+          meta.mainProgram = "fhs-bash";
+        };
+    in
+    {
+      steps = [
+        {
+          shell = fhsEnv;
+          path = [
+            pkgs.wget
+          ];
+          run = ''
+            wget -o proprietary-binary https://example.com/downloads/latest-linux-amd64
+            chmod +x proprietary-binary
+            ./proprietary-binary
+          '';
+        }
+      ];
+    };
+}
+```
