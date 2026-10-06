@@ -266,6 +266,7 @@ in
         "test-nixpkgs"
         "test-overlay"
         "test-path-lockdown"
+        "test-script"
         "test-skip"
         "test-tempdir"
         "test-timeout"
@@ -612,6 +613,25 @@ in
           shell = pkgs.nushell;
           run = ''
             now run --workflow .now/tests/path-lockdown.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-script = {
+      name = "Test script import";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            now run --workflow .now/tests/script.nix
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
               exit 1

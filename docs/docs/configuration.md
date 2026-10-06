@@ -456,6 +456,8 @@ The `jobs` attribute can contain a single job definition or, when using `runner.
 
 A step is a single, atomic task that’s run as part of a job.
 
+The main part of a step is `run`, which executes the provided script (either inline or a path to a script) in the provided `shell` (by default, bash). A similar `teardown` parameter lets you run scripts in reverse order, mainly for cleanup.
+
 A full definition with additional options can be found in [the "Step" section of the "Options" page](./options.md#step).
 
 ### Conditional steps

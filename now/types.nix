@@ -107,12 +107,12 @@ let
               description = "Arguments passed to the shell used in this step's scripts.";
             };
             run = lib.mkOption {
-              type = types.str;
+              type = types.coercedTo types.path builtins.readFile types.lines;
               default = "";
               description = "Shell script to run on this step.";
             };
             teardown = lib.mkOption {
-              type = types.nullOr types.str;
+              type = types.nullOr (types.coercedTo types.path builtins.readFile types.lines);
               default = null;
               description = ''
                 Shell script to run when tearing down this step.

@@ -466,7 +466,7 @@ Shell script to run on this step\.
 
 
 *Type:*
-string
+strings concatenated with “\\n” or absolute path convertible to it
 
 
 
@@ -555,7 +555,7 @@ Jobs always run these, after every step concludes, in reverse order\.
 
 
 *Type:*
-null or string
+null or (strings concatenated with “\\n” or absolute path convertible to it)
 
 
 

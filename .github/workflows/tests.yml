@@ -27,6 +27,8 @@ jobs:
           chmod 600 ~/.ssh/authorized_keys
           ssh-keyscan localhost | tee -a ~/.ssh/known_hosts
           ssh ssh://$USER@localhost true
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: Run now
         run: |
           export BUILDERS="ssh://$USER@localhost - $HOME/.ssh/id_ed25519 1 1 now now -"
