@@ -14,12 +14,15 @@ nav = [
     "writing-your-own-jobs.md",
     { "Configuration" = "configuration.md" },
     { "Builders" = "builders.md" },
-  ]},
+  ] },
+  { "Ecosystem" = [
+    "services.md",
+  ] },
   { "Reference" = [
     "cookbook.md",
     { "Command line" = "cli.md" },
     { "Options" = "options.md" },
-  ]},
+  ] },
 ]
 extra_css = [
   "stylesheets/extra.css",

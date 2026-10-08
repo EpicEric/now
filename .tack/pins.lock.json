@@ -1,4 +1,12 @@
 {
+  "adios": {
+    "type": "github",
+    "owner": "llakala",
+    "repo": "lladios",
+    "rev": "4a5e900239bc2248cd7620954090df5b4fe52b4b",
+    "narHash": "sha256-GhUB1h01JtCY9xgqFXch5TDTQMwNqryJuwJa+9A8zBI=",
+    "lastModified": 1790988501
+  },
   "nixpkgs": {
     "type": "github",
     "owner": "NixOS",
@@ -6,5 +14,13 @@
     "rev": "c9fe7d12cd78d1adcd12dd15e24432dde5b155a0",
     "narHash": "sha256-5AIVFLRcx8YAwbFTVPTs7YhwJH7JyHfAQsvXmpovcXI=",
     "lastModified": 1790769526
+  },
+  "now-services": {
+    "type": "git",
+    "url": "https://codeberg.org/now-runner/now-services.git",
+    "ref": "HEAD",
+    "rev": "953cd4ea3e90ebdcb8bff662df75ffef10a57ad8",
+    "narHash": "sha256-prmMG0Rkmbj6swB+NoH2P5OHmw1B61iHaw1osK8NkTo=",
+    "lastModified": 1791499187
   }
 }

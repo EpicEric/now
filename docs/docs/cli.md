@@ -225,4 +225,3 @@ Run one or more jobs
   <b>-h</b>, <b>--help</b>
           Print help (see a summary with &#39;-h&#39;)
 </pre>
-

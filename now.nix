@@ -24,6 +24,7 @@ in
             trap 'kill 0' EXIT INT TERM
             watchexec -w now.nix -w now/types.nix -r now run generate-nix-docs &
             watchexec -w now.nix -w src -r now run generate-cli-docs &
+            watchexec -w now.nix -w .tack/pins.lock.json -r now run generate-now-services-docs &
             zensical serve -f docs/zensical.toml
           '';
         }
@@ -35,6 +36,7 @@ in
       needs = [
         "generate-nix-docs"
         "generate-cli-docs"
+        "generate-now-services-docs"
       ];
       sandbox.enable = true;
       steps = [
@@ -142,33 +144,34 @@ in
             run = ''
               set -euo pipefail
 
-              echo "---" > $OUT
-              echo "icon: lucide/square-menu" >> $OUT
-              echo "---" >> $OUT
-              echo "" >> $OUT
-              echo "# Options reference" >> $OUT
-              echo "" >> $OUT
-              echo "!!! note" >> $OUT
-              echo "" >> $OUT
-              echo "    This documentation is auto-generated from the workflow definitions." >> $OUT
-              echo "" >> $OUT
-              echo "## Workflow" >> $OUT
-              echo "" >> $OUT
-              echo "A workflow is the main definition of your now commands. \
-              It allows you to specify multiple scripts (jobs) in a single source of truth via Nix." >> $OUT
-              echo "" >> $OUT
-              cat $DOCS_WORKFLOW | sed 's/## /### /g' >> $OUT
-              echo "## Job" >> $OUT
-              echo "" >> $OUT
-              cat $DOCS_JOB | sed 's/## /### /g' >> $OUT
-              echo "" >> $OUT
-              echo "## Step" >> $OUT
-              echo "" >> $OUT
-              cat $DOCS_STEP | sed 's/## /### /g' >> $OUT
-              echo "" >> $OUT
-              echo "## Sandbox" >> $OUT
-              echo "" >> $OUT
-              cat $DOCS_SANDBOX | sed 's/## /### /g' >> $OUT
+              cat > $OUT << EOF
+              ---
+              icon: lucide/square-menu
+              ---
+
+              # Options reference
+
+              !!! note
+
+                  This documentation is auto-generated from the workflow definitions.
+
+              ## Workflow
+
+              A workflow is the main definition of your now commands. It allows you to specify multiple scripts (jobs) in a single source of truth via Nix.
+
+              $(cat $DOCS_WORKFLOW | sed 's/## /### /g')
+              ## Job
+
+              $(cat $DOCS_JOB | sed 's/## /### /g')
+
+              ## Step
+
+              $(cat $DOCS_STEP | sed 's/## /### /g')
+
+              ## Sandbox
+
+              $(cat $DOCS_SANDBOX | sed 's/## /### /g')
+              EOF
 
               echo "Updated Nix docs."
             '';
@@ -208,38 +211,190 @@ in
           run = ''
             set -euo pipefail
 
-            echo "---" > $OUT
-            echo "icon: lucide/terminal" >> $OUT
-            echo "---" >> $OUT
-            echo "" >> $OUT
-            echo "# CLI reference" >> $OUT
-            echo "" >> $OUT
-            echo "!!! note" >> $OUT
-            echo "" >> $OUT
-            echo "    This documentation is auto-generated from the command line." >> $OUT
-            echo "" >> $OUT
-            echo "## now" >> $OUT
-            echo "" >> $OUT
-            cat $DOCS_CLI/index.html >> $OUT
-            echo "" >> $OUT
-            echo "## now init" >> $OUT
-            echo "" >> $OUT
-            cat $DOCS_CLI/init.html >> $OUT
-            echo "" >> $OUT
-            echo "## now list" >> $OUT
-            echo "" >> $OUT
-            cat $DOCS_CLI/list.html >> $OUT
-            echo "" >> $OUT
-            echo "## now eval" >> $OUT
-            echo "" >> $OUT
-            cat $DOCS_CLI/eval.html >> $OUT
-            echo "" >> $OUT
-            echo "## now run" >> $OUT
-            echo "" >> $OUT
-            cat $DOCS_CLI/run.html >> $OUT
-            echo "" >> $OUT
+            cat > $OUT << EOF
+            ---
+            icon: lucide/terminal
+            ---
+
+            # CLI reference
+
+            !!! note
+
+                This documentation is auto-generated from the command line.
+
+            ## now
+
+            $(cat $DOCS_CLI/index.html)
+
+            ## now init
+
+            $(cat $DOCS_CLI/init.html)
+
+            ## now list
+
+            $(cat $DOCS_CLI/list.html)
+
+            ## now eval
+
+            $(cat $DOCS_CLI/eval.html)
+
+            ## now run
+
+            $(cat $DOCS_CLI/run.html)
+            EOF
 
             echo "Updated CLI docs."
+          '';
+        }
+      ];
+    };
+
+    generate-now-services-docs = {
+      name = "Generate now-services docs";
+      sandbox.enable = true;
+      steps = [
+        (runner.steps.upload {
+          name = "docs-now-services";
+          deriv =
+            let
+              inherit (builtins) concatStringsSep;
+              inherit (pkgs.lib) attrsToList generators;
+
+              adios = import inputs.adios;
+              services = adios.lib.importModules {
+                directory = "${inputs.now-services}/services";
+                args = adios;
+              };
+
+              mkOption = { name, value }: ''
+                #### ${name}
+
+                ${value.description or ""}
+
+                ${if value ? type then "_Type:_ `${value.type.name}`" else ""}
+
+                ${
+                  if value ? default then
+                    ''
+                      _Default:_
+
+                      ```nix
+                      ${generators.toPretty {
+                        multiline = true;
+                        allowPrettyValues = true;
+                      } value.default}
+                      ```
+                    ''
+                  else
+                    ""
+                }
+              '';
+              mkService = { name, value }: ''
+                ### ${name}
+
+                ${value.meta.description or ""}
+
+                Available options:
+
+                ${concatStringsSep "\n\n" (map mkOption (attrsToList value.options))}
+              '';
+              text = concatStringsSep "\n\n" (map mkService (attrsToList services));
+            in
+            pkgs.runCommand "docs-now-services" { inherit text; } ''
+              echo "$text" > $out
+            '';
+        })
+        {
+          sandbox.writableDirectory = true;
+          env = {
+            DOCS_NOW_SERVICES = runner.download "docs-now-services";
+            OUT = "docs/docs/services.md";
+          };
+          run = ''
+            set -euo pipefail
+
+            cat > $OUT << EOF
+            ---
+            icon: lucide/circle-pile
+            ---
+
+            # now-services
+
+            [\`now-services\`](https://codeberg.org/now-runner/now-services) is a pluggable collection of steps that let you run development services with \`now\`.
+
+            ## Installation
+
+            === "tack"
+
+                \`\`\`bash
+                tack add now-services git+https://codeberg.org/now-runner/now-services.git --fetch
+                \`\`\`
+
+                \`\`\`nix
+                # now.nix
+                let
+                  inputs = import ./.tack;
+                  services = import inputs.now-services;
+                in
+                {
+                  jobs.my_job.steps = [
+                    (services.postgresql { })
+                  ];
+                }
+                \`\`\`
+
+            === "npins"
+
+                \`\`\`bash
+                npins add git https://codeberg.org/now-runner/now-services.git
+                \`\`\`
+
+                \`\`\`nix
+                # now.nix
+                let
+                  sources = import ./npins;
+                  services = import sources.now-services;
+                in
+                {
+                  jobs.my_job.steps = [
+                    (services.postgresql { })
+                  ];
+                }
+                \`\`\`
+
+            === "Nix flake"
+
+                \`\`\`nix
+                # flake.nix
+                {
+                  inputs = {
+                    # ...
+                    now-services.url = "git+https://codeberg.org/now-runner/now-services.git";
+                  };
+
+                  outputs =
+                    {
+                      now-services,
+                      ...
+                    }@inputs:
+                    {
+                      now.jobs.my_job.steps = [
+                        (now-services.postgresql { })
+                      ];
+                    };
+                }
+                \`\`\`
+
+            ## Available services
+
+            !!! note
+
+                This documentation is auto-generated.
+
+            $(cat $DOCS_NOW_SERVICES)
+            EOF
+
+            echo "Updated now-services docs."
           '';
         }
       ];

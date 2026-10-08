@@ -35,6 +35,7 @@ in
       pkgs.rust-analyzer
       pkgs.rustc
       pkgs.rustfmt
+      pkgs.tack
       pkgs.zensical
       pkgs.zig_0_16
     ];

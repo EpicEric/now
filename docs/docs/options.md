@@ -92,8 +92,6 @@ path to nixpkgs
 ```nix
 "<nixpkgs>"
 ```
-
-
 ## Job
 
 ### job
@@ -334,8 +332,6 @@ null or string
 null
 ```
 
-
-
 ## Step
 
 ### step
@@ -565,8 +561,6 @@ null or (strings concatenated with “\\n” or absolute path convertible to it)
 null
 ```
 
-
-
 ## Sandbox
 
 ### sandbox
@@ -714,5 +708,3 @@ boolean
 ```nix
 false
 ```
-
-

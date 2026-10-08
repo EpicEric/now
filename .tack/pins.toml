@@ -1,3 +1,14 @@
+[tack]
+recomposable = true
+
 [inputs.nixpkgs]
 url = "github:NixOS/nixpkgs/nixpkgs-unstable"
+type = "fetch"
+
+[inputs.now-services]
+url = "git+https://codeberg.org/now-runner/now-services.git"
+type = "fetch"
+
+[inputs.adios]
+url = "github:llakala/lladios"
 type = "fetch"
