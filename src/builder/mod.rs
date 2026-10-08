@@ -38,12 +38,25 @@ pub(crate) mod local;
 pub(crate) mod remote;
 
 pub(crate) trait CheckoutTask {
-    fn run<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = color_eyre::Result<()>> + 'a>>;
+    fn run<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = color_eyre::Result<PathBuf>> + 'a>>;
+}
+
+pub(crate) struct CurrentDirectoryCheckoutTask {
+    pub(crate) current_directory: PathBuf,
+}
+
+impl CheckoutTask for CurrentDirectoryCheckoutTask {
+    fn run<'a>(
+        &'a mut self,
+    ) -> std::pin::Pin<Box<dyn Future<Output = color_eyre::Result<PathBuf>> + 'a>> {
+        Box::pin(async { Ok(self.current_directory.clone()) })
+    }
 }
 
 struct CommandCheckoutTask {
-    pub(crate) builder: String,
-    pub(crate) child: Child,
+    builder: String,
+    directory: PathBuf,
+    child: Child,
 }
 
 impl Drop for CommandCheckoutTask {
@@ -55,11 +68,11 @@ impl Drop for CommandCheckoutTask {
 impl CheckoutTask for CommandCheckoutTask {
     fn run<'a>(
         &'a mut self,
-    ) -> std::pin::Pin<Box<dyn Future<Output = color_eyre::Result<()>> + 'a>> {
+    ) -> std::pin::Pin<Box<dyn Future<Output = color_eyre::Result<PathBuf>> + 'a>> {
         Box::pin(async {
             let output = wait_for_output(&mut self.child, None).await?;
             if output.status.success() {
-                Ok(())
+                Ok(self.directory.clone())
             } else {
                 write_output_to_stderr(&output)?;
                 Err(color_eyre::eyre::eyre!(
@@ -71,26 +84,27 @@ impl CheckoutTask for CommandCheckoutTask {
     }
 }
 
-struct RsyncCheckoutTask {
+struct PipedCommandCheckoutTask {
     builder: String,
+    directory: PathBuf,
     child: Child,
     stdin_future: Pin<Box<dyn Future<Output = color_eyre::Result<()>>>>,
 }
 
-impl Drop for RsyncCheckoutTask {
+impl Drop for PipedCommandCheckoutTask {
     fn drop(&mut self) {
         let _ = self.child.kill();
     }
 }
 
-impl CheckoutTask for RsyncCheckoutTask {
-    fn run<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = color_eyre::Result<()>> + 'a>> {
+impl CheckoutTask for PipedCommandCheckoutTask {
+    fn run<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = color_eyre::Result<PathBuf>> + 'a>> {
         Box::pin(
             smol::future::zip(
                 async {
                     let output = wait_for_output(&mut self.child, None).await?;
                     if output.status.success() {
-                        Ok(())
+                        Ok(self.directory.clone())
                     } else {
                         write_output_to_stderr(&output)?;
                         Err(color_eyre::eyre::eyre!(
@@ -101,7 +115,10 @@ impl CheckoutTask for RsyncCheckoutTask {
                 },
                 &mut self.stdin_future,
             )
-            .map(|(first, second)| first.and(second)),
+            .map(|(first, second)| {
+                second?;
+                first
+            }),
         )
     }
 }
@@ -116,10 +133,7 @@ pub(crate) trait NowBuilder {
 
     fn is_remote(&self) -> bool;
 
-    fn checkout(
-        &self,
-        checkout: NowCheckout,
-    ) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)>;
+    fn checkout(&self, checkout: NowCheckout) -> color_eyre::Result<Box<dyn CheckoutTask>>;
 
     async fn copy_derivations(
         &self,

@@ -38,7 +38,10 @@ use smol::{
 use tracing::{info, instrument, warn};
 
 use crate::{
-    builder::local::{BuilderGuard, LocalBuilder, RunnerGuard},
+    builder::{
+        CurrentDirectoryCheckoutTask,
+        local::{BuilderGuard, LocalBuilder, RunnerGuard},
+    },
     environment::NowEnvironment,
     workflow::{NowJob, NowStepEnvVar},
 };
@@ -238,25 +241,25 @@ impl NowEnvironment {
             );
         }
 
-        let (mut checkout_child, cwdir) = if dry_run {
-            (None, PathBuf::from("/dummy"))
+        let mut checkout_child = if dry_run {
+            Box::new(CurrentDirectoryCheckoutTask {
+                current_directory: PathBuf::from("/dummy"),
+            })
         } else {
             runner.checkout(job.checkout)?
         };
+
+        let cwdir = smol::future::or(checkout_child.run(), async {
+            let _ = receiver.recv().await;
+            Err(color_eyre::eyre::eyre!("Runner aborted"))
+        })
+        .await?;
 
         let mut output_vars: HashMap<OsString, OsString> = HashMap::new();
 
         let mut teardown_stack = Vec::new();
 
         let steps_fut = async {
-            if let Some(checkout_child) = checkout_child.as_mut() {
-                smol::future::or(checkout_child.run(), async {
-                    let _ = receiver.recv().await;
-                    Err(color_eyre::eyre::eyre!("Runner aborted"))
-                })
-                .await?;
-            }
-
             if !dry_run {
                 runner
                     .copy_derivations(&job.name, &derivations, receiver)
@@ -540,7 +543,6 @@ impl NowEnvironment {
             }
         }
 
-        drop(checkout_child.take());
         let result = result.and(if dry_run {
             Ok(())
         } else {

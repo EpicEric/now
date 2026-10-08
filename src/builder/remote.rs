@@ -35,7 +35,7 @@ use smol::{
 };
 
 use crate::{
-    builder::{CheckoutTask, CommandCheckoutTask, NixConfig, NowBuilder, RsyncCheckoutTask},
+    builder::{CheckoutTask, CommandCheckoutTask, NixConfig, NowBuilder, PipedCommandCheckoutTask},
     utils::{get_random_string, wait_for_output, write_output_to_stderr},
     workflow::NowCheckout,
 };
@@ -311,10 +311,7 @@ impl NowBuilder for RemoteBuilder {
         true
     }
 
-    fn checkout(
-        &self,
-        checkout: NowCheckout,
-    ) -> color_eyre::Result<(Option<Box<dyn CheckoutTask>>, PathBuf)> {
+    fn checkout(&self, checkout: NowCheckout) -> color_eyre::Result<Box<dyn CheckoutTask>> {
         match checkout {
             NowCheckout::Default | NowCheckout::Clone => {
                 let tmpdir = format!("/tmp/now-{}", get_random_string(10));
@@ -362,14 +359,12 @@ impl NowBuilder for RemoteBuilder {
                     Ok(stdin.flush().await?)
                 });
 
-                Ok((
-                    Some(Box::new(RsyncCheckoutTask {
-                        builder: self.get_name(),
-                        child,
-                        stdin_future,
-                    })),
-                    PathBuf::from(tmpdir),
-                ))
+                Ok(Box::new(PipedCommandCheckoutTask {
+                    builder: self.get_name(),
+                    directory: PathBuf::from(tmpdir),
+                    child,
+                    stdin_future,
+                }))
             }
             NowCheckout::All | NowCheckout::CloneAll => {
                 let tmpdir = format!("/tmp/now-{}", get_random_string(10));
@@ -397,13 +392,11 @@ impl NowBuilder for RemoteBuilder {
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
-                Ok((
-                    Some(Box::new(CommandCheckoutTask {
-                        builder: self.get_name(),
-                        child: command.spawn()?,
-                    })),
-                    PathBuf::from(tmpdir),
-                ))
+                Ok(Box::new(CommandCheckoutTask {
+                    builder: self.get_name(),
+                    directory: PathBuf::from(tmpdir),
+                    child: command.spawn()?,
+                }))
             }
             NowCheckout::None => {
                 let tmpdir = format!("/tmp/now-{}", get_random_string(10));
@@ -418,13 +411,11 @@ impl NowBuilder for RemoteBuilder {
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
-                Ok((
-                    Some(Box::new(CommandCheckoutTask {
-                        builder: self.get_name(),
-                        child: command.spawn()?,
-                    })),
-                    PathBuf::from(tmpdir),
-                ))
+                Ok(Box::new(CommandCheckoutTask {
+                    builder: self.get_name(),
+                    directory: PathBuf::from(tmpdir),
+                    child: command.spawn()?,
+                }))
             }
         }
     }
