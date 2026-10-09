@@ -20,10 +20,12 @@
 }:
 
 let
+  inputs = import ../.tack;
+
   overlay =
     final: prev:
     let
-      pkgs = import (import ../.tack).nixpkgs { inherit system; };
+      pkgs = import inputs.nixpkgs { inherit system; };
     in
     {
       now-step =
@@ -33,280 +35,17 @@ let
           prev.now-step or (final.callPackage ../now-step/package.nix { });
     };
 
-  normalizeJob =
+  evalModule =
     {
-      job,
-      evalId,
-      pkgs,
+      lib,
       specialArgs ? { },
-    }:
-    let
-      inherit (pkgs) lib;
-      types = import ./types.nix { inherit lib; };
-    in
-    (pkgs.lib.evalModules {
-      modules = [
-        {
-          options.__job = pkgs.lib.mkOption {
-            type = types.job {
-              inherit evalId specialArgs pkgs;
-            };
-          };
-        }
-        { __job = job; }
-      ];
-    }).config.__job;
-
-  mapMaybeList =
-    {
-      fn,
-      pkgs,
-      job',
-      evalId,
-    }:
-    let
-      pkgs' = pkgs;
-      normalize =
-        {
-          job,
-          pkgs ? pkgs',
-          specialArgs ? { },
-          requiredSystemFeatures ? [ ],
-        }:
-        fn {
-          job = normalizeJob {
-            inherit
-              job
-              evalId
-              pkgs
-              specialArgs
-              ;
-          };
-          inherit requiredSystemFeatures;
-          inherit pkgs;
-        };
-    in
-    if builtins.isList job' then
-      map (
-        e:
-        normalize {
-          inherit (e) job;
-          pkgs = if e ? pkgs then e.pkgs.extend overlay else pkgs;
-          specialArgs = e.specialArgs or { };
-          requiredSystemFeatures = e.requiredSystemFeatures or [ ];
-        }
-      ) job'
-    else
-      normalize { job = job'; };
-
-  stepFnInner =
-    {
-      placeholder_name,
-      pkgs,
-      jobEnv,
-      jobSandbox,
-      jobPathLockdown,
-      step,
-      evalId,
-    }:
-    let
-      inherit (pkgs)
-        lib
-        writeShellApplication
-        writeTextFile
-        ;
-      script =
-        text:
-        writeTextFile {
-          name = "now-step-script";
-          text = ''
-            #! ${lib.getExe (if step.shell == null then pkgs.bash else step.shell)} ${
-              lib.optionalString (step.shellArgs != null) (lib.escapeShellArgs step.shellArgs)
-            }
-            ${text}
-          '';
-          executable = true;
-        };
-
-      env = builtins.mapAttrs (
-        name: value:
-        assert lib.assertMsg (lib.isValidPosixName name)
-          "environment variable '${name}' is not a valid POSIX variable name";
-        value
-      ) (jobEnv // step.env);
-
-      stepPathLockdown = if step.pathLockdown == null then jobPathLockdown else step.pathLockdown;
-      lockedPath = lib.escapeShellArg (lib.makeBinPath step.path);
-
-      nowSandbox =
-        if lib.isBool step.sandbox then
-          (if lib.isBool jobSandbox then { } else jobSandbox) // { enable = step.sandbox; }
-        else
-          (if lib.isBool jobSandbox then { enable = jobSandbox; } else jobSandbox) // step.sandbox;
-
-      runnerVarsRun = map builtins.head (
-        builtins.filter builtins.isList (builtins.split "@@__nowVar_${evalId}_([^@]+)@@" step.run)
-      );
-
-      runnerVarsTeardown =
-        if step.teardown == null then
-          [ ]
-        else
-          map builtins.head (
-            builtins.filter builtins.isList (builtins.split "@@__nowVar_${evalId}_([^@]+)@@" step.teardown)
-          );
-    in
-    assert lib.assertMsg (runnerVarsRun == [ ])
-      "${
-        lib.concatStringsSep ", " (map (var: "`runner.var \"${var}\"`") runnerVarsRun)
-      } cannot be used directly in run script";
-    assert lib.assertMsg (runnerVarsTeardown == [ ])
-      "${
-        lib.concatStringsSep ", " (map (var: "`runner.var \"${var}\"`") runnerVarsTeardown)
-      } cannot be used directly in teardown script";
-    assert lib.assertMsg (
-      step.outputVar == null || lib.isValidPosixName step.outputVar
-    ) "environment variable '${step.outputVar}' is not a valid POSIX variable name";
-    {
-      name = if (step.name != null && step.name != "") then step.name else placeholder_name;
-
-      runDrv =
-        (writeShellApplication {
-          name = "now-step";
-          checkPhase = "";
-          runtimeInputs = step.path;
-          text = ''
-            ${lib.optionalString stepPathLockdown "export PATH=${lockedPath}"}
-            ${lib.getExe pkgs.now-step} ${
-              if step."__nowUpload_${evalId}" == null && step.outputVar == null then "" else "--preserve-stdout"
-            } ${
-              pkgs.callPackage ./sandbox.nix {
-                inherit nowSandbox;
-                nowScript = script step.run;
-              }
-            } ${
-              lib.escapeShellArgs (
-                builtins.attrNames (lib.filterAttrs (_: value: value ? "__nowSecret_${evalId}") env)
-              )
-            }
-          '';
-        }).drvPath;
-
-      teardownDrv =
-        if step.teardown == null then
-          null
-        else
-          (writeShellApplication {
-            name = "now-step";
-            checkPhase = "";
-            runtimeInputs = step.path;
-            text = ''
-              ${lib.optionalString stepPathLockdown "export PATH=${lockedPath}"}
-              ${lib.getExe pkgs.now-step} ${
-                pkgs.callPackage ./sandbox.nix {
-                  inherit nowSandbox;
-                  nowScript = script step.teardown;
-                }
-              } ${
-                lib.escapeShellArgs (
-                  builtins.attrNames (lib.filterAttrs (_: value: value ? "__nowSecret_${evalId}") env)
-                )
-              }
-            '';
-          }).drvPath;
-
-      inherit env;
-
-      ${"__nowUpload_${evalId}"} = step."__nowUpload_${evalId}";
-
-      inherit (step) outputVar;
-    };
-
-  stepFn =
-    {
-      placeholder_name,
-      pkgs,
-      jobEnv,
-      jobSandbox,
-      jobPathLockdown,
-      step,
-      evalId,
-    }:
-    if step == null then
-      null
-    else
-      let
-        inherit (pkgs) lib;
-        types = import ./types.nix { inherit lib; };
-        step' =
-          (lib.evalModules {
-            modules = [
-              { options.__step = lib.mkOption { type = types.step { inherit evalId pkgs; }; }; }
-              { __step = step; }
-            ];
-          }).config.__step;
-      in
-      stepFnInner {
-        inherit
-          placeholder_name
-          pkgs
-          jobEnv
-          jobSandbox
-          jobPathLockdown
-          evalId
-          ;
-        step = step';
-      };
-
-  nowConfig =
-    {
-      evalId,
-      pkgs,
       module,
+      args,
     }:
     let
-      inherit (pkgs) lib;
+      evaledArgs = if lib.isFunction args then args (specialArgs // { inherit lib; }) else args;
     in
-    module.config
-    // {
-      default =
-        if lib.isString module.config.default then [ module.config.default ] else module.config.default;
-      jobs = builtins.mapAttrs (
-        jobKey: job':
-        mapMaybeList {
-          fn = (
-            {
-              job,
-              pkgs,
-              requiredSystemFeatures,
-            }:
-            assert lib.assertMsg (builtins.all (
-              x: lib.isString x
-            ) requiredSystemFeatures) "requiredSystemFeatures argument must be a list of strings";
-            job
-            // {
-              name = if (job.name != null && job.name != "") then job.name else jobKey;
-              needs = if lib.isString job.needs then [ job.needs ] else job.needs;
-              buildSystem = pkgs.stdenv.buildPlatform.system;
-              hostSystem = pkgs.stdenv.hostPlatform.system;
-              inherit requiredSystemFeatures;
-              steps = lib.imap0 (
-                i: step:
-                stepFn {
-                  inherit step pkgs;
-                  placeholder_name = "${jobKey}-${toString i}";
-                  jobEnv = job.env;
-                  jobSandbox = job.sandbox;
-                  jobPathLockdown = job.pathLockdown;
-                  inherit evalId;
-                }
-              ) job.steps;
-            }
-          );
-          inherit pkgs job' evalId;
-        }
-      ) module.config.jobs;
-    };
+    if evaledArgs == null then null else removeAttrs (module evaledArgs) [ "__functor" ];
 in
 
 {
@@ -320,7 +59,31 @@ in
       "environment variable '${name}' is not a valid POSIX variable name";
     vars.${name} or "@@__nowUnset_${evalId}_${name}@@",
 }:
+
 let
+  adios = import inputs.adios;
+
+  adiosArgs = adios // {
+    inherit evalId evalModule;
+    envType =
+      let
+        inherit (adios) types;
+      in
+      types.attrsOf (
+        types.either types.string (
+          types.either
+            (types.struct "nowSecret" {
+              ${"__nowSecret_${evalId}"} = types.string;
+            })
+            (
+              types.struct "nowDownload" {
+                ${"__nowDownload_${evalId}"} = types.string;
+              }
+            )
+        )
+      );
+  };
+
   secret =
     name:
     assert lib'.assertMsg (lib'.isValidPosixName name)
@@ -369,7 +132,7 @@ let
                 else if lib.strings.isConvertibleWithToString v then
                   toString v
                 else
-                  abort "The nix conf value: ${lib.toPretty { } v} can not be encoded";
+                  abort "The Nix config value '${lib.toPretty { } v}' cannot be encoded";
               mkKeyValue = k: v: "${lib.escape [ "=" ] k} = ${mkValueString v}";
               mkKeyValuePairs = attrs: lib.concatStringsSep "\n" (lib.mapAttrsToList mkKeyValue attrs);
               isExtra = key: lib.hasPrefix "extra-" key;
@@ -487,39 +250,29 @@ let
       };
     };
 
-  bootstrap = lib'.evalModules {
-    class = "now";
-    modules = [
-      ((import ./types.nix { lib = lib'; }).workflow)
-      workflow
-    ];
-    specialArgs = {
-      runner = runnerFn {
-        pkgs = import <nixpkgs> {
-          inherit system;
-          overlays = [ overlay ];
-        };
-      };
-    };
-  };
+  workflow' = if builtins.isPath workflow then import workflow else workflow;
 
-  pkgs = import bootstrap.config.nixpkgs {
+  pkgs = import (workflow'.nixpkgs or <nixpkgs>) {
     inherit system;
     overlays = [ overlay ];
   };
 in
-nowConfig {
-  inherit evalId pkgs;
-  module = (
-    pkgs.lib.evalModules {
-      class = "now";
-      modules = [
-        ((import ./types.nix { inherit (pkgs) lib; }).workflow)
-        workflow
-      ];
-      specialArgs = {
-        runner = runnerFn { inherit pkgs; };
+
+evalModule {
+  inherit (pkgs) lib;
+  module =
+    ((import ./modules adiosArgs) {
+      options = {
+        "/workflow/nixpkgs" = {
+          inherit pkgs;
+        };
+        "/workflow/workflowInputs" = {
+          inherit overlay;
+        };
       };
-    }
-  );
+    }).modules.workflow;
+  specialArgs = {
+    runner = runnerFn { inherit pkgs; };
+  };
+  args = workflow';
 }

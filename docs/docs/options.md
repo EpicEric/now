@@ -8,130 +8,78 @@ icon: lucide/square-menu
 
     This documentation is auto-generated from the workflow definitions.
 
-## Workflow
+## workflow
 
-A workflow is the main definition of your `now` commands. It allows you to specify multiple scripts (jobs) in a single source of truth via Nix.
-
-### default
-
-Default job(s) to run for this workflow\.
+A workflow is the main definition of your `now` commands.
+It allows you to specify multiple scripts (jobs) in a single
+source of truth via Nix.
 
 
+Available options:
 
-*Type:*
-null or string or list of string
+### workflow.default
 
+Default job(s) to run for this workflow.
 
-
-*Default:*
-
-```nix
-null
-```
+_Type:_ `either<string,listOf<string>>`
 
 
 
-### jobs
+
+### workflow.jobs
+
+Jobs in the workflow.
+See the [submodule documentation](#job).
+
+
+_Type:_ `attrsOf<nullOr<job>>`
 
 
 
-Jobs in the workflow\.
-See the [submodule documentation](\#job)\.
+
+### workflow.name
+
+Name of the workflow.
+
+_Type:_ `string`
 
 
 
-*Type:*
-attribute set of (null or job submodule)
 
+### workflow.nixpkgs
 
+Nix expression that evaluates to nixpkgs. Defaults to `<nixpkgs>`.
 
-*Default:*
+_Type:_ `any`
 
-```nix
-{ }
-```
-
-
-
-### name
-
-
-
-Name of the workflow\.
-
-
-
-*Type:*
-null or string
-
-
-
-*Default:*
-
-```nix
-null
-```
-
-
-
-### nixpkgs
-
-
-
-Expression that evaluates to nixpkgs\.
-
-
-
-*Type:*
-path to nixpkgs
-
-
-
-*Default:*
-
-```nix
-"<nixpkgs>"
-```
-## Job
-
-### job
+## job
 
 A job is a set of tasks built and run on a single local or remote runner,
-made from any number of sequential steps\.
+made from any number of sequential steps.
 
-When defined via ` runner.matrix `, you can specify several versions of the same job,
-which may run concurrently on multiple builders and runners\.
-
-
-
-*Type:*
-submodule
+When defined via `runner.matrix`, you can specify several versions of the same job,
+which may run concurrently on multiple builders and runners.
 
 
+Available options:
 
-### job\.checkout
+### job.checkout
 
-
-
-Strategy for checking out the directory that the job runs on\.
+Strategy for checking out the directory that the job runs on.
 Options are:
 
- - ` "default" `- use the runner’s current directory;
- - ` "clone" ` - always create a fresh copy of the current directory;
- - ` "none" ` - run in an empty directory\.
- - ` "all" ` - same as ` "default" `, but ignored files are also copied
-   over to remote builders\.
- - ` "clone-all" ` - same as ` "clone" `, but ignored files are also copied
-   over to remote builders\.
+- `"default"`- use the runner's current directory.
+- `"clone"` - always create a fresh copy of the current directory.
+- `"none"` - run in an empty directory.
+- `"all"` - same as `"default"`, but ignored files are also copied
+over to remote builders.
+- `"clone-all"` - same as `"clone"`, but ignored files are also copied
+over to remote builders.
 
 
+_Type:_ `checkoutEnum`
 
-*Type:*
-one of “none”, “default”, “clone”, “all”, “clone-all”
-
-
-
-*Default:*
+_Default:_
 
 ```nix
 "default"
@@ -139,572 +87,263 @@ one of “none”, “default”, “clone”, “all”, “clone-all”
 
 
 
-### job\.env
+### job.env
 
+Environment values to make available to steps in this job.
 
+_Type:_ `union<string,struct<nowSecret>,struct<nowDownload>>`
 
-Environment values to make available to steps in this job\.
 
 
 
-*Type:*
-attribute set of (string, a call to runner\.secret, or a call to runner\.download)
+### job.name
 
+Name of the job.
 
+_Type:_ `string`
 
-*Default:*
 
-```nix
-{ }
-```
 
 
+### job.needs
 
-### job\.name
+Jobs that must be completed before running this one.
 
+_Type:_ `either<string,listOf<string>>`
 
 
-Name of the job\.
 
 
+### job.pathLockdown
 
-*Type:*
-null or string
+Whether to lock the script's PATH down to only the packages in each
+steps' `path`, ignoring the calling shell's PATH.
 
 
+_Type:_ `bool`
 
-*Default:*
 
-```nix
-null
-```
 
 
+### job.sandbox
 
-### job\.needs
+Default sandbox configuration for the steps in this job.
+See [the submodule documentation](#sandbox).
 
 
+_Type:_ `either<bool,attrs>`
 
-Jobs that must be completed before running this one\.
 
 
 
-*Type:*
-null or string or list of string
+### job.steps
 
+Steps to run in this job.
+See the [submodule documentation](#step).
 
 
-*Default:*
+_Type:_ `listOf<nullOr<step>>`
 
-```nix
-null
-```
 
 
 
-### job\.pathLockdown
+### job.strategy
 
+How multiple jobs in a matrix should coordinate.
 
+Possible attributes are:
 
-Whether to lock the script’s PATH down to only the packages in each
-steps’ ` path `, ignoring the calling shell’s PATH\.
+- `failFast`: Whether a single failing run should cancel the remaining jobs in the matrix.
 
 
+_Type:_ `struct<strategy>`
 
-*Type:*
-boolean
 
 
 
-*Default:*
+### job.timeout
 
-```nix
-false
-```
+How long to run this job for before marking as failed, eg. `"30m"` or `"1h"`.
+By default, jobs can run indefinitely.
 
+The timer doesn't take step realizations or teardowns into account.
 
 
-### job\.sandbox
+_Type:_ `string`
 
+## step
 
+A step is a single, atomic task that's run as part of a job.
 
-Default sandbox configuration for the steps in this job\.
-See [the submodule documentation](\#sandbox)\.
 
+Available options:
 
+### step.env
 
-*Type:*
-boolean or (submodule)
+Environment values to make available to this step.
 
+_Type:_ `union<string,struct<nowSecret>,struct<nowDownload>>`
 
 
-*Default:*
 
-```nix
-{ }
-```
 
+### step.name
 
+Name of the step.
 
-### job\.steps
+_Type:_ `string`
 
 
 
-Steps to run in this job\.
-See the [submodule documentation](\#step)\.
 
-
-
-*Type:*
-list of (null or step submodule)
-
-
-
-*Default:*
-
-```nix
-[ ]
-```
-
-
-
-### job\.strategy
-
-
-
-How multiple jobs in a matrix should coordinate\.
-
-
-
-*Type:*
-null or (submodule)
-
-
-
-*Default:*
-
-```nix
-null
-```
-
-
-
-### job\.strategy\.failFast
-
-
-
-Whether a single failing run should cancel the remaining jobs in the matrix\.
-
-
-
-*Type:*
-boolean
-
-
-
-*Default:*
-
-```nix
-true
-```
-
-
-
-### job\.timeout
-
-
-
-How long to run this job for before marking as failed, eg\. ` "30m" ` or ` "1h" `\.
-By default, jobs can run indefinitely\.
-
-The timer doesn’t take step realizations or teardowns into account\.
-
-
-
-*Type:*
-null or string
-
-
-
-*Default:*
-
-```nix
-null
-```
-
-## Step
-
-### step
-
-A step is a single, atomic task that’s run as part of a job\.
-
-
-
-*Type:*
-submodule
-
-
-
-### step\.env
-
-
-
-Environment values to make available to this step\.
-
-
-
-*Type:*
-attribute set of (string, a call to runner\.secret, or a call to runner\.download)
-
-
-
-*Default:*
-
-```nix
-{ }
-```
-
-
-
-### step\.name
-
-
-
-Name of the step\.
-
-
-
-*Type:*
-null or string
-
-
-
-*Default:*
-
-```nix
-null
-```
-
-
-
-### step\.outputVar
-
-
+### step.outputVar
 
 If set, then the standard output of this step will be assigned to the
 provided environment variable, and made available to the remaining
-steps of the job\.
+steps of the job.
 
 
+_Type:_ `string`
 
-*Type:*
-null or string
 
 
 
-*Default:*
+### step.path
 
-```nix
-null
-```
+Packages added to the PATH of the script.
 
+_Type:_ `listOf<derivation>`
 
 
-### step\.path
 
 
+### step.pathLockdown
 
-Packages added to the PATH of the script\.
+Whether to lock the script's PATH down to only the packages in `path`,
+ignoring the calling shell's PATH.
 
 
+_Type:_ `bool`
 
-*Type:*
-list of package
 
 
 
-*Default:*
+### step.run
 
-```nix
-[ ]
-```
+Shell script to run on this step.
 
+_Type:_ `pathLike`
 
 
-### step\.pathLockdown
 
 
+### step.sandbox
 
-Whether to lock the script’s PATH down to only the packages in ` path `,
-ignoring the calling shell’s PATH\.
+Sandbox configuration for this step.
+See [the submodule documentation](#sandbox).
 
 
+_Type:_ `either<bool,attrs>`
 
-*Type:*
-null or boolean
 
 
 
-*Default:*
+### step.shell
 
-```nix
-null
-```
+The shell to use for this step's scripts.
 
+By default, `bash` will be used.
 
 
-### step\.run
+_Type:_ `derivation`
 
 
 
-Shell script to run on this step\.
 
+### step.shellArgs
 
+Arguments passed to the shell used in this step's scripts.
 
-*Type:*
-strings concatenated with “\\n” or absolute path convertible to it
+_Type:_ `listOf<string>`
 
 
 
-*Default:*
 
-```nix
-""
-```
+### step.teardown
 
+Shell script to run when tearing down this step.
 
+Jobs always run these, after every step concludes, in reverse order.
 
-### step\.sandbox
 
+_Type:_ `pathLike`
 
-
-Sandbox configuration for this step\.
-See [the submodule documentation](\#sandbox)\.
-
-
-
-*Type:*
-boolean or (submodule)
-
-
-
-*Default:*
-
-```nix
-{ }
-```
-
-
-
-### step\.shell
-
-
-
-The shell to use for this step’s scripts\.
-
-By default, ` bash ` will be used\.
-
-
-
-*Type:*
-null or package
-
-
-
-*Default:*
-
-```nix
-null
-```
-
-
-
-### step\.shellArgs
-
-
-
-Arguments passed to the shell used in this step’s scripts\.
-
-
-
-*Type:*
-null or (list of string)
-
-
-
-*Default:*
-
-```nix
-null
-```
-
-
-
-### step\.teardown
-
-
-
-Shell script to run when tearing down this step\.
-
-Jobs always run these, after every step concludes, in reverse order\.
-
-
-
-*Type:*
-null or (strings concatenated with “\\n” or absolute path convertible to it)
-
-
-
-*Default:*
-
-```nix
-null
-```
-
-## Sandbox
-
-### sandbox
+## sandbox
 
 The sandbox submodule allows you to specify extra restrictions at
-a job or step level\.
+a job or step level.
 
-Any step settings override job settings\. For example, this allows you to configure
-sandboxing for all steps in a job with ` sandbox.enable = true; `, then loosen
-permissions on individual steps that have to write to the filesystem\.
+Any step settings override job settings. For example, this allows you to configure
+sandboxing for all steps in a job with `sandbox.enable = true;`, then loosen
+permissions on individual steps that have to write to the filesystem.
 
-On Linux, [` bubblewrap `](https://github\.com/containers/bubblewrap) is used;
-on macOS, ` sandbox-exec ` is used\.
-
-
-
-*Type:*
-submodule
+On Linux, [`bubblewrap`](https://github.com/containers/bubblewrap) is used;
+on macOS, `sandbox-exec` is used.
 
 
+Available options:
 
-### sandbox\.enable
+### sandbox.enable
 
+Whether to use a sandbox for the step.
 
-
-Whether to use a sandbox for the step\.
+_Type:_ `bool`
 
 
 
-*Type:*
-boolean
+
+### sandbox.gcroots
+
+Whether the sandboxed step can write Nix GC roots to the configured GC root directory.
+
+_Type:_ `bool`
 
 
 
-*Default:*
 
-```nix
-false
-```
+### sandbox.networkAccess
 
+Whether the sandboxed step has network access.
 
-
-### sandbox\.gcroots
+_Type:_ `bool`
 
 
 
-Whether the sandboxed step can write Nix GC roots to the configured GC root directory\.
 
+### sandbox.useHome
 
-
-*Type:*
-boolean
-
-
-
-*Default:*
-
-```nix
-false
-```
-
-
-
-### sandbox\.networkAccess
-
-
-
-Whether the sandboxed step has network access\.
-
-
-
-*Type:*
-boolean
-
-
-
-*Default:*
-
-```nix
-false
-```
-
-
-
-### sandbox\.useHome
-
-
-
-Whether the sandboxed step can use the runner user’s HOME directory\.
+Whether the sandboxed step can use the runner user's HOME directory.
 
 You can also pass a list of specific directories to mount as writable
-(eg\. ` [ ".config/application" ] `)\.
+(eg. `[ ".config/application" ]`).
+
+
+_Type:_ `either<bool,listOf<string>>`
 
 
 
-*Type:*
-boolean or list of string
+
+### sandbox.writableDirectory
+
+Whether the sandboxed step can write to the checked-out directory.
+
+_Type:_ `bool`
 
 
 
-*Default:*
 
-```nix
-false
-```
+### sandbox.writableNixStore
 
+Whether the sandboxed step can create derivations on the Nix store.
 
-
-### sandbox\.writableDirectory
-
-
-
-Whether the sandboxed step can write to the checked-out directory\.
-
-
-
-*Type:*
-boolean
-
-
-
-*Default:*
-
-```nix
-false
-```
-
-
-
-### sandbox\.writableNixStore
-
-
-
-Whether the sandboxed step can create derivations on the Nix store\.
-
-
-
-*Type:*
-boolean
-
-
-
-*Default:*
-
-```nix
-false
-```
+_Type:_ `bool`

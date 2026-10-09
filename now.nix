@@ -3,6 +3,69 @@ let
   inputs = import ./.tack;
   pkgs = import inputs.nixpkgs { };
   now = import ./. { inherit pkgs; };
+
+  mkOption =
+    level: module:
+    { name, value }:
+    let
+      inherit (pkgs.lib) generators;
+      inherit (pkgs.lib.strings) replicate;
+    in
+    ''
+      ${replicate level "#"} ${module}.${name}
+
+      ${value.description or ""}
+
+      ${if value ? type then "_Type:_ `${value.type.name}`" else ""}
+
+      ${
+        if value ? default then
+          ''
+            _Default:_
+
+            ```nix
+            ${generators.toPretty {
+              multiline = true;
+              allowPrettyValues = true;
+            } value.default}
+            ```
+          ''
+        else
+          ""
+      }
+    '';
+  mkModule =
+    level:
+    { name, value }:
+    let
+      inherit (builtins) concatStringsSep;
+      inherit (pkgs.lib) attrsToList;
+      inherit (pkgs.lib.strings) replicate;
+    in
+    ''
+      ${replicate level "#"} ${name}
+
+      ${value.meta.description or ""}
+
+      Available options:
+
+      ${concatStringsSep "\n\n" (
+        map (mkOption (level + 1) name) (
+          builtins.filter ({ value, ... }: value ? description) (attrsToList value.options)
+        )
+      )}
+    '';
+  mkDocumentation =
+    level: modules:
+    let
+      inherit (builtins) concatStringsSep;
+      inherit (pkgs.lib) attrsToList;
+    in
+    concatStringsSep "\n\n" (
+      map (mkModule level) (
+        builtins.filter ({ value, ... }: value.meta.generateDocs or true) (attrsToList modules)
+      )
+    );
 in
 {
   jobs = {
@@ -22,7 +85,7 @@ in
           ];
           run = ''
             trap 'kill 0' EXIT INT TERM
-            watchexec -w now.nix -w now/types.nix -r now run generate-nix-docs --logging step &
+            watchexec -w now.nix -w now/modules -r now run generate-nix-docs --logging step &
             watchexec -w now.nix -w src -r now run generate-cli-docs --logging step &
             watchexec -w now.nix -w .tack/pins.lock.json -r now run generate-now-services-docs --logging step &
             zensical serve -f docs/zensical.toml
@@ -61,76 +124,52 @@ in
       sandbox.enable = true;
       steps =
         let
-          evalOptions =
-            type:
-            pkgs.lib.evalModules {
-              modules = [ type ];
-              specialArgs = { inherit pkgs; };
-            };
-
-          moduleDocs =
-            type:
-            (pkgs.nixosOptionsDoc {
-              options = removeAttrs (evalOptions type).options [ "_module" ];
-            }).optionsCommonMark;
-
-          types = import ./now/types.nix { inherit (pkgs) lib; };
+          adios = (import inputs.adios) // {
+            evalId = "";
+            evalModule = _: { };
+            envType =
+              let
+                inherit (adios) types;
+              in
+              types.union [
+                types.string
+                (types.struct "nowSecret" { })
+                (types.struct "nowDownload" { })
+              ];
+          };
         in
         [
           (runner.steps.upload {
             name = "docs-workflow";
-            deriv = moduleDocs types.workflow;
+            deriv = pkgs.writeText "docs-workflow" (
+              mkDocumentation 2 {
+                workflow = import ./now/modules/workflow.nix adios;
+              }
+            );
           })
           (runner.steps.upload {
             name = "docs-job";
-            deriv = moduleDocs {
-              options.job = pkgs.lib.mkOption {
-                description = ''
-                  A job is a set of tasks built and run on a single local or remote runner,
-                  made from any number of sequential steps.
-
-                  When defined via `runner.matrix`, you can specify several versions of the same job,
-                  which may run concurrently on multiple builders and runners.
-                '';
-                type = types.job {
-                  evalId = "";
-                  inherit pkgs;
-                };
-              };
-            };
+            deriv = pkgs.writeText "docs-job" (
+              mkDocumentation 2 {
+                job = import ./now/modules/job.nix adios;
+              }
+            );
           })
           (runner.steps.upload {
             name = "docs-step";
-            deriv = moduleDocs {
-              options.step = pkgs.lib.mkOption {
-                description = ''
-                  A step is a single, atomic task that's run as part of a job.
-                '';
-                type = types.step {
-                  evalId = "";
-                  inherit pkgs;
-                };
-              };
-            };
+            deriv = pkgs.writeText "docs-step" (
+              mkDocumentation 2 {
+                step = import ./now/modules/step.nix adios;
+              }
+            );
           })
           (runner.steps.upload {
             name = "docs-sandbox";
-            deriv = moduleDocs {
-              options.sandbox = pkgs.lib.mkOption {
-                description = ''
-                  The sandbox submodule allows you to specify extra restrictions at
-                  a job or step level.
-
-                  Any step settings override job settings. For example, this allows you to configure
-                  sandboxing for all steps in a job with `sandbox.enable = true;`, then loosen
-                  permissions on individual steps that have to write to the filesystem.
-
-                  On Linux, [`bubblewrap`](https://github.com/containers/bubblewrap) is used;
-                  on macOS, `sandbox-exec` is used.
-                '';
-                type = types.sandbox;
-              };
-            };
+            deriv = pkgs.writeText "docs-sandbox" (
+              mkDocumentation 2 {
+                sandbox = import ./now/modules/sandbox.nix adios;
+              }
+            );
           })
           {
             sandbox.writableDirectory = true;
@@ -155,22 +194,13 @@ in
 
                   This documentation is auto-generated from the workflow definitions.
 
-              ## Workflow
+              $(cat $DOCS_WORKFLOW)
 
-              A workflow is the main definition of your \`now\` commands. It allows you to specify multiple scripts (jobs) in a single source of truth via Nix.
+              $(cat $DOCS_JOB)
 
-              $(cat $DOCS_WORKFLOW | sed 's/## /### /g')
-              ## Job
+              $(cat $DOCS_STEP)
 
-              $(cat $DOCS_JOB | sed 's/## /### /g')
-
-              ## Step
-
-              $(cat $DOCS_STEP | sed 's/## /### /g')
-
-              ## Sandbox
-
-              $(cat $DOCS_SANDBOX | sed 's/## /### /g')
+              $(cat $DOCS_SANDBOX)
               EOF
 
               echo "Updated Nix docs."
@@ -257,52 +287,10 @@ in
           name = "docs-now-services";
           deriv =
             let
-              inherit (builtins) concatStringsSep;
-              inherit (pkgs.lib) attrsToList generators;
-
               adios = import inputs.adios;
-              services = adios.lib.importModules {
-                directory = "${inputs.now-services}/services";
-                args = adios;
-              };
-
-              mkOption = { name, value }: ''
-                #### ${name}
-
-                ${value.description or ""}
-
-                ${if value ? type then "_Type:_ `${value.type.name}`" else ""}
-
-                ${
-                  if value ? default then
-                    ''
-                      _Default:_
-
-                      ```nix
-                      ${generators.toPretty {
-                        multiline = true;
-                        allowPrettyValues = true;
-                      } value.default}
-                      ```
-                    ''
-                  else
-                    ""
-                }
-              '';
-              mkService = { name, value }: ''
-                ### ${name}
-
-                ${value.meta.description or ""}
-
-                Available options:
-
-                ${concatStringsSep "\n\n" (map mkOption (attrsToList value.options))}
-              '';
-              text = concatStringsSep "\n\n" (map mkService (attrsToList services));
+              services = adios.lib.importModules { directory = "${inputs.now-services}/services"; };
             in
-            pkgs.runCommand "docs-now-services" { inherit text; } ''
-              echo "$text" > $out
-            '';
+            pkgs.writeText "docs-now-services" (mkDocumentation 3 services);
         })
         {
           sandbox.writableDirectory = true;
@@ -408,6 +396,7 @@ in
       name = "Finalize tests";
       needs = [
         "test-abort"
+        "test-conditionals"
         "test-cycle"
         "test-dry-run"
         "test-env"
@@ -464,6 +453,25 @@ in
 
             if ($output | str contains "late ran") {
               print $"(ansi red_bold)ERROR:(ansi reset) 'late' job should have been aborted"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-conditionals = {
+      name = "Test conditionals";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            now run --all-jobs --workflow .now/tests/conditionals.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
               exit 1
             }
 

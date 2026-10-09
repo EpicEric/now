@@ -50,7 +50,7 @@ fn main() {
 
     tar.finish().expect("should flush archive");
 
-    println!("cargo:rerun-if-changed=nix");
-    println!("cargo:rerun-if-changed=now-step");
-    println!("cargo:rerun-if-changed=.tack");
+    println!("cargo:rerun-if-changed=nix/**/*");
+    println!("cargo:rerun-if-changed=now-step/**/*");
+    println!("cargo:rerun-if-changed=.tack/**/*");
 }

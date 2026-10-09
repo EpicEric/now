@@ -164,16 +164,19 @@ in
               "coverage-nightly"
             ];
             steps = [
-              (lib.mkIf (pkgs.stdenv.hostPlatform.isLinux) (
-                runner.steps.upload {
-                  name = "docker-${pkgs.stdenv.hostPlatform.system}";
-                  deriv = pkgs.dockerTools.buildLayeredImage {
-                    name = "now";
-                    tag = "latest";
-                    config.Entrypoint = [ (lib.getExe (mkNow pkgs)) ];
-                  };
-                }
-              ))
+              (
+                if (pkgs.stdenv.hostPlatform.isLinux) then
+                  (runner.steps.upload {
+                    name = "docker-${pkgs.stdenv.hostPlatform.system}";
+                    deriv = pkgs.dockerTools.buildLayeredImage {
+                      name = "now";
+                      tag = "latest";
+                      config.Entrypoint = [ (lib.getExe (mkNow pkgs)) ];
+                    };
+                  })
+                else
+                  null
+              )
             ];
           }
         );

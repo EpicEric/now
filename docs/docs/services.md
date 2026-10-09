@@ -82,7 +82,7 @@ Run [Garage](https://garagehq.deuxfleurs.fr/), an S3-compatible object store.
 
 Available options:
 
-#### args
+#### garage.args
 
 Command-line arguments passed to Garage.
 
@@ -96,7 +96,7 @@ _Default:_
 
 
 
-#### env
+#### garage.env
 
 `now` environment for this step.
 
@@ -110,12 +110,83 @@ _Default:_
 
 
 
-#### package
+#### garage.package
 
 The Garage package to use.
 
 _Type:_ `derivation`
 
+
+
+
+
+### orchestrate
+
+Orchestrate multiple `now` jobs, allowing you to run several services at once.
+
+
+Available options:
+
+#### orchestrate.env
+
+`now` environment for this step.
+
+_Type:_ `attrs`
+
+_Default:_
+
+```nix
+{ }
+```
+
+
+
+#### orchestrate.jobs
+
+List of `now` job IDs to run concurrently.
+
+_Type:_ `listOf<string>`
+
+
+
+
+#### orchestrate.nowArgs
+
+List of common arguments to pass to each invocation of `now run`.
+
+_Type:_ `listOf<string>`
+
+_Default:_
+
+```nix
+[ ]
+```
+
+
+
+#### orchestrate.package
+
+`now` package to use.
+
+By default, `now` in your PATH is used.
+
+
+_Type:_ `nullOr<derivation>`
+
+
+
+
+#### orchestrate.strategy
+
+How to handle any failing job.
+
+_Type:_ `strategy`
+
+_Default:_
+
+```nix
+"terminate"
+```
 
 
 
@@ -127,7 +198,7 @@ Run [PostgreSQL](https://www.postgresql.org/), a relational database.
 
 Available options:
 
-#### env
+#### postgresql.env
 
 `now` environment for this step.
 
@@ -141,7 +212,7 @@ _Default:_
 
 
 
-#### package
+#### postgresql.package
 
 The PostgreSQL package to use.
 
@@ -150,7 +221,7 @@ _Type:_ `derivation`
 
 
 
-#### unixSocket
+#### postgresql.unixSocket
 
 Where to bind the Unix socket for PostgreSQL.
 
@@ -170,7 +241,7 @@ Run [Redis](https://redis.io/), an in-memory key-value database, or a derivative
 
 Available options:
 
-#### cliBinary
+#### redis.cliBinary
 
 Name of the Redis client binary (for healthcheck).
 
@@ -182,7 +253,7 @@ _Type:_ `string`
 
 
 
-#### env
+#### redis.env
 
 `now` environment for this step.
 
@@ -196,7 +267,7 @@ _Default:_
 
 
 
-#### package
+#### redis.package
 
 The Redis package to use.
 
@@ -205,7 +276,7 @@ _Type:_ `derivation`
 
 
 
-#### serverBinary
+#### redis.serverBinary
 
 Name of the Redis server binary.
 
