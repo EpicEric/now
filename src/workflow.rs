@@ -74,7 +74,7 @@ pub(crate) struct NowJob {
     #[serde(rename = "requiredSystemFeatures")]
     pub(crate) required_system_features: HashSet<String>,
     pub(crate) checkout: NowCheckout,
-    #[serde(with = "now_job_timeout")]
+    #[serde(default, with = "now_job_timeout")]
     pub(crate) timeout: Option<Duration>,
     pub(crate) strategy: Option<NowStrategy>,
     pub(crate) needs: Option<Vec<String>>,

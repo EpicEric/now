@@ -24,36 +24,43 @@
   writeShellScript,
   writeTextFile,
 }:
-if nowSandbox.enable then
+
+if (nowSandbox.enable or false) then
 
   if stdenvNoCC.hostPlatform.isLinux then
     writeShellScript nowScript.name ''
       set -euo pipefail
-      ${lib.optionalString nowSandbox.gcroots ''
+      ${lib.optionalString (nowSandbox.gcroots or false) ''
         mkdir -p "''${NOW_GCROOT_DIR:=$(mktemp -d)}"
       ''}
       exec ${lib.getExe bubblewrap} \
         --ro-bind /nix/store /nix/store \
-        ${lib.optionalString nowSandbox.writableNixStore ''
-          --bind-try /nix/var/nix/daemon-socket /nix/var/nix/daemon-socket \
-          --setenv NIX_REMOTE daemon \
-        ''} \
-        --unshare-all \
-        ${lib.optionalString nowSandbox.networkAccess ''
-          --share-net \
-          --ro-bind-try /etc/resolv.conf /etc/resolv.conf \
-          --ro-bind-try /etc/nsswitch.conf /etc/nsswitch.conf \
-          --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
-        ''} \
         ${
-          if nowSandbox.writableDirectory then
+          lib.optionalString (nowSandbox.writableNixStore or false) ''
+            --bind-try /nix/var/nix/daemon-socket /nix/var/nix/daemon-socket \
+            --setenv NIX_REMOTE daemon \
+          ''
+        } \
+        --unshare-all \
+        ${
+          lib.optionalString (nowSandbox.networkAccess or false) ''
+            --share-net \
+            --ro-bind-try /etc/resolv.conf /etc/resolv.conf \
+            --ro-bind-try /etc/nsswitch.conf /etc/nsswitch.conf \
+            --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
+          ''
+        } \
+        ${
+          if nowSandbox.writableDirectory or false then
             ''--bind "$PWD" "$PWD" --chdir "$PWD"''
           else
             ''--ro-bind "$PWD" "$PWD" --chdir "$PWD"''
         } \
-        ${lib.optionalString nowSandbox.gcroots ''
-          --bind "$NOW_GCROOT_DIR" "$NOW_GCROOT_DIR" \
-        ''} \
+        ${
+          lib.optionalString (nowSandbox.gcroots or false) ''
+            --bind "$NOW_GCROOT_DIR" "$NOW_GCROOT_DIR" \
+          ''
+        } \
         --proc /proc \
         --dev /dev \
         --tmpfs /tmp \
@@ -61,13 +68,13 @@ if nowSandbox.enable then
         --ro-bind-try /etc/group /etc/group \
         --ro-bind-try /etc/nix/nix.conf /etc/nix/nix.conf \
         ${
-          if lib.isList nowSandbox.useHome then
+          if nowSandbox ? useHome && lib.isList nowSandbox.useHome then
             builtins.concatStringsSep " " (
               map (
                 dir: ''--bind "$HOME/${lib.removePrefix "/" dir}" "$HOME/${lib.removePrefix "/" dir}"''
               ) nowSandbox.useHome
             )
-          else if nowSandbox.useHome then
+          else if (nowSandbox.useHome or false) then
             ''--bind "$HOME" "$HOME"''
           else
             "--dir /homeless-shelter --setenv HOME /homeless-shelter"
@@ -91,11 +98,11 @@ if nowSandbox.enable then
 
           (allow file-read* (subpath "/nix/store"))
 
-          ${lib.optionalString nowSandbox.writableNixStore ''
+          ${lib.optionalString (nowSandbox.writableNixStore or false) ''
             (allow file-read* file-write* (subpath "/nix/var/nix"))
           ''}
 
-          ${lib.optionalString nowSandbox.gcroots ''
+          ${lib.optionalString (nowSandbox.gcroots or false) ''
             (allow file-read* file-write* (subpath (param "NOW_GCROOT_DIR")))
           ''}
 
@@ -124,7 +131,7 @@ if nowSandbox.enable then
             (global-name "com.apple.system.opendirectoryd.libinfo")
             (global-name "com.apple.trustd"))
 
-          ${lib.optionalString nowSandbox.networkAccess ''
+          ${lib.optionalString (nowSandbox.networkAccess or false) ''
             (allow network-outbound)
             (allow network-inbound)
             (allow mach-lookup
@@ -132,7 +139,7 @@ if nowSandbox.enable then
           ''}
 
           ${
-            if lib.isList nowSandbox.useHome then
+            if nowSandbox ? useHome && lib.isList nowSandbox.useHome then
               "(allow file-read* file-write* ${
                 builtins.concatStringsSep "\n" (
                   map (
@@ -140,14 +147,14 @@ if nowSandbox.enable then
                   ) nowSandbox.useHome
                 )
               })"
-            else if nowSandbox.useHome then
+            else if (nowSandbox.useHome or false) then
               ''(allow file-read* file-write* (subpath (param "HOME")))''
             else
               ""
           }
 
           ${
-            if nowSandbox.writableDirectory then
+            if nowSandbox.writableDirectory or false then
               ''
                 (allow file-read* file-write* (subpath (param "PWD")))
               ''
@@ -161,14 +168,14 @@ if nowSandbox.enable then
     in
     writeShellScript nowScript.name ''
       set -euo pipefail
-      ${lib.optionalString nowSandbox.gcroots ''
+      ${lib.optionalString (nowSandbox.gcroots or false) ''
         mkdir -p "''${NOW_GCROOT_DIR:=$(mktemp -d)}"
       ''}
       exec /usr/bin/sandbox-exec \
         -D HOME="$HOME" \
         -D PWD="$PWD" \
         -D TMPDIR="''${TMPDIR:-/tmp}" \
-        ${lib.optionalString nowSandbox.gcroots ''
+        ${lib.optionalString (nowSandbox.gcroots or false) ''
           -D NOW_GCROOT_DIR="$NOW_GCROOT_DIR" \
         ''}
         -f ${profile} -- ${nowScript} "$@"

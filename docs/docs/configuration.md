@@ -378,17 +378,22 @@ The `"all"` and `"clone-all"` variants include files that would normally be excl
 
 ### Conditional jobs
 
-Jobs support Nix's `lib.mkIf` for conditional inclusion. When the condition is false, the entire job is omitted from the workflow graph:
+Jobs support Nix's `if` for conditional inclusion. `null` values are omitted from the workflow graph entirely:
 
 ```nix
 { lib, ... }: {
   jobs = {
     x64-linux-only =
-      (lib.mkIf (builtins.currentSystem == "x86_64-linux") {
-        steps = [
-          { run = "echo 'this only runs on x86_64-linux'"; }
-        ];
-      });
+      (
+        if (builtins.currentSystem == "x86_64-linux") then
+          {
+            steps = [
+              { run = "echo 'this only runs on x86_64-linux'"; }
+            ];
+          }
+        else
+          null
+      );
   };
 }
 ```
@@ -462,16 +467,21 @@ A full definition with additional options can be found in [the "Step" section of
 
 ### Conditional steps
 
-Individual steps can be conditionally included with `lib.mkIf`. When the condition is false, the step is removed from the step list entirely:
+Individual steps can be conditionally included with `if`. `null` values are removed from the step list entirely:
 
 ```nix
 {
   jobs.conditional-job = { lib, pkgs, ... }: {
     steps = [
       { run = "echo 'this always runs'"; }
-      (lib.mkIf (pkgs.stdenv.hostPlatform.isLinux) {
-        run = "echo 'this only runs on Linux'";
-      })
+      (
+        if (pkgs.stdenv.hostPlatform.isLinux) then
+          {
+            run = "echo 'this only runs on Linux'";
+          }
+        else
+          null
+      )
     ];
   };
 }

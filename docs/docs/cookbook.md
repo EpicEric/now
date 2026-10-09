@@ -261,36 +261,34 @@ in
 ## Re-usable workflows and steps
 
 ```nix
-{ runner, ... }: {
-  # Workflows in `imports` get merged
-  imports = [
-    ./.now/foo.nix
-    ./.now/bar.nix
-  ];
-
-  jobs.my-job =
-    { pkgs, ... }:
-    let
-      # Assuming `extraSteps = { step1 = args: ...; step2 = args: ...; };`
-      extraSteps = import (
-        pkgs.fetchFromCodeberg {
-          owner = "EpicEric9";
-          repo = "now-steps";
-          hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-        }
-      );
-    in
+{ runner, lib, ... }:
+  # Workflows are attrsets that can be merged
+  lib.recursiveUpdate
+    (import ./.now/foo.nix)
     {
-      steps = [
-        (extraSteps.step1 {
-          # ...
-        })
-        (extraSteps.step2 {
-          # ...
-        })
-      ];
-    };
-}
+      jobs.my-job =
+        { pkgs, ... }:
+        let
+          # Assuming `extraSteps = { step1 = args: ...; step2 = args: ...; };`
+          extraSteps = import (
+            pkgs.fetchFromCodeberg {
+              owner = "now-runner";
+              repo = "now-services";
+              hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+            }
+          );
+        in
+        {
+          steps = [
+            (extraSteps.step1 {
+              # ...
+            })
+            (extraSteps.step2 {
+              # ...
+            })
+          ];
+        };
+    }
 ```
 
 ## Running steps in an FHS-compatible environment
