@@ -35,6 +35,19 @@ pub(crate) enum TracingMode {
     Colors,
 }
 
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+pub(crate) enum LoggingLevel {
+    /// Don't print anything before logs.
+    Minimal,
+    /// Only print host before logs.
+    Host,
+    /// Only print step before logs.
+    Step,
+    /// (default) Print host and step before logs.
+    #[default]
+    Full,
+}
+
 static LONG_ABOUT: &str = "now - Nix-based distributed command runner.
 
 \x1b[1;4mExamples:\x1b[0m
@@ -255,16 +268,25 @@ pub(crate) enum Command {
         #[arg(long)]
         skip: bool,
 
+        /// Controls what extra info is prefixed on each log line.
+        ///
+        /// Cannot be used together with the `--tracing` option.
+        #[arg(short, long, default_value = "full")]
+        logging: LoggingLevel,
+
         /// Whether to emit traces in Duper instead of colored logs.
         ///
         /// You can also set whether ANSI colors are included in the traces or not.
         ///
         /// For more information on Duper: <https://duper.dev.br>
+        ///
+        /// Cannot be used together with the `--logging` option.
         #[arg(
             long,
             value_enum,
             num_args = 0..=1,
             default_missing_value = "no-colors",
+            conflicts_with = "logging",
         )]
         tracing: Option<TracingMode>,
     },

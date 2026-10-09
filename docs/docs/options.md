@@ -10,7 +10,7 @@ icon: lucide/square-menu
 
 ## Workflow
 
-A workflow is the main definition of your now commands. It allows you to specify multiple scripts (jobs) in a single source of truth via Nix.
+A workflow is the main definition of your `now` commands. It allows you to specify multiple scripts (jobs) in a single source of truth via Nix.
 
 ### default
 

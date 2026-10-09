@@ -22,9 +22,9 @@ in
           ];
           run = ''
             trap 'kill 0' EXIT INT TERM
-            watchexec -w now.nix -w now/types.nix -r now run generate-nix-docs &
-            watchexec -w now.nix -w src -r now run generate-cli-docs &
-            watchexec -w now.nix -w .tack/pins.lock.json -r now run generate-now-services-docs &
+            watchexec -w now.nix -w now/types.nix -r now run generate-nix-docs --logging step &
+            watchexec -w now.nix -w src -r now run generate-cli-docs --logging step &
+            watchexec -w now.nix -w .tack/pins.lock.json -r now run generate-now-services-docs --logging step &
             zensical serve -f docs/zensical.toml
           '';
         }
@@ -157,7 +157,7 @@ in
 
               ## Workflow
 
-              A workflow is the main definition of your now commands. It allows you to specify multiple scripts (jobs) in a single source of truth via Nix.
+              A workflow is the main definition of your \`now\` commands. It allows you to specify multiple scripts (jobs) in a single source of truth via Nix.
 
               $(cat $DOCS_WORKFLOW | sed 's/## /### /g')
               ## Job

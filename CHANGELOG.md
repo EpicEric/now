@@ -6,6 +6,7 @@
 
 - Add `pathLockdown` to jobs/steps
 - Allow passing a file to `run`/`teardown`
+- Add `--logging` option
 
 ## 0.5.0 (2026-10-04)
 

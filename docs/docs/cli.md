@@ -211,12 +211,27 @@ Run one or more jobs
       <b>--skip</b>
           When specified, skips jobs that don&#39;t match any builders or runners and their dependencies, instead of failing
 
+  <b>-l</b>, <b>--logging</b> &lt;LOGGING&gt;
+          Controls what extra info is prefixed on each log line.
+          
+          Cannot be used together with the `--tracing` option.
+
+          Possible values:
+          - <b>minimal</b>: Don&#39;t print anything before logs
+          - <b>host</b>:    Only print host before logs
+          - <b>step</b>:    Only print step before logs
+          - <b>full</b>:    (default) Print host and step before logs
+          
+          [default: full]
+
       <b>--tracing</b> [&lt;TRACING&gt;]
           Whether to emit traces in Duper instead of colored logs.
           
           You can also set whether ANSI colors are included in the traces or not.
           
           For more information on Duper: &lt;https://duper.dev.br&gt;
+          
+          Cannot be used together with the `--logging` option.
 
           Possible values:
           - <b>no-colors</b>: (default) Don&#39;t include ANSI colors in output

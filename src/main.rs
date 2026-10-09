@@ -280,6 +280,7 @@ fn main() -> color_eyre::Result<()> {
             local_only,
             remote_only,
             skip,
+            logging,
             tracing,
         } => {
             let env_filter = EnvFilter::builder()
@@ -296,7 +297,11 @@ fn main() -> color_eyre::Result<()> {
                     .init();
             } else {
                 tracing_subscriber::registry()
-                    .with(NowSubscriberLayer::default().with_filter(env_filter))
+                    .with(
+                        NowSubscriberLayer::default()
+                            .with_level(logging)
+                            .with_filter(env_filter),
+                    )
                     .with(ErrorLayer::default())
                     .init();
             }

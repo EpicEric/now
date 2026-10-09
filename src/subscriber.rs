@@ -25,20 +25,19 @@ use rand::{SeedableRng, seq::IndexedRandom};
 use tracing::{Subscriber, field::Visit};
 use tracing_subscriber::{Layer, field::VisitOutput, registry::LookupSpan};
 
-use crate::utils::trim_string;
+use crate::{command::LoggingLevel, utils::trim_string};
 
 struct CachedBuilder {
     short_name: String,
     style: Style,
 }
 
-type NowSubscriberCache = papaya::HashMap<u64, CachedBuilder>;
-
 pub(crate) struct NowSubscriberLayer<S, W = fn() -> std::io::Stderr> {
     make_writer: W,
     builder_name_limit: usize,
-    cache: NowSubscriberCache,
+    cache: papaya::HashMap<u64, CachedBuilder>,
     hasher: ahash::RandomState,
+    logging_level: LoggingLevel,
     _subscriber: PhantomData<S>,
 }
 
@@ -49,7 +48,17 @@ impl<S> Default for NowSubscriberLayer<S> {
             builder_name_limit: 40,
             cache: papaya::HashMap::default(),
             hasher: ahash::RandomState::default(),
+            logging_level: LoggingLevel::default(),
             _subscriber: PhantomData,
+        }
+    }
+}
+
+impl<S> NowSubscriberLayer<S> {
+    pub(crate) fn with_level(self, logging_level: LoggingLevel) -> Self {
+        Self {
+            logging_level,
+            ..self
         }
     }
 }
@@ -64,8 +73,12 @@ where
         event: &tracing::Event<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
-        let mut fields_visitor =
-            NowSubscriberVisitor::new(&self.cache, &self.hasher, self.builder_name_limit);
+        let mut fields_visitor = NowSubscriberVisitor::new(
+            &self.cache,
+            &self.hasher,
+            self.builder_name_limit,
+            self.logging_level,
+        );
         event.record(&mut fields_visitor);
         if let Some(log_line) = fields_visitor.finish() {
             let _ = writeln!(
@@ -77,9 +90,10 @@ where
 }
 
 struct NowSubscriberVisitor<'a> {
-    cache: &'a NowSubscriberCache,
+    cache: &'a papaya::HashMap<u64, CachedBuilder>,
     hasher: &'a ahash::RandomState,
     builder_name_limit: usize,
+    logging_level: LoggingLevel,
     runner: Option<String>,
     is_remote: Option<bool>,
     step: Option<String>,
@@ -88,14 +102,16 @@ struct NowSubscriberVisitor<'a> {
 
 impl<'a> NowSubscriberVisitor<'a> {
     fn new(
-        cache: &'a NowSubscriberCache,
+        cache: &'a papaya::HashMap<u64, CachedBuilder>,
         hasher: &'a ahash::RandomState,
         builder_name_limit: usize,
+        logging_level: LoggingLevel,
     ) -> Self {
         NowSubscriberVisitor {
             cache,
             hasher,
             builder_name_limit,
+            logging_level,
             runner: None,
             is_remote: None,
             step: None,
@@ -129,33 +145,53 @@ impl Visit for NowSubscriberVisitor<'_> {
 impl tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscriberVisitor<'_> {
     fn finish(self) -> Option<String> {
         let message = self.message?;
-        let Some(runner) = self.runner else {
-            return Some(message);
-        };
-        let is_remote = self.is_remote.is_some_and(|is_remote| is_remote);
+        match self.logging_level {
+            LoggingLevel::Minimal => Some(message),
+            LoggingLevel::Step | LoggingLevel::Host | LoggingLevel::Full => {
+                let Some(runner) = self.runner else {
+                    return Some(message);
+                };
+                let is_remote = self.is_remote.is_some_and(|is_remote| is_remote);
 
-        let guard = self.cache.pin();
-        let builder = guard.get_or_insert_with(self.hasher.hash_one(&runner), || CachedBuilder {
-            short_name: trim_string(&runner, self.builder_name_limit),
-            style: get_style_for_runner(is_remote, &runner),
-        });
+                let guard = self.cache.pin();
+                let builder =
+                    guard.get_or_insert_with(self.hasher.hash_one(&runner), || CachedBuilder {
+                        short_name: trim_string(&runner, self.builder_name_limit),
+                        style: get_style_for_runner(is_remote, &runner),
+                    });
 
-        if let Some(step) = self.step {
-            Some(format!(
-                "{} {}",
-                format!("{} step[{}]>", builder.short_name, step)
-                    .if_supports_color(owo_colors::Stream::Stderr, |text| text
-                        .style(builder.style)),
-                message
-            ))
-        } else {
-            Some(format!(
-                "{} {}",
-                format!("{}>", builder.short_name)
-                    .if_supports_color(owo_colors::Stream::Stderr, |text| text
-                        .style(builder.style)),
-                message
-            ))
+                if matches!(self.logging_level, LoggingLevel::Step) {
+                    if let Some(step) = self.step {
+                        Some(format!(
+                            "{} {}",
+                            format!("step[{}]>", step)
+                                .if_supports_color(owo_colors::Stream::Stderr, |text| text
+                                    .style(builder.style)),
+                            message
+                        ))
+                    } else {
+                        Some(message)
+                    }
+                } else if let Some(step) = self.step
+                    && !matches!(self.logging_level, LoggingLevel::Host)
+                {
+                    Some(format!(
+                        "{} {}",
+                        format!("{} step[{}]>", builder.short_name, step)
+                            .if_supports_color(owo_colors::Stream::Stderr, |text| text
+                                .style(builder.style)),
+                        message
+                    ))
+                } else {
+                    Some(format!(
+                        "{} {}",
+                        format!("{}>", builder.short_name)
+                            .if_supports_color(owo_colors::Stream::Stderr, |text| text
+                                .style(builder.style)),
+                        message
+                    ))
+                }
+            }
         }
     }
 }
