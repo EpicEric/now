@@ -13,6 +13,10 @@
 - Allow passing a file to `run`/`teardown`
 - Add `--logging` option
 
+### Fixed
+
+- Use pinned nixpkgs to build now-step
+
 ## 0.5.0 (2026-10-04)
 
 ### Breaking changes

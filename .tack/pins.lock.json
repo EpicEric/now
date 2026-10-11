@@ -3,24 +3,24 @@
     "type": "github",
     "owner": "llakala",
     "repo": "lladios",
-    "rev": "4a5e900239bc2248cd7620954090df5b4fe52b4b",
-    "narHash": "sha256-GhUB1h01JtCY9xgqFXch5TDTQMwNqryJuwJa+9A8zBI=",
-    "lastModified": 1790988501
+    "rev": "a7723840d047f74f34605b5fa1f4e26f1933fd1e",
+    "narHash": "sha256-xViNfLt0TbNLikWg4QxblczZDdafKVOntshheAmqgos=",
+    "lastModified": 1791740408
   },
   "nixpkgs": {
     "type": "github",
     "owner": "NixOS",
     "repo": "nixpkgs",
-    "rev": "c9fe7d12cd78d1adcd12dd15e24432dde5b155a0",
-    "narHash": "sha256-5AIVFLRcx8YAwbFTVPTs7YhwJH7JyHfAQsvXmpovcXI=",
-    "lastModified": 1790769526
+    "rev": "8edc0c72e3a38faf5434e40d1f19431125fe4b30",
+    "narHash": "sha256-tqM7xDEsaeK1p6VvRygeZ9LkQRpUUkbRT02BHv6hnTM=",
+    "lastModified": 1791487292
   },
   "now-services": {
     "type": "git",
     "url": "https://codeberg.org/now-runner/now-services.git",
     "ref": "HEAD",
-    "rev": "5b91bfb04b7e5f70a3ea050a98f6980268044cfc",
-    "narHash": "sha256-lka2qYFapYDQSaLFy7cGuv+rbA6+w9eUZ7y1lHVPA4s=",
-    "lastModified": 1791583661
+    "rev": "e83bb1c4e586064bb672e67d7a98a2ed295c6a80",
+    "narHash": "sha256-EqyE1Az/p/BAD/OrKCpi2iIJ1HakNQvpvSpaInNl8kI=",
+    "lastModified": 1791637953
   }
 }

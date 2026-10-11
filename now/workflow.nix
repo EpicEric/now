@@ -23,16 +23,13 @@ let
   inputs = import ../.tack;
 
   overlay =
-    final: prev:
+    _: prev:
     let
       pkgs = import inputs.nixpkgs { inherit system; };
+      local-now-step = pkgs.callPackage ../now-step/package.nix { };
     in
     {
-      now-step =
-        if withLocalStep then
-          pkgs.callPackage ../now-step/package.nix { }
-        else
-          prev.now-step or (final.callPackage ../now-step/package.nix { });
+      now-step = if withLocalStep then local-now-step else prev.now-step or local-now-step;
     };
 
   evalModule =
@@ -43,7 +40,11 @@ let
       args,
     }:
     let
-      evaledArgs = if lib.isFunction args then args (specialArgs // { inherit lib; }) else args;
+      evaledArgs =
+        if lib.isFunction args then
+          args (builtins.intersectAttrs (lib.functionArgs args) (specialArgs // { inherit lib; }))
+        else
+          args;
     in
     if evaledArgs == null then null else removeAttrs (module evaledArgs) [ "__functor" ];
 in
@@ -148,14 +149,14 @@ let
 
       matrix =
         variants: job:
-        map (v: {
+        map (variant: {
           inherit job;
-          pkgs = if v ? pkgs then v.pkgs.extend overlay else pkgs;
-          specialArgs = removeAttrs v [
+          pkgs = if variant ? pkgs then variant.pkgs.extend overlay else pkgs;
+          specialArgs = removeAttrs variant [
             "pkgs"
             "requiredSystemFeatures"
           ];
-          requiredSystemFeatures = v.requiredSystemFeatures or [ ];
+          requiredSystemFeatures = variant.requiredSystemFeatures or [ ];
         }) variants;
 
       steps = {
