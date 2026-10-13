@@ -5,7 +5,8 @@
 ### Breaking changes
 
 - Migrate module system to adios
-  - evalModules helpers such as `lib.mkIf` will no longer work. Use plain conditionals instead
+  - `evalModules` helpers such as `lib.mkIf` will no longer work. Use plain conditionals instead
+  - Top-level `imports` will no longer work. Use `lib.recursiveUpdate` instead
 
 ### Added
 
@@ -16,6 +17,10 @@
 ### Fixed
 
 - Use pinned nixpkgs to build now-step
+
+### Changed
+
+- Respect TMPDIR variable in remote runners
 
 ## 0.5.0 (2026-10-04)
 

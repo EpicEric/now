@@ -23,6 +23,7 @@ use std::{
 };
 
 use ahash::{HashMap, HashMapExt, HashSet};
+use format_bytes::format_bytes;
 use futures::{
     AsyncReadExt, AsyncWriteExt,
     stream::{FuturesOrdered, FuturesUnordered},
@@ -38,10 +39,7 @@ use smol::{
 use tracing::{info, instrument, warn};
 
 use crate::{
-    builder::{
-        CurrentDirectoryCheckoutTask,
-        local::{BuilderGuard, LocalBuilder, RunnerGuard},
-    },
+    builder::local::{BuilderGuard, LocalBuilder, RunnerGuard},
     environment::NowEnvironment,
     workflow::{NowJob, NowStepEnvVar},
 };
@@ -241,19 +239,32 @@ impl NowEnvironment {
             );
         }
 
-        let mut checkout_child = if dry_run {
-            Box::new(CurrentDirectoryCheckoutTask {
-                current_directory: PathBuf::from("/dummy"),
-            })
+        let tempdir = if dry_run {
+            None
         } else {
-            runner.checkout(job.checkout)?
+            runner.create_tempdir(job.checkout, receiver).await?
         };
-
-        let cwdir = smol::future::or(checkout_child.run(), async {
-            let _ = receiver.recv().await;
-            Err(color_eyre::eyre::eyre!("Runner aborted"))
-        })
-        .await?;
+        let cwdir = if dry_run {
+            PathBuf::from("/dummy")
+        } else {
+            match runner
+                .checkout(job.checkout, tempdir.clone(), receiver)
+                .await
+            {
+                Ok(cwdir) => cwdir,
+                Err(error) => {
+                    if let Some(tempdir) = tempdir
+                        && let Err(error) = runner.undo_checkout(job.checkout, &tempdir).await
+                    {
+                        warn!(
+                            runner = runner_name,
+                            is_remote, "Failed to remove temporary directory: {:?}", &error
+                        );
+                    }
+                    return Err(error.into());
+                }
+            }
+        };
 
         let mut output_vars: HashMap<OsString, OsString> = HashMap::new();
 
@@ -466,10 +477,13 @@ impl NowEnvironment {
 
             let stdin_task = async {
                 for (key, value) in env_vars {
-                    stdin.write_all(&key.into_encoded_bytes()).await?;
-                    stdin.write_all(b"=").await?;
-                    stdin.write_all(&value.into_encoded_bytes()).await?;
-                    stdin.write_all(b"\0").await?;
+                    stdin
+                        .write_all(&format_bytes!(
+                            b"{}={}\0",
+                            &key.into_encoded_bytes(),
+                            &value.into_encoded_bytes()
+                        ))
+                        .await?;
                 }
                 drop(stdin);
                 Ok(())

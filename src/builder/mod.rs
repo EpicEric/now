@@ -14,12 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License along
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::{
-    path::{Path, PathBuf},
-    pin::Pin,
-};
+use std::path::{Path, PathBuf};
 
-use futures::FutureExt;
 use smol::{
     channel,
     lock::futures::{Acquire, Read, Write},
@@ -29,99 +25,10 @@ use smol::{
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::{
-    utils::{wait_for_output, write_output_to_stderr},
-    workflow::NowCheckout,
-};
+use crate::workflow::NowCheckout;
 
 pub(crate) mod local;
 pub(crate) mod remote;
-
-pub(crate) trait CheckoutTask {
-    fn run<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = color_eyre::Result<PathBuf>> + 'a>>;
-}
-
-pub(crate) struct CurrentDirectoryCheckoutTask {
-    pub(crate) current_directory: PathBuf,
-}
-
-impl CheckoutTask for CurrentDirectoryCheckoutTask {
-    fn run<'a>(
-        &'a mut self,
-    ) -> std::pin::Pin<Box<dyn Future<Output = color_eyre::Result<PathBuf>> + 'a>> {
-        Box::pin(async { Ok(self.current_directory.clone()) })
-    }
-}
-
-struct CommandCheckoutTask {
-    builder: String,
-    directory: PathBuf,
-    child: Child,
-}
-
-impl Drop for CommandCheckoutTask {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-    }
-}
-
-impl CheckoutTask for CommandCheckoutTask {
-    fn run<'a>(
-        &'a mut self,
-    ) -> std::pin::Pin<Box<dyn Future<Output = color_eyre::Result<PathBuf>> + 'a>> {
-        Box::pin(async {
-            let output = wait_for_output(&mut self.child, None).await?;
-            if output.status.success() {
-                Ok(self.directory.clone())
-            } else {
-                write_output_to_stderr(&output)?;
-                Err(color_eyre::eyre::eyre!(
-                    "Failed to checkout current directory to {}",
-                    self.builder
-                ))
-            }
-        })
-    }
-}
-
-struct PipedCommandCheckoutTask {
-    builder: String,
-    directory: PathBuf,
-    child: Child,
-    stdin_future: Pin<Box<dyn Future<Output = color_eyre::Result<()>>>>,
-}
-
-impl Drop for PipedCommandCheckoutTask {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
-    }
-}
-
-impl CheckoutTask for PipedCommandCheckoutTask {
-    fn run<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = color_eyre::Result<PathBuf>> + 'a>> {
-        Box::pin(
-            smol::future::zip(
-                async {
-                    let output = wait_for_output(&mut self.child, None).await?;
-                    if output.status.success() {
-                        Ok(self.directory.clone())
-                    } else {
-                        write_output_to_stderr(&output)?;
-                        Err(color_eyre::eyre::eyre!(
-                            "Failed to checkout current directory to {}",
-                            self.builder
-                        ))
-                    }
-                },
-                &mut self.stdin_future,
-            )
-            .map(|(first, second)| {
-                second?;
-                first
-            }),
-        )
-    }
-}
 
 #[async_trait(?Send)]
 pub(crate) trait NowBuilder {
@@ -133,7 +40,18 @@ pub(crate) trait NowBuilder {
 
     fn is_remote(&self) -> bool;
 
-    fn checkout(&self, checkout: NowCheckout) -> color_eyre::Result<Box<dyn CheckoutTask>>;
+    async fn create_tempdir(
+        &self,
+        checkout: NowCheckout,
+        cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<Option<PathBuf>>;
+
+    async fn checkout(
+        &self,
+        checkout: NowCheckout,
+        tempdir: Option<PathBuf>,
+        cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<PathBuf>;
 
     async fn copy_derivations(
         &self,

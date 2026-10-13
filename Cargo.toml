@@ -28,6 +28,7 @@ ctrlc = { version = "3.5.2", features = ["termination"] }
 dotenvy = "0.15.7"
 duper = { version = "0.6.3", features = ["serde"] }
 flate2 = "1.1.9"
+format-bytes = "0.3.0"
 futures = "0.3.33"
 glob = "0.3.4"
 hex = "0.4.3"

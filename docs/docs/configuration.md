@@ -542,7 +542,7 @@ You can also set environment variables in a job dynamically, by specifying the `
 
 When a step or teardown script outputs a value that was set via `runner.secret`, the step binary replaces every occurrence of that value with `***` in logs. This applies regardless of where the value appears, whether that's inside a larger string, as part of a URL, etc.
 
-## Locking a step's `PATH`
+### Locking a step's `PATH`
 
 By default, a step's script inherits the calling shell's `PATH`, with the packages in `path` prepended to it. If you want a step to only be able to use the packages in `path`, set `pathLockdown` to `true`:
 

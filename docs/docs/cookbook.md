@@ -51,7 +51,7 @@ jobs:
         uses: NixOS/nix-installer-action@62c1943b776c509394b550f3f983adc14e9212d6 # v1.0.0
         with:
           add-channel: "true"
-      - name: Push to cache
+      - name: Code coverage
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         run: |

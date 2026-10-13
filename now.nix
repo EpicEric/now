@@ -4,7 +4,7 @@ let
   pkgs = import inputs.nixpkgs { };
   now = import ./. { inherit pkgs; };
 
-  mkOption =
+  mkOptionDocumentation =
     level: module:
     { name, value }:
     let
@@ -34,7 +34,8 @@ let
           ""
       }
     '';
-  mkModule =
+
+  mkModuleDocumentation =
     level:
     { name, value }:
     let
@@ -50,11 +51,12 @@ let
       Available options:
 
       ${concatStringsSep "\n\n" (
-        map (mkOption (level + 1) name) (
+        map (mkOptionDocumentation (level + 1) name) (
           builtins.filter ({ value, ... }: value ? description) (attrsToList value.options)
         )
       )}
     '';
+
   mkDocumentation =
     level: modules:
     let
@@ -62,7 +64,7 @@ let
       inherit (pkgs.lib) attrsToList;
     in
     concatStringsSep "\n\n" (
-      map (mkModule level) (
+      map (mkModuleDocumentation level) (
         builtins.filter ({ value, ... }: value.meta.generateDocs or true) (attrsToList modules)
       )
     );
@@ -396,6 +398,7 @@ in
       name = "Finalize tests";
       needs = [
         "test-abort"
+        "test-checkout"
         "test-conditionals"
         "test-cycle"
         "test-dry-run"
@@ -422,7 +425,7 @@ in
         {
           shell = pkgs.nushell;
           run = ''
-            print $"(ansi green)Good to go! ^u^(ansi reset)"
+            'Good to go! ^u^' | ansi gradient -F rainbow
           '';
         }
       ];
@@ -453,6 +456,35 @@ in
 
             if ($output | str contains "late ran") {
               print $"(ansi red_bold)ERROR:(ansi reset) 'late' job should have been aborted"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-checkout = {
+      name = "Test local checkout";
+      steps = [
+        {
+          path = [
+            pkgs.git
+            now
+          ];
+          shell = pkgs.nushell;
+          run = ''
+            let cwdir = (mktemp -p ($env.TMPDIR? | default "/tmp") -d)
+            git init -b main $cwdir
+            'Foo contents' | save ($cwdir | path join foo)
+            'Bar contents' | save ($cwdir | path join bar)
+            'bar' | save ($cwdir | path join .gitignore)
+
+            now run --cwdir $cwdir --all-jobs --workflow .now/tests/checkout.nix
+            rm -rf $cwdir
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
               exit 1
             }
 

@@ -25,6 +25,7 @@ use std::{
 
 use ahash::{HashMap, HashSet};
 use async_trait::async_trait;
+use color_eyre::eyre::OptionExt;
 use futures::{AsyncWriteExt, stream::FuturesUnordered};
 use smol::{
     channel::{self, Receiver},
@@ -37,12 +38,9 @@ use smol::{
 };
 
 use crate::{
-    builder::{
-        CheckoutTask, CommandCheckoutTask, CurrentDirectoryCheckoutTask, NixConfig, NowBuilder,
-        PipedCommandCheckoutTask, remote::RemoteBuilder,
-    },
+    builder::{NixConfig, NowBuilder, remote::RemoteBuilder},
     environment::NowEnvironment,
-    utils::{get_random_string, wait_for_output, write_output_to_stderr},
+    utils::{wait_for_output, write_output_to_stderr},
     workflow::{NowCheckout, NowJob, NowRunMode},
 };
 
@@ -330,42 +328,67 @@ impl NowBuilder for LocalBuilder {
         false
     }
 
-    fn checkout(&self, checkout: NowCheckout) -> color_eyre::Result<Box<dyn CheckoutTask>> {
+    async fn create_tempdir(
+        &self,
+        checkout: NowCheckout,
+        cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<Option<PathBuf>> {
         match checkout {
-            NowCheckout::Default | NowCheckout::All => Ok(Box::new(CurrentDirectoryCheckoutTask {
-                current_directory: std::env::current_dir()?,
-            })),
-            NowCheckout::None => {
-                let tmpdir = temp_dir().join(format!("now-{}", get_random_string(10)));
-
-                let mut command = Command::new("mkdir");
-                command
-                    .arg("-p")
-                    .arg(&tmpdir)
+            NowCheckout::Default | NowCheckout::All => Ok(None),
+            NowCheckout::None | NowCheckout::Clone | NowCheckout::CloneAll => {
+                let mut tempdir_command = Command::new("sh");
+                tempdir_command
+                    .args(["-c", r#"mktemp -d "${TMPDIR:-/tmp}/now-XXXXXXXXXX""#])
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
-                Ok(Box::new(CommandCheckoutTask {
-                    builder: self.get_name(),
-                    directory: tmpdir,
-                    child: command.spawn()?,
-                }))
+                let mut child = tempdir_command.spawn()?;
+                let output = wait_for_output(&mut child, Some(cancellation)).await?;
+                if output.status.success() {
+                    Ok(Some(PathBuf::from(OsStr::from_bytes(
+                        output.stdout.trim_ascii(),
+                    ))))
+                } else {
+                    write_output_to_stderr(&output)?;
+                    Err(color_eyre::eyre::eyre!(
+                        "Temporary directory creation failed"
+                    ))
+                }
+            }
+        }
+    }
+
+    async fn checkout(
+        &self,
+        checkout: NowCheckout,
+        tempdir: Option<PathBuf>,
+        cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<PathBuf> {
+        match checkout {
+            NowCheckout::Default | NowCheckout::All => {
+                debug_assert!(tempdir.is_none());
+                Ok(std::env::current_dir()?)
+            }
+            NowCheckout::None => {
+                let tempdir =
+                    tempdir.ok_or_eyre(color_eyre::eyre::eyre!("Missing temporary directory"))?;
+                Ok(tempdir)
             }
             NowCheckout::Clone => {
-                let tmpdir = temp_dir().join(format!("now-{}", get_random_string(10)));
-
+                let tempdir =
+                    tempdir.ok_or_eyre(color_eyre::eyre::eyre!("Missing temporary directory"))?;
                 let mut command = Command::new("rsync");
                 command
                     .args(["-arz", "--files-from=-", "."])
-                    .arg(&tmpdir)
+                    .arg(&tempdir)
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
                 let mut child = command.spawn()?;
                 let mut stdin = child.stdin.take().expect("stdin is piped");
-                let stdin_future = Box::pin(async move {
+                let stdin_future = async move {
                     let cwd = std::env::current_dir()?;
                     for dir_entry in ignore::Walk::new(std::env::current_dir()?).flatten() {
                         if dir_entry.file_type().is_some_and(|typ| typ.is_file()) {
@@ -382,31 +405,39 @@ impl NowBuilder for LocalBuilder {
                         }
                     }
                     Ok(stdin.flush().await?)
-                });
-
-                Ok(Box::new(PipedCommandCheckoutTask {
-                    builder: self.get_name(),
-                    directory: tmpdir,
-                    child,
+                };
+                let (_, output) = smol::future::try_zip(
                     stdin_future,
-                }))
+                    wait_for_output(&mut child, Some(cancellation)),
+                )
+                .await?;
+                if output.status.success() {
+                    Ok(tempdir)
+                } else {
+                    write_output_to_stderr(&output)?;
+                    Err(color_eyre::eyre::eyre!("Checkout failed"))
+                }
             }
             NowCheckout::CloneAll => {
-                let tmpdir = temp_dir().join(format!("now-{}", get_random_string(10)));
+                let tempdir =
+                    tempdir.ok_or_eyre(color_eyre::eyre::eyre!("Missing temporary directory"))?;
 
                 let mut command = Command::new("rsync");
                 command
                     .args(["-arz", "."])
-                    .arg(&tmpdir)
+                    .arg(&tempdir)
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
-                Ok(Box::new(CommandCheckoutTask {
-                    builder: self.get_name(),
-                    directory: tmpdir,
-                    child: command.spawn()?,
-                }))
+                let mut child = command.spawn()?;
+                let output = wait_for_output(&mut child, Some(cancellation)).await?;
+                if output.status.success() {
+                    Ok(tempdir)
+                } else {
+                    write_output_to_stderr(&output)?;
+                    Err(color_eyre::eyre::eyre!("Checkout failed"))
+                }
             }
         }
     }

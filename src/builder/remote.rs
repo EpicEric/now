@@ -17,13 +17,15 @@
 use std::{
     ffi::{OsStr, OsString},
     io::Read as _,
-    os::unix::ffi::OsStrExt,
+    os::unix::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
     time::Duration,
 };
 
 use ahash::{HashSet, HashSetExt};
 use async_trait::async_trait;
+use color_eyre::eyre::OptionExt;
+use format_bytes::format_bytes;
 use smol::{
     channel,
     io::{AsyncReadExt, AsyncWriteExt},
@@ -35,7 +37,7 @@ use smol::{
 };
 
 use crate::{
-    builder::{CheckoutTask, CommandCheckoutTask, NixConfig, NowBuilder, PipedCommandCheckoutTask},
+    builder::{NixConfig, NowBuilder},
     utils::{get_random_string, wait_for_output, write_output_to_stderr},
     workflow::NowCheckout,
 };
@@ -311,10 +313,57 @@ impl NowBuilder for RemoteBuilder {
         true
     }
 
-    fn checkout(&self, checkout: NowCheckout) -> color_eyre::Result<Box<dyn CheckoutTask>> {
+    async fn create_tempdir(
+        &self,
+        checkout: NowCheckout,
+        cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<Option<PathBuf>> {
+        match checkout {
+            NowCheckout::Default
+            | NowCheckout::All
+            | NowCheckout::None
+            | NowCheckout::Clone
+            | NowCheckout::CloneAll => {
+                let mut tempdir_command = Command::new("ssh");
+                for arg in get_ssh_options(&self.ssh_options) {
+                    tempdir_command.arg(arg);
+                }
+                tempdir_command
+                    .args([
+                        &self.ssh_options.uri,
+                        r#"sh -c 'mktemp -d "${TMPDIR:-/tmp}/now-XXXXXXXXXX"'"#,
+                    ])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::piped());
+                let mut child = tempdir_command.spawn()?;
+                let output = wait_for_output(&mut child, Some(cancellation)).await?;
+                if output.status.success() {
+                    Ok(Some(PathBuf::from(OsStr::from_bytes(
+                        output.stdout.trim_ascii(),
+                    ))))
+                } else {
+                    write_output_to_stderr(&output)?;
+                    Err(color_eyre::eyre::eyre!(
+                        "Temporary directory creation failed"
+                    ))
+                }
+            }
+        }
+    }
+
+    async fn checkout(
+        &self,
+        checkout: NowCheckout,
+        tempdir: Option<PathBuf>,
+        cancellation: &channel::Receiver<()>,
+    ) -> color_eyre::Result<PathBuf> {
+        let tempdir = tempdir.ok_or_eyre(color_eyre::eyre::eyre!(
+            "Missing temporary directory in remote"
+        ))?;
+
         match checkout {
             NowCheckout::Default | NowCheckout::Clone => {
-                let tmpdir = format!("/tmp/now-{}", get_random_string(10));
                 let mut ssh_command: OsString = "ssh ".into();
                 for arg in get_ssh_options(&self.ssh_options) {
                     ssh_command.push(arg);
@@ -326,21 +375,22 @@ impl NowBuilder for RemoteBuilder {
                     .arg("-e")
                     .arg(ssh_command)
                     .args(["-arz", "--files-from=-", "."])
-                    .arg(format!(
-                        "{}:{}",
+                    .arg(OsString::from_vec(format_bytes!(
+                        b"{}:{}",
                         self.ssh_options
                             .uri
                             .strip_prefix("ssh://")
-                            .unwrap_or(&self.ssh_options.uri),
-                        tmpdir
-                    ))
+                            .unwrap_or(&self.ssh_options.uri)
+                            .as_bytes(),
+                        tempdir.as_os_str().as_encoded_bytes()
+                    )))
                     .stdin(Stdio::piped())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
                 let mut child = command.spawn()?;
                 let mut stdin = child.stdin.take().expect("stdin is piped");
-                let stdin_future = Box::pin(async move {
+                let stdin_future = async move {
                     let cwd = std::env::current_dir()?;
                     for dir_entry in ignore::Walk::new(std::env::current_dir()?).flatten() {
                         if dir_entry.file_type().is_some_and(|typ| typ.is_file()) {
@@ -357,17 +407,20 @@ impl NowBuilder for RemoteBuilder {
                         }
                     }
                     Ok(stdin.flush().await?)
-                });
-
-                Ok(Box::new(PipedCommandCheckoutTask {
-                    builder: self.get_name(),
-                    directory: PathBuf::from(tmpdir),
-                    child,
+                };
+                let (_, output) = smol::future::try_zip(
                     stdin_future,
-                }))
+                    wait_for_output(&mut child, Some(cancellation)),
+                )
+                .await?;
+                if output.status.success() {
+                    Ok(tempdir)
+                } else {
+                    write_output_to_stderr(&output)?;
+                    Err(color_eyre::eyre::eyre!("Checkout failed"))
+                }
             }
             NowCheckout::All | NowCheckout::CloneAll => {
-                let tmpdir = format!("/tmp/now-{}", get_random_string(10));
                 let mut ssh_command: OsString = "ssh ".into();
 
                 for arg in get_ssh_options(&self.ssh_options) {
@@ -380,43 +433,29 @@ impl NowBuilder for RemoteBuilder {
                     .arg("-e")
                     .arg(ssh_command)
                     .args(["-arz", "."])
-                    .arg(format!(
-                        "{}:{}",
+                    .arg(OsString::from_vec(format_bytes!(
+                        b"{}:{}",
                         self.ssh_options
                             .uri
                             .strip_prefix("ssh://")
-                            .unwrap_or(&self.ssh_options.uri),
-                        tmpdir
-                    ))
+                            .unwrap_or(&self.ssh_options.uri)
+                            .as_bytes(),
+                        tempdir.as_os_str().as_encoded_bytes()
+                    )))
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
-                Ok(Box::new(CommandCheckoutTask {
-                    builder: self.get_name(),
-                    directory: PathBuf::from(tmpdir),
-                    child: command.spawn()?,
-                }))
-            }
-            NowCheckout::None => {
-                let tmpdir = format!("/tmp/now-{}", get_random_string(10));
-
-                let mut command = Command::new("ssh");
-                for arg in get_ssh_options(&self.ssh_options) {
-                    command.arg(arg);
+                let mut child = command.spawn()?;
+                let output = wait_for_output(&mut child, Some(cancellation)).await?;
+                if output.status.success() {
+                    Ok(tempdir)
+                } else {
+                    write_output_to_stderr(&output)?;
+                    Err(color_eyre::eyre::eyre!("Checkout failed"))
                 }
-                command
-                    .args([&self.ssh_options.uri, "mkdir", &tmpdir])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped());
-
-                Ok(Box::new(CommandCheckoutTask {
-                    builder: self.get_name(),
-                    directory: PathBuf::from(tmpdir),
-                    child: command.spawn()?,
-                }))
             }
+            NowCheckout::None => Ok(tempdir),
         }
     }
 
