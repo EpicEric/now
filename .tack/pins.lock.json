@@ -19,8 +19,8 @@
     "type": "git",
     "url": "https://codeberg.org/now-runner/now-services.git",
     "ref": "HEAD",
-    "rev": "e83bb1c4e586064bb672e67d7a98a2ed295c6a80",
-    "narHash": "sha256-EqyE1Az/p/BAD/OrKCpi2iIJ1HakNQvpvSpaInNl8kI=",
-    "lastModified": 1791637953
+    "rev": "5a4c3aa99fefa024f3bf8176cc2d0e53f6d36209",
+    "narHash": "sha256-UHZ3jslrMD0KrWUMovcDNJ1UCQp0DYse50RcqeH38tc=",
+    "lastModified": 1791915713
   }
 }

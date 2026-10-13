@@ -156,7 +156,11 @@ in
           inherit (inputs.nixpkgs.pkgs.lib) concatStringsSep;
         in
         "environment variables ${
-          concatStringsSep ", " (map (var: "'${var}'") invalidEnvs { inherit inputs options; })
+          concatStringsSep ", " (
+            map (var: "'${var}'") (invalidEnvs {
+              inherit inputs options;
+            })
+          )
         } are not valid POSIX variable names";
     }
     {
@@ -197,6 +201,7 @@ in
       inherit (inputs.nixpkgs) pkgs;
       inherit (pkgs.lib)
         getExe
+        optionals
         optionalString
         escapeShellArgs
         escapeShellArg
@@ -222,50 +227,48 @@ in
         };
       env = jobEnv // (options.env or { });
       stepPathLockdown = options.pathLockdown or jobPathLockdown;
-      lockedPath = escapeShellArg (makeBinPath options.path);
-      runtimeInputs = options.path or [ ];
+      runtimeInputs = makeBinPath (options.path or [ ]);
+      pathString =
+        if stepPathLockdown then
+          "--set PATH ${escapeShellArg runtimeInputs}"
+        else
+          optionalString (runtimeInputs != "") "--prefix PATH : ${runtimeInputs}";
+      secretNames = builtins.attrNames (filterAttrs (_: value: value ? "__nowSecret_${evalId}") env);
     in
     {
       name = if (options ? name && options.name != "") then options.name else placeholderName;
 
       runDrv =
-        (pkgs.writeShellApplication {
-          name = "now-step";
-          checkPhase = "";
-          inherit runtimeInputs;
-          text = ''
-            ${optionalString stepPathLockdown "export PATH=${lockedPath}"}
-            ${getExe pkgs.now-step} ${
-              if options ? "__nowUpload_${evalId}" || options ? outputVar then "--preserve-stdout" else ""
-            } ${
-              pkgs.callPackage ../sandbox.nix {
-                nowSandbox = inputs.sandbox;
-                nowScript = script (readPath options.run);
-              }
-            } ${
-              escapeShellArgs (builtins.attrNames (filterAttrs (_: value: value ? "__nowSecret_${evalId}") env))
-            }
-          '';
-        }).drvPath;
+        let
+          sandboxDrv = pkgs.callPackage ../sandbox.nix {
+            nowSandbox = inputs.sandbox;
+            nowScript = script (readPath options.run);
+          };
+          flags =
+            optionals (options ? "__nowUpload_${evalId}" || options ? outputVar) [ "--preserve-stdout" ]
+            ++ [ "${sandboxDrv}" ]
+            ++ secretNames;
+        in
+        (pkgs.runCommandLocal "now-step" { nativeBuildInputs = [ pkgs.makeBinaryWrapper ]; } ''
+          makeBinaryWrapper ${getExe pkgs.now-step} $out/bin/now-step \
+            ${pathString} \
+            --add-flags ${escapeShellArg (escapeShellArgs flags)}
+        '').drvPath;
 
       teardownDrv =
         if options ? teardown then
-          (pkgs.writeShellApplication {
-            name = "now-step";
-            checkPhase = "";
-            inherit runtimeInputs;
-            text = ''
-              ${optionalString stepPathLockdown "export PATH=${lockedPath}"}
-              ${getExe pkgs.now-step} ${
-                pkgs.callPackage ../sandbox.nix {
-                  nowSandbox = inputs.sandbox;
-                  nowScript = script (readPath options.teardown);
-                }
-              } ${
-                escapeShellArgs (builtins.attrNames (filterAttrs (_: value: value ? "__nowSecret_${evalId}") env))
-              }
-            '';
-          }).drvPath
+          let
+            sandboxDrv = pkgs.callPackage ../sandbox.nix {
+              nowSandbox = inputs.sandbox;
+              nowScript = script (readPath options.teardown);
+            };
+            flags = [ "${sandboxDrv}" ] ++ secretNames;
+          in
+          (pkgs.runCommandLocal "now-step" { nativeBuildInputs = [ pkgs.makeBinaryWrapper ]; } ''
+            makeBinaryWrapper ${getExe pkgs.now-step} $out/bin/now-step \
+              ${pathString} \
+              --add-flags ${escapeShellArg (escapeShellArgs flags)}
+          '').drvPath
         else
           null;
 

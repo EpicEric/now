@@ -88,11 +88,6 @@ Command-line arguments passed to Garage.
 
 _Type:_ `listOf<string>`
 
-_Default:_
-
-```nix
-[ ]
-```
 
 
 
@@ -102,11 +97,6 @@ _Default:_
 
 _Type:_ `attrs`
 
-_Default:_
-
-```nix
-{ }
-```
 
 
 
@@ -133,11 +123,6 @@ Available options:
 
 _Type:_ `attrs`
 
-_Default:_
-
-```nix
-{ }
-```
 
 
 
@@ -156,11 +141,6 @@ List of common arguments to pass to each invocation of `now run`.
 
 _Type:_ `listOf<string>`
 
-_Default:_
-
-```nix
-[ ]
-```
 
 
 
@@ -168,10 +148,10 @@ _Default:_
 
 `now` package to use.
 
-By default, `now` in your PATH is used.
+By default, the one in your PATH is used.
 
 
-_Type:_ `nullOr<derivation>`
+_Type:_ `derivation`
 
 
 
@@ -180,7 +160,14 @@ _Type:_ `nullOr<derivation>`
 
 How to handle any failing job.
 
-_Type:_ `strategy`
+Possible options:
+
+- `"terminate"`: Terminate all other jobs.
+- `"restart"`: Restart any failing jobs.
+- `"ignore"`: Ignore the failing job and keep going.
+
+
+_Type:_ `strategyEnum`
 
 _Default:_
 
@@ -204,11 +191,6 @@ Available options:
 
 _Type:_ `attrs`
 
-_Default:_
-
-```nix
-{ }
-```
 
 
 
@@ -259,11 +241,6 @@ _Type:_ `string`
 
 _Type:_ `attrs`
 
-_Default:_
-
-```nix
-{ }
-```
 
 
 
