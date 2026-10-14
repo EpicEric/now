@@ -41,7 +41,6 @@ in
 {
   inputs = {
     nixpkgs.from = { self }: self.nixpkgs;
-    sandbox.from = { self }: self.sandbox;
     stepInputs.from = { self }: self.stepInputs;
   };
 
@@ -111,7 +110,6 @@ in
 
   modules = {
     nixpkgs = import ./nixpkgs.nix adios;
-    sandbox = import ./sandbox.nix adios;
     stepInputs = import ./stepInputs.nix adios;
   };
 
@@ -176,29 +174,11 @@ in
     }
   ];
 
-  mutations = promise (
-    {
-      inputs,
-      options,
-      path,
-    }:
-    let
-      inherit (builtins) isBool;
-      inherit (inputs.stepInputs) jobSandbox;
-    in
-    {
-      "${path}/sandbox" =
-        if isBool (options.sandbox or false) then
-          (if isBool jobSandbox then { } else jobSandbox) // { enable = options.sandbox; }
-        else
-          (if isBool jobSandbox then { enable = jobSandbox; } else jobSandbox) // options.sandbox;
-    }
-  );
-
   result = promise (
     { options, inputs }:
     let
       inherit (inputs.nixpkgs) pkgs;
+      inherit (builtins) isBool;
       inherit (pkgs.lib)
         getExe
         optionals
@@ -211,8 +191,23 @@ in
       inherit (inputs.stepInputs)
         jobEnv
         jobPathLockdown
+        jobSandbox
         placeholderName
         ;
+
+      sandboxArgs =
+        if options ? sandbox then
+          if isBool options.sandbox then
+            (if isBool jobSandbox then { } else jobSandbox) // { enable = options.sandbox; }
+          else
+            (if isBool jobSandbox then { enable = jobSandbox; } else jobSandbox) // options.sandbox
+        else if isBool jobSandbox then
+          { enable = jobSandbox; }
+        else
+          jobSandbox;
+
+      nowSandbox = ((import ./. adios) { }).modules.sandbox sandboxArgs;
+
       script =
         text:
         pkgs.writeTextFile {
@@ -225,7 +220,9 @@ in
           '';
           executable = true;
         };
+
       env = jobEnv // (options.env or { });
+
       stepPathLockdown = options.pathLockdown or jobPathLockdown;
       runtimeInputs = makeBinPath (options.path or [ ]);
       pathString =
@@ -235,13 +232,14 @@ in
           optionalString (runtimeInputs != "") "--prefix PATH : ${runtimeInputs}";
       secretNames = builtins.attrNames (filterAttrs (_: value: value ? "__nowSecret_${evalId}") env);
     in
+
     {
       name = if (options ? name && options.name != "") then options.name else placeholderName;
 
       runDrv =
         let
           sandboxDrv = pkgs.callPackage ../sandbox.nix {
-            nowSandbox = inputs.sandbox;
+            inherit nowSandbox;
             nowScript = script (readPath options.run);
           };
           flags =
@@ -259,7 +257,7 @@ in
         if options ? teardown then
           let
             sandboxDrv = pkgs.callPackage ../sandbox.nix {
-              nowSandbox = inputs.sandbox;
+              inherit nowSandbox;
               nowScript = script (readPath options.teardown);
             };
             flags = [ "${sandboxDrv}" ] ++ secretNames;

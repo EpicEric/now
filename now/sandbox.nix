@@ -31,7 +31,8 @@ if (nowSandbox.enable or false) then
     writeShellScript nowScript.name ''
       set -euo pipefail
       ${lib.optionalString (nowSandbox.gcroots or false) ''
-        mkdir -p "''${NOW_GCROOT_DIR:=$(mktemp -d)}"
+        export NOW_GCROOT_DIR="''${NOW_GCROOT_DIR:-$(mktemp -d)}"
+        mkdir -p "$NOW_GCROOT_DIR"
       ''}
       exec ${lib.getExe bubblewrap} \
         --ro-bind /nix/store /nix/store \
@@ -40,8 +41,7 @@ if (nowSandbox.enable or false) then
             --bind-try /nix/var/nix/daemon-socket /nix/var/nix/daemon-socket \
             --setenv NIX_REMOTE daemon \
           ''
-        } \
-        --unshare-all \
+        } --unshare-all \
         ${
           lib.optionalString (nowSandbox.networkAccess or false) ''
             --share-net \
@@ -49,37 +49,45 @@ if (nowSandbox.enable or false) then
             --ro-bind-try /etc/nsswitch.conf /etc/nsswitch.conf \
             --ro-bind-try /etc/ssl/certs /etc/ssl/certs \
           ''
-        } \
+        } --proc /proc \
+        --dev /dev \
+        --tmpfs /tmp \
+        --setenv TMPDIR /tmp \
         ${
           if nowSandbox.writableDirectory or false then
-            ''--bind "$PWD" "$PWD" --chdir "$PWD"''
+            ''
+              --bind "$PWD" "$PWD" \
+              --chdir "$PWD" \
+            ''
           else
-            ''--ro-bind "$PWD" "$PWD" --chdir "$PWD"''
-        } \
-        ${
+            ''
+              --ro-bind "$PWD" "$PWD" \
+              --chdir "$PWD" \
+            ''
+        } ${
           lib.optionalString (nowSandbox.gcroots or false) ''
             --bind "$NOW_GCROOT_DIR" "$NOW_GCROOT_DIR" \
           ''
-        } \
-        --proc /proc \
-        --dev /dev \
-        --tmpfs /tmp \
-        --ro-bind-try /etc/passwd /etc/passwd \
+        } --ro-bind-try /etc/passwd /etc/passwd \
         --ro-bind-try /etc/group /etc/group \
         --ro-bind-try /etc/nix/nix.conf /etc/nix/nix.conf \
         ${
           if nowSandbox ? useHome && lib.isList nowSandbox.useHome then
-            builtins.concatStringsSep " " (
-              map (
-                dir: ''--bind "$HOME/${lib.removePrefix "/" dir}" "$HOME/${lib.removePrefix "/" dir}"''
-              ) nowSandbox.useHome
+            builtins.concatStringsSep "\n" (
+              map (dir: ''
+                --bind "$HOME/${lib.removePrefix "/" dir}" "$HOME/${lib.removePrefix "/" dir}" \
+              '') nowSandbox.useHome
             )
           else if (nowSandbox.useHome or false) then
-            ''--bind "$HOME" "$HOME"''
+            ''
+              --bind "$HOME" "$HOME" \
+            ''
           else
-            "--dir /homeless-shelter --setenv HOME /homeless-shelter"
-        } \
-        --die-with-parent \
+            ''
+              --dir /homeless-shelter \
+              --setenv HOME /homeless-shelter \
+            ''
+        } --die-with-parent \
         -- ${nowScript} "$@"
     ''
 
@@ -169,12 +177,13 @@ if (nowSandbox.enable or false) then
     writeShellScript nowScript.name ''
       set -euo pipefail
       ${lib.optionalString (nowSandbox.gcroots or false) ''
-        mkdir -p "''${NOW_GCROOT_DIR:=$(mktemp -d)}"
+        export NOW_GCROOT_DIR="''${NOW_GCROOT_DIR:-$(mktemp -d)}"
+        mkdir -p "$NOW_GCROOT_DIR"
       ''}
       exec /usr/bin/sandbox-exec \
         -D HOME="$HOME" \
         -D PWD="$PWD" \
-        -D TMPDIR="''${TMPDIR:-/tmp}" \
+        -D TMPDIR="$(realpath "''${TMPDIR:-/tmp}")" \
         ${lib.optionalString (nowSandbox.gcroots or false) ''
           -D NOW_GCROOT_DIR="$NOW_GCROOT_DIR" \
         ''}

@@ -17,10 +17,12 @@
 ### Fixed
 
 - Use pinned nixpkgs to build now-step
+- Fix handling of sandbox options
 
 ### Changed
 
 - Respect TMPDIR variable in remote runners
+- Use binary wrappers for run/teardown derivations
 
 ## 0.5.0 (2026-10-04)
 

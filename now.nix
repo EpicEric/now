@@ -413,6 +413,7 @@ in
         "test-nixpkgs"
         "test-overlay"
         "test-path-lockdown"
+        "test-sandbox"
         "test-script"
         "test-skip"
         "test-tempdir"
@@ -808,6 +809,35 @@ in
           shell = pkgs.nushell;
           run = ''
             now run --workflow .now/tests/path-lockdown.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-sandbox = {
+      name = "Test sandboxing";
+      steps = [
+        {
+          path = [
+            pkgs.git
+            now
+          ];
+          shell = pkgs.nushell;
+          run = ''
+            let cwdir = (mktemp -p ($env.TMPDIR? | default "/tmp") -d)
+            git init -b main $cwdir
+            mkdir ($cwdir | path join bar)
+            'Foo contents' | save ($cwdir | path join foo)
+            'Baz contents' | save ($cwdir | path join bar/baz)
+
+            now run --cwdir $cwdir --all-jobs --workflow .now/tests/sandbox.nix
+            rm -rf $cwdir
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
               exit 1
