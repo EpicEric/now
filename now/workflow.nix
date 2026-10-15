@@ -40,11 +40,7 @@ let
       args,
     }:
     let
-      evaledArgs =
-        if lib.isFunction args then
-          args (builtins.intersectAttrs (lib.functionArgs args) (specialArgs // { inherit lib; }))
-        else
-          args;
+      evaledArgs = if lib.isFunction args then args (specialArgs // { inherit lib; }) else args;
     in
     if evaledArgs == null then null else removeAttrs (module evaledArgs) [ "__functor" ];
 in

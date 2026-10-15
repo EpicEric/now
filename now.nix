@@ -405,23 +405,31 @@ in
         "test-dry-run"
         "test-env"
         "test-error"
+        "test-fail-fast"
         "test-fhs"
         "test-flake"
+        "test-gcroot-dir"
         "test-glob"
         "test-init"
-        "test-jobs"
+        "test-invalid-env"
+        "test-invalid-output-var"
         "test-job-timeout"
+        "test-jobs"
         "test-list"
+        "test-local-only"
         "test-matrix"
         "test-missing-download"
         "test-missing-secret"
         "test-missing-var"
         "test-nix-config"
         "test-nixpkgs"
+        "test-no-match"
         "test-overlay"
         "test-path-lockdown"
         "test-sandbox"
         "test-script"
+        "test-secret-reuse"
+        "test-shell-args"
         "test-skip"
         "test-tempdir"
         "test-upload"
@@ -464,6 +472,11 @@ in
 
             if ($output | str contains "late ran") {
               print $"(ansi red_bold)ERROR:(ansi reset) 'late' job should have been aborted"
+              exit 1
+            }
+
+            if not ($output | str contains "=== note: teardown still runs on error ===") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected teardown note in output"
               exit 1
             }
 
@@ -797,9 +810,50 @@ in
           path = [ now ];
           shell = pkgs.nushell;
           run = ''
-            now run --flake .now/tests
+            now run --flake .now/tests flake
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            now run --flake .now/tests#other-entrypoint example
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-gcroot-dir = {
+      name = "Test --gcroot-dir";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let gcrootdir = (mktemp -p ($env.TMPDIR? | default "/tmp") -d)
+            now run --gcroot-dir $gcrootdir -w .now/tests/gcroot-dir.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              rm -rf $gcrootdir
+              exit 1
+            }
+
+            let files = (ls -a $gcrootdir)
+            print $files
+            rm -rf $gcrootdir
+
+            if ($files | where name =~ '-example-build\.drv$' | is-empty) {
+              print $"(ansi red_bold)ERROR:(ansi reset) Missing build in gcroot directory"
+              exit 1
+            }
+
+            if ($files | where name =~ '-example-upload\.drv$' | is-empty) {
+              print $"(ansi red_bold)ERROR:(ansi reset) Missing upload in gcroot directory"
               exit 1
             }
 
@@ -817,7 +871,7 @@ in
           shell = pkgs.nushell;
           run = ''
             for pattern in ["a/1*" "b/**/*" "c/f?o"] {
-              now run $pattern --workflow .now/tests/glob.nix
+              now run $pattern --cores 1 --workflow .now/tests/glob.nix
               if $env.LAST_EXIT_CODE != 0 {
                 print $"ERROR: now run failed for pattern '($pattern)'"
                 exit 1
@@ -859,16 +913,51 @@ in
       ];
     };
 
-    test-jobs = {
-      name = "Test job dependencies";
+    test-invalid-env = {
+      name = "Test POSIX env validation";
       steps = [
         {
           path = [ now ];
           shell = pkgs.nushell;
           run = ''
-            now run b x --workflow .now/tests/jobs.nix
-            if $env.LAST_EXIT_CODE != 0 {
-              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+            let result = (now eval -w .now/tests/invalid-env.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded"
+              exit 1
+            }
+
+            if not ($output | str contains "environment variable '🫪' does not have a valid POSIX variable name") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Missing error in output"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-invalid-output-var = {
+      name = "Test POSIX step.outputVar validation";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let result = (now eval -w .now/tests/invalid-output-var.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded"
+              exit 1
+            }
+
+            if not ($output | str contains "output environment variable '🫪' is not a valid POSIX variable name") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Missing error in output"
               exit 1
             }
 
@@ -920,6 +1009,25 @@ in
       ];
     };
 
+    test-jobs = {
+      name = "Test job dependencies";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            now run b x --workflow .now/tests/jobs.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
     test-list = {
       name = "Test `now list`";
       steps = [
@@ -944,6 +1052,46 @@ in
             now list --tree --workflow .now/tests/jobs.nix | dot -Tplain-ext
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) `now list --tree` failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-local-only = {
+      name = "Test --local-only";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          env.NIX_CONFIG = ''
+            builders = ssh://localhost - - 1 1 now now -
+          '';
+          run = ''
+            let result = (now run --local-only --workflow .now/tests/local-only.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "No runners match for job 'remote-job'") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Error didn't match"
+              exit 1
+            }
+
+            if ($output | str contains "This shouldn't run") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Remote step shouldn't run"
+              exit 1
+            }
+
+            if ($output | str contains "Teardown shouldn't run") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Remote teardown shouldn't run"
               exit 1
             }
 
@@ -1100,6 +1248,38 @@ in
       ];
     };
 
+    test-no-match = {
+      name = "Test no matching job";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let result = (now run --workflow .now/tests/jobs.nix inexistent | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "No jobs matched 'inexistent'") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected match error in output"
+              exit 1
+            }
+
+            if not ($output | str contains "Available options: a, b, c, x, y") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected suggestions in output"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
     test-overlay = {
       name = "Test overlay";
       steps = [
@@ -1177,6 +1357,61 @@ in
             now run --workflow .now/tests/script.nix
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-secret-reuse = {
+      name = "Test invalid secret reuse";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          env.SHARED_VAR = "supersecretpassword";
+          run = ''
+            let result = (now eval -w .now/tests/secret-reuse.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded"
+              exit 1
+            }
+
+            if not ($output | str contains "secret 'SHARED_VAR' cannot also be used as a regular variable") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Missing error in output"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-shell-args = {
+      name = "Test step.shellArgs";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let result = (now run --workflow .now/tests/shell-args.nix shellArgs | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test should have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "* * *") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected non-globbed string"
               exit 1
             }
 

@@ -34,7 +34,6 @@
     // {
       now = { runner, ... }: {
         inherit nixpkgs;
-        default = "flake";
         jobs.flake = { pkgs, ... }: {
           steps = [
             { run = "pwd"; }
@@ -42,6 +41,15 @@
               name = "hello";
               deriv = self.packages.${pkgs.stdenv.hostPlatform.system}.default;
             })
+          ];
+        };
+      };
+
+      other-entrypoint = {
+        inherit nixpkgs;
+        jobs.example = {
+          steps = [
+            { run = "ls"; }
           ];
         };
       };

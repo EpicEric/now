@@ -3,7 +3,15 @@
     # Fails after '_5'
     fail = {
       needs = [ "_5" ];
-      steps = [ { run = "exit 63"; } ];
+      steps = [
+        {
+          run = "exit 63";
+          teardown = ''
+            echo ""
+            echo "=== note: teardown still runs on error ==="
+          '';
+        }
+      ];
     };
     # Can only start after the failure; should be aborted
     late = {

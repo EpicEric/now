@@ -151,15 +151,18 @@ in
       explain =
         { inputs, options }:
         let
+          inherit (builtins) length head;
           inherit (inputs.nixpkgs.pkgs.lib) concatStringsSep;
+          invalid = invalidEnvs {
+            inherit inputs options;
+          };
         in
-        "environment variables ${
-          concatStringsSep ", " (
-            map (var: "'${var}'") (invalidEnvs {
-              inherit inputs options;
-            })
-          )
-        } are not valid POSIX variable names";
+        if length invalid == 1 then
+          "environment variable '${head invalid}' does not have a valid POSIX variable name"
+        else
+          "environment variables ${
+            concatStringsSep ", " (map (var: "'${var}'") invalid)
+          } don't have valid POSIX variable names";
     }
     {
       verify =

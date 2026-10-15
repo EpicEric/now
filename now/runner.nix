@@ -117,19 +117,20 @@ in
           pkgs.mktemp
         ];
         env = (nixConfigToEnv nixConfig) // env;
-        sandbox = {
+        sandbox = sandbox // {
           writableNixStore = true;
           networkAccess = true;
           gcroots = true;
-        }
-        // sandbox;
+        };
         run = ''
           set -euo pipefail
-          : "''${NOW_GCROOT_DIR:=$(mktemp -d)}"
+          export NOW_GCROOT_DIR="''${NOW_GCROOT_DIR:-$(mktemp -d)}"
           mkdir -p "$NOW_GCROOT_DIR"
           drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
           nix-store --add-root "$NOW_GCROOT_DIR/''${drv##*/}" --indirect --realise "$drv" >/dev/null
-          printf 'now: Built %s\n' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
+          printf "now: Built '%s' (%s)\n" ${
+            lib.escapeShellArg (if name == "" then deriv.name else name)
+          } ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
         '';
       };
 
@@ -159,7 +160,7 @@ in
         // sandbox;
         run = ''
           set -euo pipefail
-          : "''${NOW_GCROOT_DIR:=$(mktemp -d)}"
+          export NOW_GCROOT_DIR="''${NOW_GCROOT_DIR:-$(mktemp -d)}"
           mkdir -p "$NOW_GCROOT_DIR"
           drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
           nix-store --add-root "$NOW_GCROOT_DIR/''${drv##*/}" --indirect --realise "$drv" >/dev/null
