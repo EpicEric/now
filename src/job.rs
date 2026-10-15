@@ -370,16 +370,25 @@ impl NowEnvironment {
                     Ok(())
                 };
 
-                let step_result = match abort {
-                    Some(abort) => {
-                        smol::future::or(step_fut, async {
-                            let _ = abort.recv().await;
-                            Err(color_eyre::eyre::eyre!("Job '{}' aborted", job.name))
-                        })
-                        .await
-                    }
-                    None => step_fut.await,
+                let abort_fut = async {
+                    smol::future::or(
+                        async {
+                            let _ = receiver.recv().await;
+                            Err(color_eyre::eyre::eyre!("Runner aborted"))
+                        },
+                        async {
+                            if let Some(abort) = abort {
+                                let _ = abort.recv().await;
+                                Err(color_eyre::eyre::eyre!("Job '{}' aborted", job.name))
+                            } else {
+                                smol::future::pending::<color_eyre::Result<()>>().await
+                            }
+                        },
+                    )
+                    .await
                 };
+
+                let step_result = smol::future::or(step_fut, abort_fut).await;
                 let _ = child.kill();
                 step_result?;
 

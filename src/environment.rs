@@ -377,7 +377,7 @@ impl NowEnvironment {
                                 .get(&secret.secret_name)
                                 .ok_or_else(|| {
                                     color_eyre::eyre::eyre!(
-                                        "Missing secret '{}'",
+                                        "Secret environment variable '{}' is unset",
                                         &secret.secret_name
                                     )
                                 })?

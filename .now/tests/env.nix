@@ -12,6 +12,7 @@
         };
       in
       {
+        env.JOB_VAR = "This is job envvar";
         steps = [
           {
             env = {
@@ -19,6 +20,12 @@
               MY_SECRET = obtuse.spam "MY_SECRET";
             };
             run = ''
+              if [ "$JOB_VAR" = "This is job envvar" ]; then
+                echo "JOB_VAR: $JOB_VAR"
+              else
+                exit 1
+              fi
+
               if [ "$TEST" = "This is a variable" ]; then
                 echo "TEST: $TEST"
               else

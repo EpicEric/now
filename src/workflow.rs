@@ -28,7 +28,11 @@ use ahash::{HashMap, HashSet, HashSetExt};
 use futures::stream::FuturesUnordered;
 use petgraph::{matrix_graph::NodeIndex, visit::EdgeRef};
 use serde::{Deserialize, Serialize};
-use smol::{channel::Receiver, process::Command, stream::StreamExt};
+use smol::{
+    channel::{Receiver, TryRecvError},
+    process::Command,
+    stream::StreamExt,
+};
 use tracing::{debug, info, instrument, warn};
 
 use crate::{
@@ -253,6 +257,8 @@ impl NowEnvironment {
         } = graph;
         debug!("$duper.graph" = duper::serde::ser::to_string_compact(tree.inner())?);
 
+        let (timed_out_sender, timed_out_receiver) = smol::channel::bounded::<()>(1);
+
         let executor = smol::LocalExecutor::new();
 
         let builder_ref = &builder;
@@ -267,8 +273,9 @@ impl NowEnvironment {
                     if let Some(timeout) = timeout {
                         smol::Timer::after(timeout).await;
                         builder_ref.cancel_builders();
+                        drop(timed_out_sender);
                     } else {
-                        smol::future::pending::<()>().await;
+                        smol::future::pending().await
                     }
                 },
             )
@@ -377,6 +384,12 @@ impl NowEnvironment {
                             }
                         }
                     } else {
+                        if matches!(timed_out_receiver.try_recv(), Err(TryRecvError::Closed)) {
+                            return Err(color_eyre::eyre::eyre!(
+                                "Workflow timed out after {}",
+                                humantime::Duration::from(timeout.expect("timeout is set"))
+                            ));
+                        }
                         if result.is_ok() {
                             info!(runner, is_remote = false, "Done.");
                         }

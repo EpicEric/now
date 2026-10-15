@@ -18,8 +18,8 @@
         }
         {
           run = ''
-            echo "Sleeping for 60 seconds..."
-            sleep 60
+            echo "Sleeping for 10 seconds..."
+            sleep 10
             echo "This shouldn't be printed at all!"
           '';
         }

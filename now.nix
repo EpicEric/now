@@ -401,14 +401,21 @@ in
         "test-checkout"
         "test-conditionals"
         "test-cycle"
+        "test-dotenv"
         "test-dry-run"
         "test-env"
         "test-error"
         "test-fhs"
         "test-flake"
         "test-glob"
+        "test-init"
         "test-jobs"
+        "test-job-timeout"
+        "test-list"
         "test-matrix"
+        "test-missing-download"
+        "test-missing-secret"
+        "test-missing-var"
         "test-nix-config"
         "test-nixpkgs"
         "test-overlay"
@@ -417,10 +424,10 @@ in
         "test-script"
         "test-skip"
         "test-tempdir"
-        "test-timeout"
         "test-upload"
         "test-var-script"
         "test-vars"
+        "test-workflow-timeout"
       ];
       steps = [
         {
@@ -532,6 +539,34 @@ in
 
             if not ($output | str contains "Cycle detected") {
               print $"(ansi red_bold)ERROR:(ansi reset) Expected a 'Cycle detected' error"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-dotenv = {
+      name = "Test --env-file";
+      steps = [
+        {
+          path = [
+            pkgs.git
+            now
+          ];
+          shell = pkgs.nushell;
+          run = ''
+            let tmp = mktemp
+            r#'MY_VAR="This is a variable"
+            MY_SECRET='This is a secret'
+            '# | save --force $tmp
+
+            now run --env-file $tmp --workflow .now/tests/env.nix
+            rm $tmp
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
               exit 1
             }
 
@@ -795,6 +830,35 @@ in
       ];
     };
 
+    test-init = {
+      name = "Test `now init`";
+      checkout = "none";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            now init
+            let result = (now run | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            if not ($output | str contains "Hello from now!") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Missing default message in output"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
     test-jobs = {
       name = "Test job dependencies";
       steps = [
@@ -805,6 +869,81 @@ in
             now run b x --workflow .now/tests/jobs.nix
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-job-timeout = {
+      name = "Test job timeout";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let result = (now run --workflow .now/tests/job-timeout.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "Done!") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected the first step to complete before the timeout"
+              exit 1
+            }
+
+            if not ($output | str contains "=== note: teardown still runs on timeout ===") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected teardown note in output"
+              exit 1
+            }
+
+            if not ($output | str contains "timed out after 3s") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected a timeout error"
+              exit 1
+            }
+
+            if ($output | str contains "This shouldn't be printed at all!") {
+              print $"(ansi red_bold)ERROR:(ansi reset) The step that timed out should not have completed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-list = {
+      name = "Test `now list`";
+      steps = [
+        {
+          path = [
+            now
+            pkgs.graphviz
+          ];
+          shell = pkgs.nushell;
+          run = ''
+            let job_list = now list --workflow .now/tests/jobs.nix | split words
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) `now list` failed"
+              exit 1
+            }
+
+            if $job_list != [a b c x y] {
+              print $"(ansi red_bold)ERROR:(ansi reset) Invalid job list"
+              exit 1
+            }
+
+            now list --tree --workflow .now/tests/jobs.nix | dot -Tplain-ext
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) `now list --tree` failed"
               exit 1
             }
 
@@ -837,6 +976,87 @@ in
               print $"(ansi d)=== hint: to run this, pass an envvar like:(ansi reset)"
               print $"(ansi d)===   BUILDERS='ssh://localhost - - 1 1 now now -'(ansi reset)"
             }
+          '';
+        }
+      ];
+    };
+
+    test-missing-download = {
+      name = "Test missing `runner.download`";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let result = (now run --workflow .now/tests/missing-download.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "No upload named 'NO_DOWNLOAD'") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected missing download error in output"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-missing-secret = {
+      name = "Test missing `runner.secret`";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let result = (now run --workflow .now/tests/missing-secret.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "Secret environment variable 'NO_SECRET' is unset") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected missing secret error in output"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-missing-var = {
+      name = "Test missing `runner.var`";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let result = (now run --workflow .now/tests/missing-var.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "Required environment variable 'NO_VAR' is unset") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected missing var error in output"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
           '';
         }
       ];
@@ -1004,48 +1224,6 @@ in
       ];
     };
 
-    test-timeout = {
-      name = "Test job timeout";
-      steps = [
-        {
-          path = [ now ];
-          shell = pkgs.nushell;
-          run = ''
-            let result = (now run --workflow .now/tests/timeout.nix | complete)
-            let output = $result.stdout + $result.stderr
-            print $output
-
-            if $result.exit_code == 0 {
-              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
-              exit 1
-            }
-
-            if not ($output | str contains "Done!") {
-              print $"(ansi red_bold)ERROR:(ansi reset) Expected the first step to complete before the timeout"
-              exit 1
-            }
-
-            if not ($output | str contains "=== note: teardown still runs on timeout ===") {
-              print $"(ansi red_bold)ERROR:(ansi reset) Expected teardown note in output"
-              exit 1
-            }
-
-            if not ($output | str contains "timed out after 3s") {
-              print $"(ansi red_bold)ERROR:(ansi reset) Expected a timeout error"
-              exit 1
-            }
-
-            if ($output | str contains "This shouldn't be printed at all!") {
-              print $"(ansi red_bold)ERROR:(ansi reset) The step that timed out should not have completed"
-              exit 1
-            }
-
-            print $"(ansi green)Test passed.(ansi reset)"
-          '';
-        }
-      ];
-    };
-
     test-upload = {
       name = "Test uploads";
       steps = [
@@ -1108,6 +1286,55 @@ in
             now run --workflow .now/tests/vars.nix
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-workflow-timeout = {
+      name = "Test workflow timeout";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            # Ensure workflow is cached
+            now run --workflow .now/tests/workflow-timeout.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            let result = (now run --timeout 3s --workflow .now/tests/workflow-timeout.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "Done!") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected the first step to complete before the timeout"
+              exit 1
+            }
+
+            if not ($output | str contains "=== note: teardown still runs on timeout ===") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected teardown note in output"
+              exit 1
+            }
+
+            if not ($output | str contains "timed out after 3s") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected a timeout error"
+              exit 1
+            }
+
+            if ($output | str contains "This shouldn't be printed at all!") {
+              print $"(ansi red_bold)ERROR:(ansi reset) The step that timed out should not have completed"
               exit 1
             }
 

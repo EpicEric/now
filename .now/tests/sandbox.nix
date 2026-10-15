@@ -1,3 +1,4 @@
+{ lib, runner, ... }:
 let
   # writableDirectory = false
   fooReadOnly = ''
@@ -142,101 +143,225 @@ let
 in
 {
   jobs = {
-    full = {
-      checkout = "clone";
-      steps = [
-        {
-          sandbox = true;
-          run = ''
-            ${directoryReadOnly}
-            ${noHome}
-            ${noNetwork}
-            ${nixStoreReadOnly}
-          '';
-        }
-      ];
-    };
+    full =
+      runner.matrix
+        [
+          { label = "job"; }
+          { label = "step"; }
+        ]
+        (
+          { label, ... }:
+          let
+            sandbox = true;
+          in
+          {
+            name = "full-${label}";
+            checkout = "clone";
+            steps = [
+              (
+                {
+                  run = ''
+                    ${directoryReadOnly}
+                    ${noHome}
+                    ${noNetwork}
+                    ${nixStoreReadOnly}
+                  '';
+                }
+                // lib.optionalAttrs (label == "step") { inherit sandbox; }
+              )
+            ];
+          }
+          // lib.optionalAttrs (label == "job") { inherit sandbox; }
+        );
 
-    writableDirectory = {
-      checkout = "clone";
-      steps = [
-        {
-          sandbox = {
-            enable = true;
-            writableDirectory = true;
-          };
-          run = ''
-            ${directoryReadWrite}
-            ${noHome}
-            ${noNetwork}
-            ${nixStoreReadOnly}
-          '';
-        }
-      ];
-    };
+    writableDirectory =
+      runner.matrix
+        [
+          { label = "job"; }
+          { label = "step"; }
+        ]
+        (
+          { label, ... }:
+          let
+            sandbox = {
+              enable = true;
+              writableDirectory = true;
+            };
+          in
+          {
+            name = "writableDirectory-${label}";
+            checkout = "clone";
+            steps = [
+              (
+                {
+                  run = ''
+                    ${directoryReadWrite}
+                    ${noHome}
+                    ${noNetwork}
+                    ${nixStoreReadOnly}
+                  '';
+                }
+                // lib.optionalAttrs (label == "step") { inherit sandbox; }
+              )
+            ];
+          }
+          // lib.optionalAttrs (label == "job") { inherit sandbox; }
+        );
 
-    useHome = {
-      checkout = "clone";
-      steps = [
-        {
-          sandbox = false;
-          run = ''
-            mkdir -p "$HOME/.now-sandbox-test"
-            touch "$HOME/.now-sandbox-test/hello"
-          '';
-          teardown = ''
-            rm -rf "$HOME/.now-sandbox-test"
-          '';
-        }
-        {
-          sandbox = {
-            enable = true;
-            useHome = true;
-          };
-          run = ''
-            ${directoryReadOnly}
-            ${hasHome}
-            ${noNetwork}
-            ${nixStoreReadOnly}
-          '';
-        }
-      ];
-    };
+    useHomeList =
+      runner.matrix
+        [
+          { label = "job"; }
+          { label = "step"; }
+        ]
+        (
+          { label, ... }:
+          let
+            sandbox = {
+              enable = true;
+              useHome = [ ".now-sandbox-test" ];
+            };
+          in
+          {
+            name = "useHomeList-${label}";
+            checkout = "clone";
+            steps = [
+              {
+                sandbox = false;
+                run = ''
+                  mkdir -p "$HOME/.now-sandbox-test"
+                  touch "$HOME/.now-sandbox-test/hello"
+                '';
+                teardown = ''
+                  rm -rf "$HOME/.now-sandbox-test"
+                '';
+              }
+              (
+                {
+                  run = ''
+                    ${directoryReadOnly}
+                    ${hasHome}
+                    ${noNetwork}
+                    ${nixStoreReadOnly}
+                  '';
+                }
+                // lib.optionalAttrs (label == "step") { inherit sandbox; }
+              )
+            ];
+          }
+          // lib.optionalAttrs (label == "job") { inherit sandbox; }
+        );
 
-    networkAccess = {
-      checkout = "clone";
-      steps = [
-        {
-          sandbox = {
-            enable = true;
-            networkAccess = true;
-          };
-          run = ''
-            ${directoryReadOnly}
-            ${noHome}
-            ${hasNetwork}
-            ${nixStoreReadOnly}
-          '';
-        }
-      ];
-    };
+    useHome =
+      runner.matrix
+        [
+          { label = "job"; }
+          { label = "step"; }
+        ]
+        (
+          { label, ... }:
+          let
+            sandbox = {
+              enable = true;
+              useHome = true;
+            };
+          in
+          {
+            name = "useHome-${label}";
+            checkout = "clone";
+            steps = [
+              {
+                sandbox = false;
+                run = ''
+                  mkdir -p "$HOME/.now-sandbox-test"
+                  touch "$HOME/.now-sandbox-test/hello"
+                '';
+                teardown = ''
+                  rm -rf "$HOME/.now-sandbox-test"
+                '';
+              }
+              (
+                {
+                  run = ''
+                    ${directoryReadOnly}
+                    ${hasHome}
+                    ${noNetwork}
+                    ${nixStoreReadOnly}
+                  '';
+                }
+                // lib.optionalAttrs (label == "step") { inherit sandbox; }
+              )
+            ];
+          }
+          // lib.optionalAttrs (label == "job") { inherit sandbox; }
+        );
 
-    writableNixStore = {
-      checkout = "clone";
-      steps = [
-        {
-          sandbox = {
-            enable = true;
-            writableNixStore = true;
-          };
-          run = ''
-            ${directoryReadOnly}
-            ${noHome}
-            ${noNetwork}
-            ${nixStoreReadWrite}
-          '';
-        }
-      ];
-    };
+    networkAccess =
+      runner.matrix
+        [
+          { label = "job"; }
+          { label = "step"; }
+        ]
+        (
+          { label, ... }:
+          let
+            sandbox = {
+              enable = true;
+              networkAccess = true;
+            };
+          in
+          {
+            name = "networkAccess-${label}";
+            checkout = "clone";
+            steps = [
+              (
+                {
+                  run = ''
+                    ${directoryReadOnly}
+                    ${noHome}
+                    ${hasNetwork}
+                    ${nixStoreReadOnly}
+                  '';
+                }
+                // lib.optionalAttrs (label == "step") { inherit sandbox; }
+              )
+            ];
+          }
+          // lib.optionalAttrs (label == "job") { inherit sandbox; }
+        );
+
+    writableNixStore =
+      runner.matrix
+        [
+          { label = "job"; }
+          { label = "step"; }
+        ]
+        (
+          { label, ... }:
+          let
+            sandbox = {
+              enable = true;
+              writableNixStore = true;
+            };
+          in
+          {
+            name = "writableNixStore-${label}";
+            checkout = "clone";
+            steps = [
+              (
+                {
+                  run = ''
+                    ${directoryReadOnly}
+                    ${noHome}
+                    ${noNetwork}
+                    ${nixStoreReadWrite}
+                  '';
+                }
+                // lib.optionalAttrs (label == "step") { inherit sandbox; }
+              )
+            ];
+          }
+          // lib.optionalAttrs (label == "job") { inherit sandbox; }
+        );
   };
 }
