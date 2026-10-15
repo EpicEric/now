@@ -244,7 +244,7 @@ impl NowEnvironment {
         } else {
             info!(runner, is_remote = false, "Building tree for workflow...");
         }
-        let mut graph = workflow.build_graph()?;
+        let mut graph = workflow.into_graph()?;
         graph.prune(jobs_to_run)?;
         let NowWorkflowGraph {
             dag: mut tree,
@@ -332,75 +332,39 @@ impl NowEnvironment {
                                 }
                                 break;
                             }
-                            Err(error @
-(JobError::NoMatchingBuilders { .. } | JobError::NoMatchingRunners { .. })) if skip => {
-                                match error {
-                                    JobError::NoMatchingBuilders {
-                                        job_name,
-                                        build_system,
-                                        required_system_features,
-                                    } => warn!(
-                                        runner,
-                                        is_remote = false,
-                                        job_name,
-                                        build_system,
-                                        ?required_system_features,
-                                        "No builders match for job '{job_name}' (buildSystem = {build_system}, requiredSystemFeatures = {required_system_features:?}); skipping."
-                                    ),
-                                    JobError::NoMatchingRunners {
-                                        job_name,
-                                        host_system,
-                                        required_system_features,
-                                    } => warn!(
-                                        runner,
-                                        is_remote = false,
-                                        job_name,
-                                        host_system,
-                                        ?required_system_features,
-                                        "No runners match for job '{job_name}' (hostSystem = {host_system}, requiredSystemFeatures = {required_system_features:?}); skipping."
-                                    ),
-                                    JobError::Other(_) => unreachable!(),
-                                };
-                                let mut nodes_to_skip: Vec<_> =
-                                    vec![node_index].into_iter().collect();
-                                while !nodes_to_skip.is_empty() {
-                                    while let Some(node_index) = nodes_to_skip.pop() {
-                                        let new_nodes_to_skip: Vec<_> = tree
-                                            .edges_directed(
-                                                node_index,
-                                                petgraph::Direction::Outgoing,
-                                            )
-                                            .map(|edge| edge.target())
-                                            .collect();
-                                        match tree.remove_node(node_index) {
-                                            Some(DagNode::Job(_)) => {
-                                                match nodes.remove(&node_index) {
-                                                    Some(NowJobContainer::Single(job)) => {
-                                                        warn!(
-                                                            runner,
-                                                            is_remote = false,
-                                                            "... also skipping dependent job '{}'.",
-                                                            job.name
-                                                        );
-                                                    }
-                                                    Some(NowJobContainer::Multiple(job_vec)) => {
-                                                        let job_names: BTreeSet<_> = job_vec.iter().map(|job| &job.name).collect();
-                                                        warn!(
-                                                            runner,
-                                                            is_remote = false,
-                                                            "... also skipping dependent job set '{:?}'.",
-                                                            job_names
-                                                        );
-                                                    }
-                                                    None => (),
-                                                }
-
-                                            }
-                                            Some(DagNode::Root) | None => {}
-                                        }
-                                        nodes_to_skip.extend(new_nodes_to_skip);
-                                    }
+                            Err(
+                                JobError::NoMatchingBuilders {
+                                    job_name,
+                                    build_system,
+                                    required_system_features,
                                 }
+                            ) if skip => {
+                                warn!(
+                                    runner,
+                                    is_remote = false,
+                                    job_name,
+                                    build_system,
+                                    ?required_system_features,
+                                    "No builders match for job '{job_name}' (buildSystem = {build_system}, requiredSystemFeatures = {required_system_features:?}); skipping."
+                                );
+                                skip_dependent_nodes(&runner, &mut tree, &mut nodes, node_index);
+                            }
+                            Err(
+                                JobError::NoMatchingRunners {
+                                    job_name,
+                                    host_system,
+                                    required_system_features,
+                                }
+                            ) if skip => {
+                                warn!(
+                                    runner,
+                                    is_remote = false,
+                                    job_name,
+                                    host_system,
+                                    ?required_system_features,
+                                    "No runners match for job '{job_name}' (hostSystem = {host_system}, requiredSystemFeatures = {required_system_features:?}); skipping."
+                                );
+                                skip_dependent_nodes(&runner, &mut tree, &mut nodes, node_index);
                             }
                             Err(error) => {
                                 if abort {
@@ -482,6 +446,47 @@ impl NowEnvironment {
                 "Failed to evaluate workflow at {}",
                 workflow
             ))
+        }
+    }
+}
+
+fn skip_dependent_nodes(
+    runner: &str,
+    tree: &mut petgraph::acyclic::Acyclic<petgraph::stable_graph::StableGraph<DagNode, ()>>,
+    nodes: &mut HashMap<NodeIndex<u32>, NowJobContainer>,
+    node_index: NodeIndex<u32>,
+) {
+    let mut nodes_to_skip: Vec<_> = vec![node_index].into_iter().collect();
+    while !nodes_to_skip.is_empty() {
+        while let Some(node_index) = nodes_to_skip.pop() {
+            let new_nodes_to_skip: Vec<_> = tree
+                .edges_directed(node_index, petgraph::Direction::Outgoing)
+                .map(|edge| edge.target())
+                .collect();
+            match tree.remove_node(node_index) {
+                Some(DagNode::Job(_)) => match nodes.remove(&node_index) {
+                    Some(NowJobContainer::Single(job)) => {
+                        warn!(
+                            runner,
+                            is_remote = false,
+                            "... also skipping dependent job '{}'.",
+                            job.name
+                        );
+                    }
+                    Some(NowJobContainer::Multiple(job_vec)) => {
+                        let job_names: BTreeSet<_> = job_vec.iter().map(|job| &job.name).collect();
+                        warn!(
+                            runner,
+                            is_remote = false,
+                            "... also skipping dependent job set '{:?}'.",
+                            job_names
+                        );
+                    }
+                    None => (),
+                },
+                Some(DagNode::Root) | None => {}
+            }
+            nodes_to_skip.extend(new_nodes_to_skip);
         }
     }
 }

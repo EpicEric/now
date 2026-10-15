@@ -212,7 +212,7 @@ fn main() -> color_eyre::Result<()> {
 
             if tree {
                 let workflow = smol::block_on(environment.evaluate_workflow(&workflow))?;
-                let graph = workflow.build_graph()?;
+                let graph = workflow.into_graph()?;
                 println!("{}", graph.to_dot());
             } else if let Some((width, _)) = terminal_size::terminal_size_of(std::io::stdout()) {
                 print!(

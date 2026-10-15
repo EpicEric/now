@@ -194,7 +194,7 @@ impl NowWorkflowGraph {
 
 impl NowWorkflow {
     #[instrument(skip(self))]
-    pub(crate) fn build_graph(self) -> color_eyre::Result<NowWorkflowGraph> {
+    pub(crate) fn into_graph(self) -> color_eyre::Result<NowWorkflowGraph> {
         if self.jobs.is_empty() {
             return Err(color_eyre::eyre::eyre!("No jobs in workflow"));
         }

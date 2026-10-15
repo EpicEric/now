@@ -31,7 +31,7 @@ use futures::{
 use petgraph::matrix_graph::NodeIndex;
 use serde::Serialize;
 use smol::{
-    channel::TryRecvError,
+    channel::Receiver,
     io::{AsyncBufReadExt, BufReader},
     process::{Child, Command},
     stream::StreamExt,
@@ -41,6 +41,7 @@ use tracing::{info, instrument, warn};
 use crate::{
     builder::local::{BuilderGuard, LocalBuilder, RunnerGuard},
     environment::NowEnvironment,
+    utils::job_is_aborted,
     workflow::{NowJob, NowStepEnvVar},
 };
 
@@ -96,6 +97,7 @@ impl NowEnvironment {
         local_builder: &LocalBuilder,
         job: NowJob,
         dry_run: bool,
+        abort: Option<&Receiver<()>>,
     ) -> Result<(), JobError> {
         if !local_builder.has_runner(&job) {
             return Err(JobError::NoMatchingRunners {
@@ -142,7 +144,7 @@ impl NowEnvironment {
                             required_system_features: job.required_system_features.clone(),
                         });
                     };
-                    if matches!(receiver.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
+                    if job_is_aborted(receiver, abort) {
                         return Err(color_eyre::eyre::eyre!("Runner aborted").into());
                     }
 
@@ -221,7 +223,7 @@ impl NowEnvironment {
                 required_system_features: job.required_system_features.clone(),
             });
         };
-        if matches!(receiver.try_recv(), Ok(()) | Err(TryRecvError::Closed)) {
+        if job_is_aborted(receiver, abort) {
             return Err(color_eyre::eyre::eyre!("Runner aborted").into());
         }
         let runner_name = runner.get_name();
@@ -347,24 +349,39 @@ impl NowEnvironment {
                     Ok(())
                 };
 
-                let (exit_status, ((), stdin_task)): (_, (_, color_eyre::Result<()>)) =
-                    smol::future::zip(child.status(), smol::future::zip(log_task, stdin_task))
-                        .await;
-                stdin_task?;
-                let exit_status = exit_status?;
+                let step_fut = async {
+                    let (exit_status, ((), stdin_task)): (_, (_, color_eyre::Result<()>)) =
+                        smol::future::zip(child.status(), smol::future::zip(log_task, stdin_task))
+                            .await;
+                    stdin_task?;
+                    let exit_status = exit_status?;
+                    if !exit_status.success() {
+                        warn!(
+                            "$duper.exit_code" =
+                                duper::serde::ser::to_string_compact(&ExitCode(exit_status.code()))
+                                    .expect("valid Duper")
+                        );
+                        return Err(color_eyre::eyre::eyre!(
+                            "Step '{}' failed ({})",
+                            &step.name,
+                            exit_status
+                        ));
+                    }
+                    Ok(())
+                };
 
-                if !exit_status.success() {
-                    warn!(
-                        "$duper.exit_code" =
-                            duper::serde::ser::to_string_compact(&ExitCode(exit_status.code()))
-                                .expect("valid Duper")
-                    );
-                    return Err(color_eyre::eyre::eyre!(
-                        "Step '{}' failed ({})",
-                        &step.name,
-                        exit_status
-                    ));
-                }
+                let step_result = match abort {
+                    Some(abort) => {
+                        smol::future::or(step_fut, async {
+                            let _ = abort.recv().await;
+                            Err(color_eyre::eyre::eyre!("Job '{}' aborted", job.name))
+                        })
+                        .await
+                    }
+                    None => step_fut.await,
+                };
+                let _ = child.kill();
+                step_result?;
 
                 if let Some(output_var) = step.output_var.as_ref() {
                     let mut buf = Vec::new();
@@ -583,7 +600,7 @@ impl NowEnvironment {
         dry_run: bool,
     ) -> JobFut<'a> {
         Box::pin(async move {
-            let result = self.run_job(local_builder, job, dry_run).await;
+            let result = self.run_job(local_builder, job, dry_run, None).await;
             (node_index, result)
         })
     }
@@ -595,28 +612,33 @@ impl NowEnvironment {
         node_index: NodeIndex<u32>,
         dry_run: bool,
     ) -> JobFut<'a> {
-        let mut fail_fast = FuturesUnordered::new();
-        let mut no_fail_fast = FuturesUnordered::new();
-
-        for job in jobs {
-            if job
-                .strategy
-                .as_ref()
-                .is_none_or(|strategy| strategy.fail_fast)
-            {
-                fail_fast.push(self.run_job(local_builder, job, dry_run));
-            } else {
-                no_fail_fast.push(self.run_job(local_builder, job, dry_run));
-            }
-        }
-
         Box::pin(async move {
+            let (cancellation, abort) = smol::channel::bounded(1);
+            let mut fail_fast = FuturesUnordered::new();
+            let mut no_fail_fast = FuturesUnordered::new();
+
+            for job in jobs {
+                if job
+                    .strategy
+                    .as_ref()
+                    .is_none_or(|strategy| strategy.fail_fast)
+                {
+                    fail_fast.push(self.run_job(local_builder, job, dry_run, Some(&abort)));
+                } else {
+                    no_fail_fast.push(self.run_job(local_builder, job, dry_run, None));
+                }
+            }
+
             let (fail_fast, no_fail_fast) = smol::future::zip(
                 async move {
+                    let mut result = Ok(());
                     while let Some(future) = fail_fast.next().await {
-                        future?;
+                        if let Err(error) = future {
+                            cancellation.close();
+                            result = result.and(Err(error));
+                        }
                     }
-                    Ok(())
+                    result
                 },
                 async move {
                     let mut result = Ok(());

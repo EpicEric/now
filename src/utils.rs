@@ -17,7 +17,12 @@
 use std::{io::Write, process::Output};
 
 use rand::distr::SampleString;
-use smol::{channel::Receiver, future::zip, io::AsyncReadExt, process::Child};
+use smol::{
+    channel::{Receiver, TryRecvError},
+    future::zip,
+    io::AsyncReadExt,
+    process::Child,
+};
 
 /// Waits for `child` to exit while draining its pipe buffers concurrently.
 pub(crate) async fn wait_for_output(
@@ -103,4 +108,9 @@ pub(crate) fn parse_bool_from_bytes<T: AsRef<[u8]>>(input: T) -> bool {
     [&b"1"[..], &b"true"[..], &b"yes"[..], &b"y"[..]]
         .iter()
         .any(|truthy_slice| input.eq_ignore_ascii_case(truthy_slice))
+}
+
+pub(crate) fn job_is_aborted(receiver: &Receiver<()>, abort: Option<&Receiver<()>>) -> bool {
+    matches!(receiver.try_recv(), Ok(()) | Err(TryRecvError::Closed))
+        || abort.is_some_and(|a| matches!(a.try_recv(), Ok(()) | Err(TryRecvError::Closed)))
 }

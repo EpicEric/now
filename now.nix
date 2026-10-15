@@ -433,7 +433,7 @@ in
     };
 
     test-abort = {
-      name = "Test abort";
+      name = "Test --abort";
       steps = [
         {
           path = [ now ];
@@ -476,14 +476,14 @@ in
           ];
           shell = pkgs.nushell;
           run = ''
-            let cwdir = (mktemp -p ($env.TMPDIR? | default "/tmp") -d)
-            git init -b main $cwdir
-            'Foo contents' | save ($cwdir | path join foo)
-            'Bar contents' | save ($cwdir | path join bar)
-            'bar' | save ($cwdir | path join .gitignore)
+            let tempdir = (mktemp -p ($env.TMPDIR? | default "/tmp") -d)
+            git init -b main $tempdir
+            'Foo contents' | save ($tempdir | path join foo)
+            'Bar contents' | save ($tempdir | path join bar)
+            'bar' | save ($tempdir | path join .gitignore)
 
-            now run --cwdir $cwdir --all-jobs --workflow .now/tests/checkout.nix
-            rm -rf $cwdir
+            now run --cwdir $tempdir --all-jobs --workflow .now/tests/checkout.nix
+            rm -rf $tempdir
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
               exit 1
@@ -633,6 +633,104 @@ in
             }
 
             print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-fail-fast = {
+      name = "Test strategy.failFast";
+      steps = [
+        {
+          name = "failFast = true";
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            if BUILDERS in $env {
+              let result = (now run --workflow .now/tests/fail-fast/true.nix --builders $env.BUILDERS | complete)
+              let output = $result.stdout + $result.stderr
+              print $output
+
+              if $result.exit_code == 0 {
+                print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+                exit 1
+              }
+
+              if not ($output | str contains "Doing local work") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Expected local run in output"
+                exit 1
+              }
+              if not ($output | str contains "Doing remote work") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Expected remote run in output"
+                exit 1
+              }
+              if ($output | str contains "Done with remote work") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Remote run should've been aborted"
+                exit 1
+              }
+
+              if not ($output | str contains "Local teardown") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Expected local teardown in output"
+                exit 1
+              }
+              if not ($output | str contains "Remote teardown") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Expected remote teardown in output"
+                exit 1
+              }
+
+              print $"(ansi green)Test passed.(ansi reset)"
+            } else {
+              print $"(ansi yellow_bold)WARNING:(ansi reset) BUILDERS is unset; skipping"
+              print ""
+              print $"(ansi d)=== hint: to run this, pass an envvar like:(ansi reset)"
+              print $"(ansi d)===   BUILDERS='ssh://localhost - - 1 1 now now -'(ansi reset)"
+            }
+          '';
+        }
+        {
+          name = "failFast = false";
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            if BUILDERS in $env {
+              let result = (now run --workflow .now/tests/fail-fast/false.nix --builders $env.BUILDERS | complete)
+              let output = $result.stdout + $result.stderr
+              print $output
+
+              if $result.exit_code == 0 {
+                print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+                exit 1
+              }
+
+              if not ($output | str contains "Doing local work") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Expected local run in output"
+                exit 1
+              }
+              if not ($output | str contains "Doing remote work") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Expected remote run in output"
+                exit 1
+              }
+              if not ($output | str contains "Done with remote work") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Remote run shouldn't have been aborted"
+                exit 1
+              }
+
+              if not ($output | str contains "Local teardown") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Expected local teardown in output"
+                exit 1
+              }
+              if not ($output | str contains "Remote teardown") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Expected remote teardown in output"
+                exit 1
+              }
+
+              print $"(ansi green)Test passed.(ansi reset)"
+            } else {
+              print $"(ansi yellow_bold)WARNING:(ansi reset) BUILDERS is unset; skipping"
+              print ""
+              print $"(ansi d)=== hint: to run this, pass an envvar like:(ansi reset)"
+              print $"(ansi d)===   BUILDERS='ssh://localhost - - 1 1 now now -'(ansi reset)"
+            }
           '';
         }
       ];

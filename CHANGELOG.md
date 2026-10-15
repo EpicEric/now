@@ -18,6 +18,7 @@
 
 - Use pinned nixpkgs to build now-step
 - Fix handling of sandbox options
+- Proper matrix job cancellation with `strategy.failFast = true`
 
 ### Changed
 
