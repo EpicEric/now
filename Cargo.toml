@@ -28,6 +28,7 @@ ctrlc = { version = "3.5.2", features = ["termination"] }
 dotenvy = "0.15.7"
 duper = { version = "0.6.3", features = ["serde"] }
 flate2 = "1.1.9"
+flub = "0.1.0"
 format-bytes = "0.3.0"
 futures = "0.3.33"
 glob = "0.3.4"
@@ -50,7 +51,6 @@ supports-color = "3.0.2"
 sysinfo = "0.39.6"
 tar = "0.4.46"
 terminal_size = "0.4.4"
-thiserror = "2.0.19"
 tracing = "0.1.44"
 tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }

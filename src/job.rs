@@ -45,7 +45,7 @@ use crate::{
     workflow::{NowJob, NowStepEnvVar},
 };
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, flub::Error)]
 pub(crate) enum JobError {
     #[error(
         "No builders match for job '{job_name}' (buildSystem = {build_system}, requiredSystemFeatures = {required_system_features:?})"
@@ -63,14 +63,8 @@ pub(crate) enum JobError {
         host_system: String,
         required_system_features: HashSet<String>,
     },
-    #[error("{0}")]
-    Other(color_eyre::Report),
-}
-
-impl From<color_eyre::Report> for JobError {
-    fn from(value: color_eyre::Report) -> Self {
-        JobError::Other(value)
-    }
+    #[error(transparent)]
+    Other(#[from] color_eyre::Report),
 }
 
 pub(crate) type JobResult = (NodeIndex<u32>, Result<(), JobError>);
@@ -399,7 +393,7 @@ impl NowEnvironment {
                         runner = runner_name,
                         is_remote,
                         step = step.name,
-                        "Set '{}'",
+                        "now: Set '{}'",
                         output_var,
                     );
                     output_vars.insert(

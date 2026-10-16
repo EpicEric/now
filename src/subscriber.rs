@@ -164,7 +164,7 @@ impl tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscriberVis
                     if let Some(step) = self.step {
                         Some(format!(
                             "{} {}",
-                            format!("step[{}]>", step)
+                            format!("{}>", step)
                                 .if_supports_color(owo_colors::Stream::Stderr, |text| text
                                     .style(builder.style)),
                             message
@@ -177,7 +177,7 @@ impl tracing_subscriber::field::VisitOutput<Option<String>> for NowSubscriberVis
                 {
                     Some(format!(
                         "{} {}",
-                        format!("{} step[{}]>", builder.short_name, step)
+                        format!("{} [{}]>", builder.short_name, step)
                             .if_supports_color(owo_colors::Stream::Stderr, |text| text
                                 .style(builder.style)),
                         message

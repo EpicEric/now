@@ -50,19 +50,29 @@ pub(crate) struct NowWorkflowGraph {
 }
 
 impl NowWorkflowGraph {
-    fn closest_matches(&self, needle: &str) -> Vec<&String> {
-        let mut matches: Vec<&String> = self
+    fn closest_matches(&self, needle: &str) -> impl Iterator<Item = &String> {
+        let mut matches: Vec<(f64, &String)> = self
             .dag
             .node_weights()
-            .filter_map(|node| match node {
-                DagNode::Job(text) if strsim::normalized_levenshtein(text, needle) >= 0.5 => {
-                    Some(text)
+            .filter_map(|node| {
+                if let DagNode::Job(text) = node {
+                    let score = strsim::normalized_levenshtein(text, needle);
+                    if score >= 0.66 {
+                        Some((score, text))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
                 }
-                DagNode::Job(_) | DagNode::Root => None,
             })
             .collect();
-        matches.sort();
-        matches
+        matches.sort_by(|(first, _), (second, _)| {
+            first
+                .partial_cmp(second)
+                .expect("Levenshtein score is between 0.0..=1.0")
+        });
+        matches.into_iter().map(|(_, text)| text)
     }
 
     fn available_jobs(&self) -> String {

@@ -110,9 +110,16 @@ in
       }:
       assert lib.assertMsg (lib.isDerivation deriv)
         "deriv argument to runner.steps.build must be a derivation";
-      { pkgs, ... }: {
-        name = "build ${if name == "" then deriv.name else name}";
+      { pkgs, ... }:
+      let
+        inherit (builtins) unsafeDiscardOutputDependency unsafeDiscardStringContext;
+        inherit (pkgs.lib) escapeShellArgs;
+        buildName = if name == "" then deriv.name else name;
+      in
+      {
+        name = "build ${buildName}";
         path = [
+          pkgs.coreutils
           pkgs.nix
           pkgs.mktemp
         ];
@@ -126,11 +133,14 @@ in
           set -euo pipefail
           export NOW_GCROOT_DIR="''${NOW_GCROOT_DIR:-$(mktemp -d)}"
           mkdir -p "$NOW_GCROOT_DIR"
-          drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
+          drv=${unsafeDiscardOutputDependency deriv.drvPath}
           nix-store --add-root "$NOW_GCROOT_DIR/''${drv##*/}" --indirect --realise "$drv" >/dev/null
           printf "now: Built '%s' (%s)\n" ${
-            lib.escapeShellArg (if name == "" then deriv.name else name)
-          } ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
+            escapeShellArgs [
+              buildName
+              (unsafeDiscardStringContext deriv.outPath)
+            ]
+          }
         '';
       };
 
@@ -145,26 +155,30 @@ in
       assert lib.assertMsg (name != "") "name argument to runner.steps.upload must not be empty";
       assert lib.assertMsg (lib.isDerivation deriv)
         "deriv argument to runner.steps.upload must be a derivation";
-      { pkgs, ... }: {
+      { pkgs, ... }:
+      let
+        inherit (builtins) unsafeDiscardOutputDependency unsafeDiscardStringContext;
+      in
+      {
         name = "upload ${name}";
         path = [
+          pkgs.coreutils
           pkgs.nix
           pkgs.mktemp
         ];
         env = (nixConfigToEnv nixConfig) // env;
-        sandbox = {
+        sandbox = sandbox // {
           writableNixStore = true;
           networkAccess = true;
           gcroots = true;
-        }
-        // sandbox;
+        };
         run = ''
           set -euo pipefail
           export NOW_GCROOT_DIR="''${NOW_GCROOT_DIR:-$(mktemp -d)}"
           mkdir -p "$NOW_GCROOT_DIR"
-          drv=${builtins.unsafeDiscardOutputDependency deriv.drvPath}
+          drv=${unsafeDiscardOutputDependency deriv.drvPath}
           nix-store --add-root "$NOW_GCROOT_DIR/''${drv##*/}" --indirect --realise "$drv" >/dev/null
-          printf '%s' ${lib.escapeShellArg (builtins.unsafeDiscardStringContext deriv.outPath)}
+          printf '%s' ${lib.escapeShellArg (unsafeDiscardStringContext deriv.outPath)}
         '';
         ${"__nowUpload_${evalId}"} = name;
       };

@@ -111,9 +111,15 @@ in
           run = "zensical build -f docs/zensical.toml";
         }
         {
-          sandbox.networkAccess = true;
+          sandbox = {
+            useHome = [ ".ssh" ];
+            networkAccess = true;
+          };
           env.DOCS_HOST = runner.secret "DOCS_HOST";
-          path = [ pkgs.rsync ];
+          path = [
+            pkgs.openssh
+            pkgs.rsync
+          ];
           run = ''
             rsync --delete-after -acP docs/site/ $DOCS_HOST:''${DOCS_DIRECTORY:-www}
           '';

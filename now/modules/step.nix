@@ -181,7 +181,7 @@ in
     { options, inputs }:
     let
       inherit (inputs.nixpkgs) pkgs;
-      inherit (builtins) isBool;
+      inherit (builtins) concatStringsSep isBool length;
       inherit (pkgs.lib)
         getExe
         optionals
@@ -227,12 +227,20 @@ in
       env = jobEnv // (options.env or { });
 
       stepPathLockdown = options.pathLockdown or jobPathLockdown;
-      runtimeInputs = makeBinPath (options.path or [ ]);
+
+      runtimeInputs = options.path or [ ];
+
+      defaultPkgs = [ pkgs.coreutils ];
+
       pathString =
         if stepPathLockdown then
-          "--set PATH ${escapeShellArg runtimeInputs}"
+          "--set PATH ${escapeShellArg (makeBinPath (runtimeInputs ++ defaultPkgs))}"
         else
-          optionalString (runtimeInputs != "") "--prefix PATH : ${runtimeInputs}";
+          concatStringsSep " " [
+            (optionalString (length runtimeInputs > 0) "--prefix PATH : ${makeBinPath runtimeInputs}")
+            (optionalString (nowSandbox.enable or false) " --suffix PATH : ${makeBinPath defaultPkgs}")
+          ];
+
       secretNames = builtins.attrNames (filterAttrs (_: value: value ? "__nowSecret_${evalId}") env);
     in
 

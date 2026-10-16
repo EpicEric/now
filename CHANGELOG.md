@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### Breaking changes
+### ⚠️ Breaking changes
 
 - Migrate module system to adios
   - `evalModules` helpers such as `lib.mkIf` will no longer work. Use plain conditionals instead
@@ -11,7 +11,7 @@
 ### Added
 
 - Add `pathLockdown` to jobs/steps
-- Allow passing a file to `run`/`teardown`
+- Allow passing a script file to `run`/`teardown`
 - Add `--logging` option
 
 ### Fixed
@@ -20,15 +20,20 @@
 - Fix handling of sandbox options
 - Proper matrix job cancellation with `strategy.failFast = true`
 - Fix `--timeout` behavior
+- Consolidate logs for `now`-specific steps
 
 ### Changed
 
 - Respect TMPDIR variable in remote runners
 - Use binary wrappers for run/teardown derivations
+- Order suggestions by Levenshtein score
+- Raise minimum Levenshtein score for suggestions
+- Shorten logs by omitting `step` prefix
+- Include `pkgs.coreutils` in all steps
 
 ## 0.5.0 (2026-10-04)
 
-### Breaking changes
+### ⚠️ Breaking changes
 
 - Rename `sandbox.writablePath` to `sandbox.writableDirectory`
 
@@ -55,7 +60,7 @@
 
 ## 0.4.0 (2026-09-29)
 
-### Breaking changes
+### ⚠️ Breaking changes
 
 - Remove args/flags from `now run`:
   - `--nixpkgs`: specify it directly in the workflow
@@ -97,7 +102,7 @@
 
 ## 0.3.0 (2026-08-05)
 
-### Breaking changes
+### ⚠️ Breaking changes
 
 - Rename `jobs.<job>.strategy.fail-fast` to `jobs.<job>.strategy.failFast`
 - Don't run all jobs by default
@@ -163,7 +168,7 @@
 
 ## 0.2.0 (2026-07-27)
 
-### Breaking changes
+### ⚠️ Breaking changes
 
 - Use `runner.var` and `runner.secret` functions for envvars and secrets, respectively
 
