@@ -24,7 +24,7 @@ now run distributed-job --builders 'ssh://remote'
 
 ## Using in GitHub Actions
 
-```yaml
+```yaml title=".github/workflows/ci.yml"
 on:
   push:
     branches: ["main"]
@@ -94,7 +94,7 @@ jobs:
 
 === "now"
 
-    ```nix
+    ```nix title="now.nix"
     {
       install-pre-commit-hook = {
         sandbox.enable = true;
@@ -187,7 +187,7 @@ jobs:
 
 ## Cross-compilation
 
-```nix
+```nix title="now.nix"
 { runner, ... }:
 {
   jobs.cross =
@@ -220,7 +220,7 @@ To also specify the build system's architecture, use `import <nixpkgs> { buildSy
 
 One way is to combine `watch`/`watchexec`/`fswatch` and bash's `trap`, for example:
 
-```nix
+```nix title="now.nix"
 let
   # Build `now` itself, so the steps below can run it (see the quick start
   # for alternative installation methods)
@@ -260,7 +260,7 @@ in
 
 ## Re-usable workflows and steps
 
-```nix
+```nix title="now.nix"
 { runner, lib, ... }:
   # Workflows are attrsets that can be merged
   lib.recursiveUpdate
@@ -293,7 +293,7 @@ in
 
 ## Running steps in an FHS-compatible environment
 
-```nix
+```nix title="now.nix"
 {
   default = "fhs";
 

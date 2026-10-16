@@ -14,7 +14,7 @@
           }
         ]
         (
-          { label }: {
+          { label, ... }: {
             strategy = { inherit failFast; };
             checkout = "none";
             steps = [

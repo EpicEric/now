@@ -320,8 +320,7 @@ in
                 tack add now-services git+https://codeberg.org/now-runner/now-services.git --fetch
                 \`\`\`
 
-                \`\`\`nix
-                # now.nix
+                \`\`\`nix title="now.nix"
                 let
                   inputs = import ./.tack;
                   services = import inputs.now-services;
@@ -339,8 +338,7 @@ in
                 npins add git https://codeberg.org/now-runner/now-services.git
                 \`\`\`
 
-                \`\`\`nix
-                # now.nix
+                \`\`\`nix title="now.nix"
                 let
                   sources = import ./npins;
                   services = import sources.now-services;
@@ -354,8 +352,7 @@ in
 
             === "Nix flake"
 
-                \`\`\`nix
-                # flake.nix
+                \`\`\`nix title="flake.nix"
                 {
                   inputs = {
                     # ...

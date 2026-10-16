@@ -1,5 +1,10 @@
 { lib, runner, ... }:
 let
+  mkPath = pkgs: [
+    pkgs.coreutils
+    pkgs.nix
+  ];
+
   # writableDirectory = false
   fooReadOnly = ''
     if [ ! -f "foo" ]; then
@@ -26,7 +31,7 @@ let
     fi
   '';
   directoryReadOnly = ''
-    if ( touch newfile ) 2>/dev/null; then
+    if ( : > newfile ) 2>/dev/null; then
       echo "directory isn't read-only"
       exit 1
     fi
@@ -59,11 +64,11 @@ let
     fi
   '';
   directoryReadWrite = ''
-    if ! ( touch newfile ) 2>/dev/null; then
+    if ! ( : > newfile ) 2>/dev/null; then
       echo "directory isn't writable"
       exit 1
     fi
-    if ! ( touch bar/newfile ) 2>/dev/null; then
+    if ! ( : > bar/newfile ) 2>/dev/null; then
       echo "bar sub-directory isn't writable"
       exit 1
     fi
@@ -89,25 +94,29 @@ let
     fi
   '';
 
+  countInterfaces = ''
+    ifaces=0
+    {
+      read -r _
+      read -r _
+      while IFS=: read -r name _; do
+        name=''${name// /}
+        if [ "$name" != lo ]; then ifaces=$((ifaces + 1)); fi
+      done
+    } < /proc/net/dev
+  '';
   # networkAccess = false
   noNetwork = ''
-    interfaces=$(cat /proc/net/dev | tail -n +3 | awk '{ print $1 }' | sed 's/://')
-    for interface in $interfaces; do
-      if [ "$interface" != lo ]; then
-        echo "network shouldn't be accessible"
-        exit 1
-      fi
-    done
+    ${countInterfaces}
+    if [ "$ifaces" -ne 0 ]; then
+      echo "network shouldn't be accessible"
+      exit 1
+    fi
   '';
   # networkAccess = true
   hasNetwork = ''
-    interfaces=$(cat /proc/net/dev | tail -n +3 | awk '{ print $1 }' | sed 's/://')
-    for interface in $interfaces; do
-      if [ "$interface" != lo ]; then
-        break
-      fi
-    done
-    if [ "$interface" == lo ]; then
+    ${countInterfaces}
+    if [ "$ifaces" -eq 0 ]; then
       echo "network should be accessible"
       exit 1
     fi
@@ -150,7 +159,7 @@ in
           { label = "step"; }
         ]
         (
-          { label, ... }:
+          { label, pkgs, ... }:
           let
             sandbox = true;
           in
@@ -160,6 +169,7 @@ in
             steps = [
               (
                 {
+                  path = mkPath pkgs;
                   run = ''
                     ${directoryReadOnly}
                     ${noHome}
@@ -181,7 +191,7 @@ in
           { label = "step"; }
         ]
         (
-          { label, ... }:
+          { label, pkgs, ... }:
           let
             sandbox = {
               enable = true;
@@ -194,6 +204,7 @@ in
             steps = [
               (
                 {
+                  path = mkPath pkgs;
                   run = ''
                     ${directoryReadWrite}
                     ${noHome}
@@ -215,7 +226,7 @@ in
           { label = "step"; }
         ]
         (
-          { label, ... }:
+          { label, pkgs, ... }:
           let
             sandbox = {
               enable = true;
@@ -227,6 +238,7 @@ in
             checkout = "clone";
             steps = [
               {
+                path = mkPath pkgs;
                 sandbox = false;
                 run = ''
                   mkdir -p "$HOME/.now-sandbox-test"
@@ -238,6 +250,7 @@ in
               }
               (
                 {
+                  path = mkPath pkgs;
                   run = ''
                     ${directoryReadOnly}
                     ${hasHome}
@@ -259,7 +272,7 @@ in
           { label = "step"; }
         ]
         (
-          { label, ... }:
+          { label, pkgs, ... }:
           let
             sandbox = {
               enable = true;
@@ -271,6 +284,7 @@ in
             checkout = "clone";
             steps = [
               {
+                path = mkPath pkgs;
                 sandbox = false;
                 run = ''
                   mkdir -p "$HOME/.now-sandbox-test"
@@ -282,6 +296,7 @@ in
               }
               (
                 {
+                  path = mkPath pkgs;
                   run = ''
                     ${directoryReadOnly}
                     ${hasHome}
@@ -303,7 +318,7 @@ in
           { label = "step"; }
         ]
         (
-          { label, ... }:
+          { label, pkgs, ... }:
           let
             sandbox = {
               enable = true;
@@ -316,6 +331,7 @@ in
             steps = [
               (
                 {
+                  path = mkPath pkgs;
                   run = ''
                     ${directoryReadOnly}
                     ${noHome}
@@ -337,7 +353,7 @@ in
           { label = "step"; }
         ]
         (
-          { label, ... }:
+          { label, pkgs, ... }:
           let
             sandbox = {
               enable = true;
@@ -350,6 +366,7 @@ in
             steps = [
               (
                 {
+                  path = mkPath pkgs;
                   run = ''
                     ${directoryReadOnly}
                     ${noHome}

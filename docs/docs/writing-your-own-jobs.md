@@ -33,7 +33,7 @@ now run --flake path/to/flake#now
 
 Open the `now.nix` that `now init` created, and add `my-second-job` to the `jobs` attribute set. Then, modify it however you want. The part you'll want to change most is the `run` string, which contains the script that gets run by `bash`:
 
-```nix
+```nix title="now.nix"
 { runner, lib, ... }: {
   default = [ "default" ];
   jobs = {

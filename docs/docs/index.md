@@ -12,7 +12,7 @@ icon: lucide/rectangle-ellipsis
 
 === "Serve and build a static website"
 
-    ```nix
+    ```nix title="now.nix"
     {
       default = [ "serve" ];
 
@@ -48,7 +48,7 @@ icon: lucide/rectangle-ellipsis
 
 === "Run development tasks in sandboxes"
 
-    ```nix
+    ```nix title="now.nix"
     {
       # Run all tasks with just `now run check`
       check = {
@@ -136,7 +136,7 @@ icon: lucide/rectangle-ellipsis
 
 === "Distributed Docker builds"
 
-    ```nix
+    ```nix title="now.nix"
     { runner, ... }: {
       jobs.docker =
         runner.matrix

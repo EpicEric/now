@@ -27,8 +27,7 @@ extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+
     tack add now git+https://codeberg.org/now-runner/now.git --fetch
     ```
 
-    ```nix
-    # configuration.nix
+    ```nix title="configuration.nix"
     let
       inputs = import ./.tack;
     in
@@ -52,8 +51,7 @@ extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+
     npins add git https://codeberg.org/now-runner/now.git
     ```
 
-    ```nix
-    # configuration.nix
+    ```nix title="configuration.nix"
     let
       sources = import ./npins;
     in
@@ -73,8 +71,7 @@ extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+
 
 === "Nix flake"
 
-    ```nix
-    # flake.nix
+    ```nix title="flake.nix"
     {
       inputs = {
         # ...
@@ -128,8 +125,7 @@ extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+
 
     To get started with now in a Nix flake, add the following to your outputs:
 
-    ```nix
-    # flake.nix
+    ```nix title="flake.nix"
     {
       inputs = {
         nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
