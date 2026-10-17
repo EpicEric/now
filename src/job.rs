@@ -15,6 +15,7 @@
 // with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::{
+    collections::BTreeSet,
     ffi::{OsStr, OsString},
     os::unix::ffi::OsStrExt,
     path::PathBuf,
@@ -23,6 +24,7 @@ use std::{
 };
 
 use ahash::{HashMap, HashMapExt, HashSet};
+use color_eyre::eyre::eyre;
 use format_bytes::format_bytes;
 use futures::{
     AsyncReadExt, AsyncWriteExt,
@@ -41,6 +43,7 @@ use tracing::{info, instrument, warn};
 use crate::{
     builder::local::{BuilderGuard, LocalBuilder, RunnerGuard},
     environment::NowEnvironment,
+    eyre::Section,
     utils::job_is_aborted,
     workflow::{NowJob, NowStepEnvVar},
 };
@@ -63,6 +66,10 @@ pub(crate) enum JobError {
         host_system: String,
         required_system_features: HashSet<String>,
     },
+    #[error("Runner aborted")]
+    RunnerAborted,
+    #[error("Job '{0}' aborted")]
+    JobAborted(String),
     #[error(transparent)]
     Other(#[from] color_eyre::Report),
 }
@@ -139,7 +146,7 @@ impl NowEnvironment {
                         });
                     };
                     if job_is_aborted(receiver, abort) {
-                        return Err(color_eyre::eyre::eyre!("Runner aborted").into());
+                        return Err(JobError::RunnerAborted);
                     }
 
                     let teardown = if let Some(teardown_drv) = step.teardown_drv.as_ref() {
@@ -218,7 +225,7 @@ impl NowEnvironment {
             });
         };
         if job_is_aborted(receiver, abort) {
-            return Err(color_eyre::eyre::eyre!("Runner aborted").into());
+            return Err(JobError::RunnerAborted);
         }
         let runner_name = runner.get_name();
         let is_remote = runner.is_remote();
@@ -270,7 +277,7 @@ impl NowEnvironment {
             if !dry_run {
                 runner
                     .copy_derivations(&job.name, &derivations, receiver)
-                    .await?;
+                    .await?
             }
 
             for (step, run, teardown) in steps {
@@ -289,10 +296,10 @@ impl NowEnvironment {
                             if let Some(path) = uploads.get(&download.download_name) {
                                 downloads.push(path.clone());
                             } else {
-                                return Err(color_eyre::eyre::eyre!(
+                                return Err(JobError::Other(eyre!(
                                     "No upload named '{}'",
-                                    &download.download_name,
-                                ));
+                                    &download.download_name
+                                )));
                             }
                         }
                     }
@@ -348,18 +355,14 @@ impl NowEnvironment {
                         smol::future::zip(child.status(), smol::future::zip(log_task, stdin_task))
                             .await;
                     stdin_task?;
-                    let exit_status = exit_status?;
+                    let exit_status = exit_status.map_err(|error| eyre!(error))?;
                     if !exit_status.success() {
                         warn!(
                             "$duper.exit_code" =
                                 duper::serde::ser::to_string_compact(&ExitCode(exit_status.code()))
                                     .expect("valid Duper")
                         );
-                        return Err(color_eyre::eyre::eyre!(
-                            "Step '{}' failed ({})",
-                            &step.name,
-                            exit_status
-                        ));
+                        return Err(eyre!("Step '{}' failed ({})", &step.name, exit_status).into());
                     }
                     Ok(())
                 };
@@ -368,14 +371,14 @@ impl NowEnvironment {
                     smol::future::or(
                         async {
                             let _ = receiver.recv().await;
-                            Err(color_eyre::eyre::eyre!("Runner aborted"))
+                            Err(JobError::RunnerAborted)
                         },
                         async {
                             if let Some(abort) = abort {
                                 let _ = abort.recv().await;
-                                Err(color_eyre::eyre::eyre!("Job '{}' aborted", job.name))
+                                Err(JobError::JobAborted(job.name.clone()))
                             } else {
-                                smol::future::pending::<color_eyre::Result<()>>().await
+                                smol::future::pending::<Result<(), JobError>>().await
                             }
                         },
                     )
@@ -388,7 +391,10 @@ impl NowEnvironment {
 
                 if let Some(output_var) = step.output_var.as_ref() {
                     let mut buf = Vec::new();
-                    stdout.read_to_end(&mut buf).await?;
+                    stdout
+                        .read_to_end(&mut buf)
+                        .await
+                        .map_err(|error| eyre!(error))?;
                     info!(
                         runner = runner_name,
                         is_remote,
@@ -402,7 +408,10 @@ impl NowEnvironment {
                     );
                 } else if let Some(upload_key) = step.upload_key.as_ref() {
                     let mut buf = Vec::new();
-                    stdout.read_to_end(&mut buf).await?;
+                    stdout
+                        .read_to_end(&mut buf)
+                        .await
+                        .map_err(|error| eyre!(error))?;
                     let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
                     if !dry_run {
                         runner.fetch_derivation(&upload_path, receiver).await?;
@@ -427,17 +436,17 @@ impl NowEnvironment {
         let mut result: Result<(), JobError> = smol::future::or(steps_fut, async {
             if let Some(timeout) = job.timeout {
                 smol::Timer::after(timeout).await;
-                Err(color_eyre::eyre::eyre!(
+                Err(eyre!(
                     "Job '{}' timed out after {}",
                     job.name,
                     humantime::Duration::from(timeout)
-                ))
+                )
+                .into())
             } else {
-                smol::future::pending::<color_eyre::Result<()>>().await
+                smol::future::pending::<Result<(), JobError>>().await
             }
         })
-        .await
-        .map_err(Into::into);
+        .await;
 
         for (step_name, teardown, step_env) in teardown_stack.into_iter().rev() {
             let _span = tracing::info_span!(
@@ -460,12 +469,7 @@ impl NowEnvironment {
                         error
                     );
                     result = result.and_then(|()| {
-                        Err(color_eyre::eyre::eyre!(
-                            "Teardown for step '{}' failed ({})",
-                            step_name,
-                            error,
-                        )
-                        .into())
+                        Err(eyre!("Teardown for step '{}' failed ({})", step_name, error,).into())
                     });
                     continue;
                 }
@@ -522,12 +526,7 @@ impl NowEnvironment {
                     error
                 );
                 result = result.and_then(|()| {
-                    Err(color_eyre::eyre::eyre!(
-                        "Teardown task for step '{}' failed ({})",
-                        step_name,
-                        error,
-                    )
-                    .into())
+                    Err(eyre!("Teardown task for step '{}' failed ({})", step_name, error,).into())
                 });
                 continue;
             }
@@ -544,12 +543,7 @@ impl NowEnvironment {
                         error
                     );
                     result = result.and_then(|()| {
-                        Err(color_eyre::eyre::eyre!(
-                            "Teardown for step '{}' failed ({})",
-                            step_name,
-                            error,
-                        )
-                        .into())
+                        Err(eyre!("Teardown for step '{}' failed ({})", step_name, error,).into())
                     });
                     continue;
                 }
@@ -567,12 +561,7 @@ impl NowEnvironment {
                     exit_status
                 );
                 result = result.and_then(|()| {
-                    Err(color_eyre::eyre::eyre!(
-                        "Teardown for step '{}' failed ({})",
-                        step_name,
-                        exit_status
-                    )
-                    .into())
+                    Err(eyre!("Teardown for step '{}' failed ({})", step_name, exit_status).into())
                 });
             }
         }
@@ -635,13 +624,30 @@ impl NowEnvironment {
             let (fail_fast, no_fail_fast) = smol::future::zip(
                 async move {
                     let mut result = Ok(());
-                    while let Some(future) = fail_fast.next().await {
-                        if let Err(error) = future {
+                    let mut aborted_jobs: BTreeSet<String> = BTreeSet::new();
+                    while let Some(future_result) = fail_fast.next().await {
+                        if let Err(error) = future_result {
                             cancellation.close();
-                            result = result.and(Err(error));
+                            match error {
+                                JobError::JobAborted(job) => {
+                                    aborted_jobs.insert(job);
+                                }
+                                error => {
+                                    result = result.and(Err(error));
+                                }
+                            }
                         }
                     }
-                    result
+                    match result {
+                        Ok(()) => Ok(()),
+                        Err(JobError::Other(mut report)) => {
+                            for job in aborted_jobs {
+                                report = report.warning(format!("Job '{job}' was aborted"));
+                            }
+                            Err(JobError::Other(report))
+                        }
+                        Err(error) => Err(error),
+                    }
                 },
                 async move {
                     let mut result = Ok(());

@@ -729,6 +729,11 @@ in
                 exit 1
               }
 
+              if not ($output | str contains "Job 'job-remote' was aborted") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Expected abort message in output"
+                exit 1
+              }
+
               print $"(ansi green)Test passed.(ansi reset)"
             } else {
               print $"(ansi yellow_bold)WARNING:(ansi reset) BUILDERS is unset; skipping"
@@ -772,6 +777,11 @@ in
               }
               if not ($output | str contains "Remote teardown") {
                 print $"(ansi red_bold)ERROR:(ansi reset) Expected remote teardown in output"
+                exit 1
+              }
+
+              if ($output | str contains "Job 'job-remote' was aborted") {
+                print $"(ansi red_bold)ERROR:(ansi reset) Unexpected abort message in output"
                 exit 1
               }
 

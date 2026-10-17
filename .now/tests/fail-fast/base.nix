@@ -15,6 +15,7 @@
         ]
         (
           { label, ... }: {
+            name = "job-${label}";
             strategy = { inherit failFast; };
             checkout = "none";
             steps = [
@@ -23,7 +24,8 @@
                   if label == "local" then
                     ''
                       echo "Doing local work..."
-                      sleep 2.0
+                      sleep 1.5
+                      echo "Local work failed."
                       exit 1
                     ''
                   else

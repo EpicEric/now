@@ -25,7 +25,7 @@ use std::{
 
 use ahash::{HashMap, HashSet};
 use async_trait::async_trait;
-use color_eyre::eyre::OptionExt;
+use color_eyre::eyre::{OptionExt, eyre};
 use futures::{AsyncWriteExt, stream::FuturesUnordered};
 use smol::{
     channel::{self, Receiver},
@@ -40,6 +40,7 @@ use smol::{
 use crate::{
     builder::{NixConfig, NowBuilder, remote::RemoteBuilder},
     environment::NowEnvironment,
+    job::JobError,
     utils::{wait_for_output, write_output_to_stderr},
     workflow::{NowCheckout, NowJob, NowRunMode},
 };
@@ -99,7 +100,7 @@ impl LocalBuilder {
             serde_json::from_slice(&output.stdout)?
         } else {
             write_output_to_stderr(&output)?;
-            return Err(color_eyre::eyre::eyre!("Failed to fetch Nix config"));
+            return Err(eyre!("Failed to fetch Nix config"));
         };
 
         let remote_builders = match run_mode {
@@ -122,7 +123,7 @@ impl LocalBuilder {
                 )
                 .await?;
                 if remote_builders.is_empty() {
-                    return Err(color_eyre::eyre::eyre!("No remote builders available"));
+                    return Err(eyre!("No remote builders available"));
                 }
                 remote_builders
             }
@@ -332,7 +333,7 @@ impl NowBuilder for LocalBuilder {
         &self,
         checkout: NowCheckout,
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<Option<PathBuf>> {
+    ) -> Result<Option<PathBuf>, JobError> {
         match checkout {
             NowCheckout::Default | NowCheckout::All => Ok(None),
             NowCheckout::None | NowCheckout::Clone | NowCheckout::CloneAll => {
@@ -343,7 +344,7 @@ impl NowBuilder for LocalBuilder {
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
-                let mut child = tempdir_command.spawn()?;
+                let mut child = tempdir_command.spawn().map_err(|error| eyre!(error))?;
                 let output = wait_for_output(&mut child, Some(cancellation)).await?;
                 if output.status.success() {
                     Ok(Some(PathBuf::from(OsStr::from_bytes(
@@ -351,9 +352,7 @@ impl NowBuilder for LocalBuilder {
                     ))))
                 } else {
                     write_output_to_stderr(&output)?;
-                    Err(color_eyre::eyre::eyre!(
-                        "Temporary directory creation failed"
-                    ))
+                    Err(eyre!("Temporary directory creation failed").into())
                 }
             }
         }
@@ -364,20 +363,18 @@ impl NowBuilder for LocalBuilder {
         checkout: NowCheckout,
         tempdir: Option<PathBuf>,
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<PathBuf> {
+    ) -> Result<PathBuf, JobError> {
         match checkout {
             NowCheckout::Default | NowCheckout::All => {
                 debug_assert!(tempdir.is_none());
-                Ok(std::env::current_dir()?)
+                Ok(std::env::current_dir().map_err(|error| eyre!(error))?)
             }
             NowCheckout::None => {
-                let tempdir =
-                    tempdir.ok_or_eyre(color_eyre::eyre::eyre!("Missing temporary directory"))?;
+                let tempdir = tempdir.ok_or_eyre(eyre!("Missing temporary directory"))?;
                 Ok(tempdir)
             }
             NowCheckout::Clone => {
-                let tempdir =
-                    tempdir.ok_or_eyre(color_eyre::eyre::eyre!("Missing temporary directory"))?;
+                let tempdir = tempdir.ok_or_eyre(eyre!("Missing temporary directory"))?;
                 let mut command = Command::new("rsync");
                 command
                     .args(["-arz", "--files-from=-", "."])
@@ -386,11 +383,14 @@ impl NowBuilder for LocalBuilder {
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
-                let mut child = command.spawn()?;
+                let mut child = command.spawn().map_err(|error| eyre!(error))?;
                 let mut stdin = child.stdin.take().expect("stdin is piped");
                 let stdin_future = async move {
-                    let cwd = std::env::current_dir()?;
-                    for dir_entry in ignore::Walk::new(std::env::current_dir()?).flatten() {
+                    let cwd = std::env::current_dir().map_err(|error| eyre!(error))?;
+                    for dir_entry in
+                        ignore::Walk::new(std::env::current_dir().map_err(|error| eyre!(error))?)
+                            .flatten()
+                    {
                         if dir_entry.file_type().is_some_and(|typ| typ.is_file()) {
                             let path = dir_entry.path();
                             stdin
@@ -400,11 +400,12 @@ impl NowBuilder for LocalBuilder {
                                         .as_os_str()
                                         .as_bytes(),
                                 )
-                                .await?;
-                            stdin.write_all(b"\n").await?;
+                                .await
+                                .map_err(|error| eyre!(error))?;
+                            stdin.write_all(b"\n").await.map_err(|error| eyre!(error))?;
                         }
                     }
-                    Ok(stdin.flush().await?)
+                    Ok(stdin.flush().await.map_err(|error| eyre!(error))?)
                 };
                 let (_, output) = smol::future::try_zip(
                     stdin_future,
@@ -415,12 +416,11 @@ impl NowBuilder for LocalBuilder {
                     Ok(tempdir)
                 } else {
                     write_output_to_stderr(&output)?;
-                    Err(color_eyre::eyre::eyre!("Checkout failed"))
+                    Err(eyre!("Checkout failed").into())
                 }
             }
             NowCheckout::CloneAll => {
-                let tempdir =
-                    tempdir.ok_or_eyre(color_eyre::eyre::eyre!("Missing temporary directory"))?;
+                let tempdir = tempdir.ok_or_eyre(eyre!("Missing temporary directory"))?;
 
                 let mut command = Command::new("rsync");
                 command
@@ -430,13 +430,13 @@ impl NowBuilder for LocalBuilder {
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
-                let mut child = command.spawn()?;
+                let mut child = command.spawn().map_err(|error| eyre!(error))?;
                 let output = wait_for_output(&mut child, Some(cancellation)).await?;
                 if output.status.success() {
                     Ok(tempdir)
                 } else {
                     write_output_to_stderr(&output)?;
-                    Err(color_eyre::eyre::eyre!("Checkout failed"))
+                    Err(eyre!("Checkout failed").into())
                 }
             }
         }
@@ -447,7 +447,7 @@ impl NowBuilder for LocalBuilder {
         _job_name: &str,
         derivations: &[PathBuf],
         _cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<()> {
+    ) -> Result<(), JobError> {
         debug_assert!(derivations.iter().all(|path| path.exists()));
         Ok(())
     }
@@ -456,7 +456,7 @@ impl NowBuilder for LocalBuilder {
         &self,
         derivation: &Path,
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<PathBuf> {
+    ) -> Result<PathBuf, JobError> {
         let gcroot = self
             .gcroot_dir
             .join(derivation.file_name().expect("derivation has file name"));
@@ -471,16 +471,17 @@ impl NowBuilder for LocalBuilder {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = command.spawn()?;
+        let mut child = command.spawn().map_err(|error| eyre!(error))?;
         let output = wait_for_output(&mut child, Some(cancellation)).await?;
         if output.status.success() {
             Ok(PathBuf::from(OsStr::from_bytes(output.stdout.trim_ascii())))
         } else {
             write_output_to_stderr(&output)?;
-            Err(color_eyre::eyre::eyre!(
+            Err(eyre!(
                 "Failed to realize derivation '{}'",
                 derivation.to_string_lossy(),
-            ))
+            )
+            .into())
         }
     }
 
@@ -488,12 +489,12 @@ impl NowBuilder for LocalBuilder {
         &self,
         downloads: &[PathBuf],
         _cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<()> {
+    ) -> Result<(), JobError> {
         debug_assert!(downloads.iter().all(|path| path.exists()));
         Ok(())
     }
 
-    fn run_derivation(&self, cwdir: &Path, derivation: PathBuf) -> color_eyre::Result<Child> {
+    fn run_derivation(&self, cwdir: &Path, derivation: PathBuf) -> Result<Child, JobError> {
         let mut command = Command::new(derivation.join("bin/now-step"));
         command
             .current_dir(cwdir)
@@ -502,45 +503,49 @@ impl NowBuilder for LocalBuilder {
             .stderr(Stdio::piped())
             .env_clear()
             .envs(&self.env);
-        Ok(command.spawn()?)
+        Ok(command.spawn().map_err(|error| eyre!(error))?)
     }
 
     async fn fetch_derivation(
         &self,
         derivation: &Path,
         _cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<()> {
+    ) -> Result<(), JobError> {
         debug_assert!(derivation.exists());
         Ok(())
     }
 
-    async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
+    async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> Result<(), JobError> {
         match checkout {
             NowCheckout::Default | NowCheckout::All => {
                 debug_assert_eq!(
-                    path.canonicalize()?,
-                    std::env::current_dir()?.canonicalize()?
+                    path.canonicalize().map_err(|error| eyre!(error))?,
+                    std::env::current_dir()
+                        .map_err(|error| eyre!(error))?
+                        .canonicalize()
+                        .map_err(|error| eyre!(error))?
                 );
                 Ok(())
             }
             NowCheckout::None | NowCheckout::Clone | NowCheckout::CloneAll => {
                 assert_ne!(
-                    path.canonicalize()?,
-                    std::env::current_dir()?.canonicalize()?
+                    path.canonicalize().map_err(|error| eyre!(error))?,
+                    std::env::current_dir()
+                        .map_err(|error| eyre!(error))?
+                        .canonicalize()
+                        .map_err(|error| eyre!(error))?
                 );
                 assert!(path.starts_with(temp_dir()));
                 let mut command = Command::new("rm");
                 command.arg("-rf").arg(path);
 
-                let mut child = command.spawn()?;
+                let mut child = command.spawn().map_err(|error| eyre!(error))?;
                 let output = wait_for_output(&mut child, None).await?;
                 if output.status.success() {
                     Ok(())
                 } else {
                     write_output_to_stderr(&output)?;
-                    Err(color_eyre::eyre::eyre!(
-                        "Failed to remove locally checked out directory"
-                    ))
+                    Err(eyre!("Failed to remove locally checked out directory").into())
                 }
             }
         }

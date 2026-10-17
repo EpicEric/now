@@ -25,7 +25,7 @@ use smol::{
 use async_trait::async_trait;
 use serde::Deserialize;
 
-use crate::workflow::NowCheckout;
+use crate::{job::JobError, workflow::NowCheckout};
 
 pub(crate) mod local;
 pub(crate) mod remote;
@@ -44,43 +44,43 @@ pub(crate) trait NowBuilder {
         &self,
         checkout: NowCheckout,
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<Option<PathBuf>>;
+    ) -> Result<Option<PathBuf>, JobError>;
 
     async fn checkout(
         &self,
         checkout: NowCheckout,
         tempdir: Option<PathBuf>,
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<PathBuf>;
+    ) -> Result<PathBuf, JobError>;
 
     async fn copy_derivations(
         &self,
         job_name: &str,
         derivations: &[PathBuf],
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<()>;
+    ) -> Result<(), JobError>;
 
     async fn realize_derivation(
         &self,
         derivation: &Path,
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<PathBuf>;
+    ) -> Result<PathBuf, JobError>;
 
     async fn download(
         &self,
         downloads: &[PathBuf],
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<()>;
+    ) -> Result<(), JobError>;
 
-    fn run_derivation(&self, cwdir: &Path, derivation: PathBuf) -> color_eyre::Result<Child>;
+    fn run_derivation(&self, cwdir: &Path, derivation: PathBuf) -> Result<Child, JobError>;
 
     async fn fetch_derivation(
         &self,
         derivation: &Path,
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<()>;
+    ) -> Result<(), JobError>;
 
-    async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()>;
+    async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> Result<(), JobError>;
 }
 
 #[derive(Deserialize, Debug)]

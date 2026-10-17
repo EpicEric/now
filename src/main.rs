@@ -19,7 +19,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use color_eyre::eyre::OptionExt;
+use color_eyre::eyre::{OptionExt, eyre};
 use tracing::{debug, level_filters::LevelFilter};
 use tracing_duper::DuperLayer;
 use tracing_error::ErrorLayer;
@@ -57,16 +57,13 @@ fn find_workflow(
             if now_path.exists() && !now_path.is_dir() {
                 Ok(WorkflowSource::Path(now_path.canonicalize()?))
             } else {
-                Err(color_eyre::eyre::eyre!(
+                Err(eyre!(
                     "Workflow 'now.nix' not found in directory '{}'",
                     workflow.canonicalize()?.to_string_lossy()
                 ))
             }
         } else if !workflow.exists() {
-            Err(color_eyre::eyre::eyre!(
-                "Workflow '{}' not found",
-                workflow.to_string_lossy()
-            ))
+            Err(eyre!("Workflow '{}' not found", workflow.to_string_lossy()))
         } else {
             Ok(WorkflowSource::Path(workflow.canonicalize()?))
         }
@@ -81,11 +78,11 @@ fn find_workflow(
                 '"' => {
                     if quoted {
                         if attribute_chars.peek().is_some_and(|(_, next)| *next != '.') {
-                            return Err(color_eyre::eyre::eyre!("Invalid quoted attribute"));
+                            return Err(eyre!("Invalid quoted attribute"));
                         }
                         quoted = false;
                     } else if i > 0 {
-                        return Err(color_eyre::eyre::eyre!("Invalid quoted attribute"));
+                        return Err(eyre!("Invalid quoted attribute"));
                     } else {
                         quoted = true;
                     }
@@ -93,10 +90,10 @@ fn find_workflow(
                 '.' => {
                     if !quoted {
                         let Some((_, next)) = attribute_chars.peek() else {
-                            return Err(color_eyre::eyre::eyre!("Empty attribute name"));
+                            return Err(eyre!("Empty attribute name"));
                         };
                         if *next == '.' {
-                            return Err(color_eyre::eyre::eyre!("Empty attribute name"));
+                            return Err(eyre!("Empty attribute name"));
                         }
                         if *next == '"' {
                             quoted = true;
@@ -107,17 +104,17 @@ fn find_workflow(
                 '\\' if quoted => match attribute_chars.next() {
                     Some((_, '\\' | '"' | '$' | 'n' | 'r' | 't')) => {}
                     Some((_, c)) => {
-                        return Err(color_eyre::eyre::eyre!("Invalid escape sequence: \\{}", c));
+                        return Err(eyre!("Invalid escape sequence: \\{}", c));
                     }
-                    None => return Err(color_eyre::eyre::eyre!("Invalid escape")),
+                    None => return Err(eyre!("Invalid escape")),
                 },
                 _ if quoted => {}
                 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => {}
-                _ => return Err(color_eyre::eyre::eyre!("Invalid character")),
+                _ => return Err(eyre!("Invalid character")),
             }
         }
         if quoted {
-            return Err(color_eyre::eyre::eyre!("Unclosed quoted attribute"));
+            return Err(eyre!("Unclosed quoted attribute"));
         }
 
         // If path is a filesystem path, convert to an absolute path
@@ -150,7 +147,7 @@ fn find_workflow(
             }
             cwdir = cwdir_path.parent();
         }
-        Err(color_eyre::eyre::eyre!(
+        Err(eyre!(
             "No workflow found recursively from '{}'",
             canonical_cwdir.to_string_lossy()
         ))
@@ -169,10 +166,7 @@ fn main() -> color_eyre::Result<()> {
                 path.push("now.nix");
             }
             if path.exists() {
-                return Err(color_eyre::eyre::eyre!(
-                    "'{}' already exists",
-                    path.to_string_lossy(),
-                ));
+                return Err(eyre!("'{}' already exists", path.to_string_lossy(),));
             }
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;

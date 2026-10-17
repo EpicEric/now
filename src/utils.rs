@@ -24,11 +24,13 @@ use smol::{
     process::Child,
 };
 
+use crate::job::JobError;
+
 /// Waits for `child` to exit while draining its pipe buffers concurrently.
 pub(crate) async fn wait_for_output(
     child: &mut Child,
     cancellation: Option<&Receiver<()>>,
-) -> color_eyre::Result<Output> {
+) -> Result<Output, JobError> {
     let mut stdout = child.stdout.take();
     let mut stderr = child.stderr.take();
     let mut stdout_buf = Vec::new();
@@ -55,8 +57,9 @@ pub(crate) async fn wait_for_output(
         .await;
         out?;
         err?;
+        let status = status.map_err(|error| JobError::Other(error.into()))?;
         Ok(Output {
-            status: status?,
+            status,
             stdout: stdout_buf,
             stderr: stderr_buf,
         })
@@ -65,7 +68,7 @@ pub(crate) async fn wait_for_output(
     let result = if let Some(cancellation) = cancellation {
         smol::future::or(run, async {
             let _ = cancellation.recv().await;
-            Err(color_eyre::eyre::eyre!("Runner aborted"))
+            Err(JobError::RunnerAborted)
         })
         .await
     } else {

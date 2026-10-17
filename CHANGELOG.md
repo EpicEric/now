@@ -13,6 +13,7 @@
 - Add `pathLockdown` to jobs/steps
 - Allow passing a script file to `run`/`teardown`
 - Add `--logging` option
+- List jobs that were aborted when `strategy.failFast = true`
 
 ### Fixed
 

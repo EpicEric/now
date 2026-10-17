@@ -24,7 +24,7 @@ use std::{
 
 use ahash::{HashSet, HashSetExt};
 use async_trait::async_trait;
-use color_eyre::eyre::OptionExt;
+use color_eyre::eyre::{OptionExt, eyre};
 use format_bytes::format_bytes;
 use smol::{
     channel,
@@ -38,6 +38,7 @@ use smol::{
 
 use crate::{
     builder::{NixConfig, NowBuilder},
+    job::JobError,
     utils::{get_random_string, wait_for_output, write_output_to_stderr},
     workflow::NowCheckout,
 };
@@ -272,10 +273,7 @@ impl RemoteBuilder {
                 String::from_utf8(output.stdout)?
             } else {
                 write_output_to_stderr(&output)?;
-                return Err(color_eyre::eyre::eyre!(
-                    "Failed to connect to {}",
-                    ssh_options.uri
-                ));
+                return Err(eyre!("Failed to connect to {}", ssh_options.uri));
             };
 
             vec.push(RemoteBuilder {
@@ -317,7 +315,7 @@ impl NowBuilder for RemoteBuilder {
         &self,
         checkout: NowCheckout,
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<Option<PathBuf>> {
+    ) -> Result<Option<PathBuf>, JobError> {
         match checkout {
             NowCheckout::Default
             | NowCheckout::All
@@ -336,7 +334,7 @@ impl NowBuilder for RemoteBuilder {
                     .stdin(Stdio::null())
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
-                let mut child = tempdir_command.spawn()?;
+                let mut child = tempdir_command.spawn().map_err(|error| eyre!(error))?;
                 let output = wait_for_output(&mut child, Some(cancellation)).await?;
                 if output.status.success() {
                     Ok(Some(PathBuf::from(OsStr::from_bytes(
@@ -344,9 +342,7 @@ impl NowBuilder for RemoteBuilder {
                     ))))
                 } else {
                     write_output_to_stderr(&output)?;
-                    Err(color_eyre::eyre::eyre!(
-                        "Temporary directory creation failed"
-                    ))
+                    Err(eyre!("Temporary directory creation failed").into())
                 }
             }
         }
@@ -357,10 +353,8 @@ impl NowBuilder for RemoteBuilder {
         checkout: NowCheckout,
         tempdir: Option<PathBuf>,
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<PathBuf> {
-        let tempdir = tempdir.ok_or_eyre(color_eyre::eyre::eyre!(
-            "Missing temporary directory in remote"
-        ))?;
+    ) -> Result<PathBuf, JobError> {
+        let tempdir = tempdir.ok_or_eyre(eyre!("Missing temporary directory in remote"))?;
 
         match checkout {
             NowCheckout::Default | NowCheckout::Clone => {
@@ -388,11 +382,14 @@ impl NowBuilder for RemoteBuilder {
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
-                let mut child = command.spawn()?;
+                let mut child = command.spawn().map_err(|error| eyre!(error))?;
                 let mut stdin = child.stdin.take().expect("stdin is piped");
                 let stdin_future = async move {
-                    let cwd = std::env::current_dir()?;
-                    for dir_entry in ignore::Walk::new(std::env::current_dir()?).flatten() {
+                    let cwd = std::env::current_dir().map_err(|error| eyre!(error))?;
+                    for dir_entry in
+                        ignore::Walk::new(std::env::current_dir().map_err(|error| eyre!(error))?)
+                            .flatten()
+                    {
                         if dir_entry.file_type().is_some_and(|typ| typ.is_file()) {
                             let path = dir_entry.path();
                             stdin
@@ -402,11 +399,12 @@ impl NowBuilder for RemoteBuilder {
                                         .as_os_str()
                                         .as_bytes(),
                                 )
-                                .await?;
-                            stdin.write_all(b"\n").await?;
+                                .await
+                                .map_err(|error| eyre!(error))?;
+                            stdin.write_all(b"\n").await.map_err(|error| eyre!(error))?;
                         }
                     }
-                    Ok(stdin.flush().await?)
+                    Ok(stdin.flush().await.map_err(|error| eyre!(error))?)
                 };
                 let (_, output) = smol::future::try_zip(
                     stdin_future,
@@ -417,7 +415,7 @@ impl NowBuilder for RemoteBuilder {
                     Ok(tempdir)
                 } else {
                     write_output_to_stderr(&output)?;
-                    Err(color_eyre::eyre::eyre!("Checkout failed"))
+                    Err(eyre!("Checkout failed").into())
                 }
             }
             NowCheckout::All | NowCheckout::CloneAll => {
@@ -446,13 +444,13 @@ impl NowBuilder for RemoteBuilder {
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
-                let mut child = command.spawn()?;
+                let mut child = command.spawn().map_err(|error| eyre!(error))?;
                 let output = wait_for_output(&mut child, Some(cancellation)).await?;
                 if output.status.success() {
                     Ok(tempdir)
                 } else {
                     write_output_to_stderr(&output)?;
-                    Err(color_eyre::eyre::eyre!("Checkout failed"))
+                    Err(eyre!("Checkout failed").into())
                 }
             }
             NowCheckout::None => Ok(tempdir),
@@ -464,7 +462,7 @@ impl NowBuilder for RemoteBuilder {
         job_name: &str,
         derivations: &[PathBuf],
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<()> {
+    ) -> Result<(), JobError> {
         let mut ssh_opts = OsString::new();
         for arg in get_ssh_options(&self.ssh_options) {
             ssh_opts.push(arg);
@@ -486,15 +484,16 @@ impl NowBuilder for RemoteBuilder {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = command.spawn()?;
+        let mut child = command.spawn().map_err(|error| eyre!(error))?;
         let output = wait_for_output(&mut child, Some(cancellation)).await?;
         if !output.status.success() {
             write_output_to_stderr(&output)?;
-            return Err(color_eyre::eyre::eyre!(
+            return Err(eyre!(
                 "Failed to copy '{}' derivations to {}",
                 job_name,
                 self.ssh_options.uri
-            ));
+            )
+            .into());
         }
         Ok(())
     }
@@ -503,13 +502,15 @@ impl NowBuilder for RemoteBuilder {
         &self,
         derivation: &Path,
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<PathBuf> {
+    ) -> Result<PathBuf, JobError> {
         let mut full_command: OsString = OsString::new();
 
         if let Some(nix_config) = std::env::var_os("NIX_CONFIG") {
             full_command.push("NIX_CONFIG=");
             full_command.push(OsStr::from_bytes(
-                shlex::bytes::try_quote(nix_config.as_encoded_bytes())?.as_ref(),
+                shlex::bytes::try_quote(nix_config.as_encoded_bytes())
+                    .map_err(|error| eyre!(error))?
+                    .as_ref(),
             ));
             full_command.push(" ");
         }
@@ -527,17 +528,18 @@ impl NowBuilder for RemoteBuilder {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = command.spawn()?;
+        let mut child = command.spawn().map_err(|error| eyre!(error))?;
         let output = wait_for_output(&mut child, Some(cancellation)).await?;
         if output.status.success() {
             Ok(PathBuf::from(OsStr::from_bytes(output.stdout.trim_ascii())))
         } else {
             write_output_to_stderr(&output)?;
-            Err(color_eyre::eyre::eyre!(
+            Err(eyre!(
                 "Failed to realize derivation '{}' in {}",
                 derivation.to_string_lossy(),
                 self.ssh_options.uri
-            ))
+            )
+            .into())
         }
     }
 
@@ -545,7 +547,7 @@ impl NowBuilder for RemoteBuilder {
         &self,
         downloads: &[PathBuf],
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<()> {
+    ) -> Result<(), JobError> {
         let mut ssh_opts = OsString::new();
         for arg in get_ssh_options(&self.ssh_options) {
             ssh_opts.push(arg);
@@ -567,19 +569,16 @@ impl NowBuilder for RemoteBuilder {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = command.spawn()?;
+        let mut child = command.spawn().map_err(|error| eyre!(error))?;
         let output = wait_for_output(&mut child, Some(cancellation)).await?;
         if !output.status.success() {
             write_output_to_stderr(&output)?;
-            return Err(color_eyre::eyre::eyre!(
-                "Failed to copy uploads to {}",
-                self.ssh_options.uri
-            ));
+            return Err(eyre!("Failed to copy uploads to {}", self.ssh_options.uri).into());
         }
         Ok(())
     }
 
-    fn run_derivation(&self, cwdir: &Path, derivation: PathBuf) -> color_eyre::Result<Child> {
+    fn run_derivation(&self, cwdir: &Path, derivation: PathBuf) -> Result<Child, JobError> {
         let mut full_command: OsString = "cd ".into();
         full_command.push(cwdir);
         full_command.push(" ; ");
@@ -597,14 +596,14 @@ impl NowBuilder for RemoteBuilder {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        Ok(command.spawn()?)
+        Ok(command.spawn().map_err(|error| eyre!(error))?)
     }
 
     async fn fetch_derivation(
         &self,
         derivation: &Path,
         cancellation: &channel::Receiver<()>,
-    ) -> color_eyre::Result<()> {
+    ) -> Result<(), JobError> {
         let mut ssh_opts = OsString::new();
         for arg in get_ssh_options(&self.ssh_options) {
             ssh_opts.push(arg);
@@ -627,20 +626,21 @@ impl NowBuilder for RemoteBuilder {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = command.spawn()?;
+        let mut child = command.spawn().map_err(|error| eyre!(error))?;
         let output = wait_for_output(&mut child, Some(cancellation)).await?;
         if !output.status.success() {
             write_output_to_stderr(&output)?;
-            return Err(color_eyre::eyre::eyre!(
+            return Err(eyre!(
                 "Failed to copy '{}' derivation from {}",
                 derivation.to_string_lossy(),
                 self.ssh_options.uri
-            ));
+            )
+            .into());
         }
         Ok(())
     }
 
-    async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> color_eyre::Result<()> {
+    async fn undo_checkout(&self, checkout: NowCheckout, path: &Path) -> Result<(), JobError> {
         match checkout {
             NowCheckout::Default
             | NowCheckout::None
@@ -661,16 +661,17 @@ impl NowBuilder for RemoteBuilder {
                     .stdout(Stdio::piped())
                     .stderr(Stdio::piped());
 
-                let mut child = command.spawn()?;
+                let mut child = command.spawn().map_err(|error| eyre!(error))?;
                 let output = wait_for_output(&mut child, None).await?;
                 if output.status.success() {
                     Ok(())
                 } else {
                     write_output_to_stderr(&output)?;
-                    Err(color_eyre::eyre::eyre!(
+                    Err(eyre!(
                         "Failed to remove checked out directory in {}",
                         self.ssh_options.uri
-                    ))
+                    )
+                    .into())
                 }
             }
         }

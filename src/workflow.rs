@@ -25,20 +25,16 @@ use std::{
 };
 
 use ahash::{HashMap, HashSet, HashSetExt};
+use color_eyre::{Section, eyre::eyre};
 use futures::stream::FuturesUnordered;
 use petgraph::{matrix_graph::NodeIndex, visit::EdgeRef};
 use serde::{Deserialize, Serialize};
-use smol::{
-    channel::{Receiver, TryRecvError},
-    process::Command,
-    stream::StreamExt,
-};
+use smol::{channel::Receiver, process::Command, stream::StreamExt};
 use tracing::{debug, info, instrument, warn};
 
 use crate::{
     builder::{NowBuilder, local::LocalBuilder},
     environment::{NowEnvironment, eval_id},
-    eyre::Section,
     graph::{DagNode, NowWorkflowGraph},
     job::{JobError, JobResult},
     serde::now_job_timeout,
@@ -145,7 +141,7 @@ impl WorkflowSource {
                 debug_assert!(path.is_absolute());
                 let workflow_str = path
                     .to_str()
-                    .ok_or_else(|| color_eyre::eyre::eyre!("Workflow path is not UTF-8"))?;
+                    .ok_or_else(|| eyre!("Workflow path is not UTF-8"))?;
                 Ok(format!("(/. + {})", serde_json::to_string(&workflow_str)?))
             }
             WorkflowSource::Flake { path, attribute } => {
@@ -273,7 +269,7 @@ impl NowEnvironment {
                     if let Some(timeout) = timeout {
                         smol::Timer::after(timeout).await;
                         builder_ref.cancel_builders();
-                        drop(timed_out_sender);
+                        timed_out_sender.close();
                     } else {
                         smol::future::pending().await
                     }
@@ -319,8 +315,8 @@ impl NowEnvironment {
                 }
 
                 loop {
-                    if let Some((node_index, future)) = futures.next().await {
-                        match future {
+                    if let Some((node_index, future_result)) = futures.next().await {
+                        match future_result {
                             Ok(()) => {
                                 current_nodes = HashSet::new();
                                 let possible_next_nodes: Vec<_> = tree
@@ -373,27 +369,36 @@ impl NowEnvironment {
                                 );
                                 skip_dependent_nodes(&runner, &mut tree, &mut nodes, node_index);
                             }
+                            Err(JobError::RunnerAborted) => {
+                                debug_assert!(result.is_err());
+                            }
+                            Err(JobError::JobAborted(job)) => unreachable!("Job {job} was aborted without root cause"),
                             Err(error) => {
                                 if abort {
                                     builder.cancel_builders();
                                 }
                                 result = match result {
-                                    Ok(()) => Err(color_eyre::Report::from(error)),
+                                    Ok(()) => match error {
+                                        JobError::Other(report) => Err(report),
+                                        _ => Err(color_eyre::Report::from(error)),
+                                    }
                                     Err(report) => Err(report.error(error)),
                                 }
                             }
                         }
                     } else {
-                        if matches!(timed_out_receiver.try_recv(), Err(TryRecvError::Closed)) {
-                            return Err(color_eyre::eyre::eyre!(
-                                "Workflow timed out after {}",
-                                humantime::Duration::from(timeout.expect("timeout is set"))
-                            ));
+                        if let Some(timeout) = timeout {
+                            if timed_out_receiver.is_closed() {
+                                return Err(eyre!(
+                                    "Workflow timed out after {}",
+                                    humantime::Duration::from(timeout)
+                                ));
+                            }
                         }
                         if result.is_ok() {
                             info!(runner, is_remote = false, "Done.");
                         }
-                        return result;
+                        return result
                     }
                 }
             }
@@ -455,10 +460,7 @@ impl NowEnvironment {
             Ok(serde_json::from_slice(&output.stdout)?)
         } else {
             write_output_to_stderr(&output)?;
-            Err(color_eyre::eyre::eyre!(
-                "Failed to evaluate workflow at {}",
-                workflow
-            ))
+            Err(eyre!("Failed to evaluate workflow at {}", workflow))
         }
     }
 }

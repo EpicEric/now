@@ -10,11 +10,14 @@ use tracing_error::SpanTrace;
 pub(crate) trait Section: Sized {
     type Return;
 
+    #[allow(unused)]
     fn error<E: Error + Send + Sync + 'static>(self, error: E) -> Self::Return;
     fn note<D: Display + Send + Sync + 'static>(self, message: D) -> Self::Return;
     fn suggestion<D: Display + Send + Sync + 'static>(self, message: D) -> Self::Return;
+    fn warning<D: Display + Send + Sync + 'static>(self, message: D) -> Self::Return;
 }
 
+#[allow(unused)]
 fn add_error<E: Error + Send + Sync + 'static>(mut report: Report, error: E) -> Report {
     if let Some(handler) = report.handler_mut().downcast_mut::<Handler>() {
         handler.errors.push(Box::new(error));
@@ -42,6 +45,15 @@ fn add_suggestion<D: Display + Send + Sync + 'static>(mut report: Report, msg: D
     }
 }
 
+fn add_warning<D: Display + Send + Sync + 'static>(mut report: Report, msg: D) -> Report {
+    if let Some(h) = report.handler_mut().downcast_mut::<Handler>() {
+        h.warnings.push(msg.to_string());
+        report
+    } else {
+        color_eyre::Section::warning(report, msg)
+    }
+}
+
 impl Section for Report {
     type Return = Report;
 
@@ -55,6 +67,10 @@ impl Section for Report {
 
     fn suggestion<D: Display + Send + Sync + 'static>(self, message: D) -> Report {
         add_suggestion(self, message)
+    }
+
+    fn warning<D: Display + Send + Sync + 'static>(self, message: D) -> Report {
+        add_warning(self, message)
     }
 }
 
@@ -72,6 +88,10 @@ impl<T, R: Into<Report>> Section for Result<T, R> {
     fn suggestion<D: Display + Send + Sync + 'static>(self, msg: D) -> Self::Return {
         self.map_err(|report| add_suggestion(report.into(), msg))
     }
+
+    fn warning<D: Display + Send + Sync + 'static>(self, msg: D) -> Self::Return {
+        self.map_err(|report| add_warning(report.into(), msg))
+    }
 }
 
 pub struct Handler {
@@ -81,6 +101,7 @@ pub struct Handler {
     pub errors: Vec<Box<dyn Error + Send + Sync + 'static>>,
     pub notes: Vec<String>,
     pub suggestions: Vec<String>,
+    pub warnings: Vec<String>,
 }
 
 impl eyre::EyreHandler for Handler {
@@ -108,6 +129,7 @@ pub(crate) fn install_tracing_hook() -> eyre::Result<()> {
             errors: Vec::new(),
             notes: Vec::new(),
             suggestions: Vec::new(),
+            warnings: Vec::new(),
         })
     }))?;
     Ok(())
@@ -132,6 +154,9 @@ pub(crate) fn log_report(report: &color_eyre::Report) {
                 .expect("valid Duper"),
             "$duper.suggestions" =
                 duper::serde::ser::to_string_compact(&handler.suggestions)
+                .expect("valid Duper"),
+            "$duper.warnings" =
+                duper::serde::ser::to_string_compact(&handler.warnings)
                 .expect("valid Duper"),
             span_trace = %handler.span_trace,
             backtrace = %handler.backtrace,

@@ -17,6 +17,7 @@
 use std::fmt::Display;
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
+use color_eyre::eyre::eyre;
 use petgraph::{acyclic::Acyclic, algo::Cycle, dot, graph::NodeIndex, stable_graph::StableDiGraph};
 use serde::Serialize;
 use tracing::instrument;
@@ -125,12 +126,10 @@ impl NowWorkflowGraph {
                         }
                         joined_jobs.push_str(job);
                     }
-                    return Err(color_eyre::eyre::eyre!("No default jobs in workflow").note(
-                        format!(
-                            "Specify a job directly. Available options: {}",
-                            self.available_jobs(),
-                        ),
-                    ));
+                    return Err(eyre!("No default jobs in workflow").note(format!(
+                        "Specify a job directly. Available options: {}",
+                        self.available_jobs(),
+                    )));
                 }
             }
         };
@@ -146,7 +145,7 @@ impl NowWorkflowGraph {
                     }
                 }
                 if matching_jobs.is_empty() {
-                    let mut error = color_eyre::eyre::eyre!("No jobs matched '{job_glob}'")
+                    let mut error = eyre!("No jobs matched '{job_glob}'")
                         .note(format!("Available options: {}", self.available_jobs()));
                     for maybe_match in self.closest_matches(&job_glob) {
                         error = error.suggestion(format!("Did you mean '{maybe_match}'?"))
@@ -206,7 +205,7 @@ impl NowWorkflow {
     #[instrument(skip(self))]
     pub(crate) fn into_graph(self) -> color_eyre::Result<NowWorkflowGraph> {
         if self.jobs.is_empty() {
-            return Err(color_eyre::eyre::eyre!("No jobs in workflow"));
+            return Err(eyre!("No jobs in workflow"));
         }
 
         let mut graph = StableDiGraph::new();
@@ -255,17 +254,17 @@ impl NowWorkflow {
                 graph.add_edge(
                     *graph_nodes
                         .get(&edge)
-                        .ok_or_else(|| color_eyre::eyre::eyre!("Unknown node {}", edge))?,
+                        .ok_or_else(|| eyre!("Unknown node {}", edge))?,
                     *graph_nodes
                         .get(&from)
-                        .ok_or_else(|| color_eyre::eyre::eyre!("Unknown node {}", from))?,
+                        .ok_or_else(|| eyre!("Unknown node {}", from))?,
                     (),
                 );
             }
         }
 
         let dag = graph.try_into().map_err(|cycle: Cycle<_>| {
-            color_eyre::eyre::eyre!(
+            eyre!(
                 "Cycle detected on '{}'",
                 graph_nodes
                     .iter()

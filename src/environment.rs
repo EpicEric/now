@@ -25,7 +25,7 @@ use std::{
 };
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
-use color_eyre::eyre::Context;
+use color_eyre::eyre::{Context, eyre};
 use sha2::{Digest, Sha256};
 use smol::{channel::Receiver, process::Command};
 use tracing::instrument;
@@ -68,10 +68,7 @@ async fn eval_id_from_workflow_source(workflow: &WorkflowSource) -> color_eyre::
         output.stdout
     } else {
         write_output_to_stderr(&output)?;
-        return Err(color_eyre::eyre::eyre!(
-            "Failed to get workflow source from {}",
-            workflow
-        ));
+        return Err(eyre!("Failed to get workflow source from {}", workflow));
     };
 
     // Two attributes of the same flake share a source tree; keep their IDs apart.
@@ -137,7 +134,7 @@ impl NowEnvironment {
         smol::future::or(
             async {
                 let _ = ctrl_c.recv().await;
-                Err(color_eyre::eyre::eyre!("Evaluation aborted"))
+                Err(eyre!("Evaluation aborted"))
             },
             async {
                 let nix_project_source = smol::unblock(ProjectSource::new).await?;
@@ -153,7 +150,7 @@ impl NowEnvironment {
                         let key = match secret.into_string() {
                             Ok(secret) => secret,
                             Err(os_string) => {
-                                return Some(Err(color_eyre::eyre::eyre!(
+                                return Some(Err(eyre!(
                                     "Invalid value for {} envvar",
                                     String::from_utf8_lossy(os_string.as_encoded_bytes())
                                 )));
@@ -162,7 +159,7 @@ impl NowEnvironment {
                         let value = match value.into_string() {
                             Ok(value) => SecretString::new(value),
                             Err(os_string) => {
-                                return Some(Err(color_eyre::eyre::eyre!(
+                                return Some(Err(eyre!(
                                     "Invalid value for {} envvar",
                                     String::from_utf8_lossy(os_string.as_encoded_bytes())
                                 )));
@@ -181,7 +178,7 @@ impl NowEnvironment {
                         let key = match var.into_string() {
                             Ok(var) => var,
                             Err(os_string) => {
-                                return Some(Err(color_eyre::eyre::eyre!(
+                                return Some(Err(eyre!(
                                     "Invalid value for {} envvar",
                                     String::from_utf8_lossy(os_string.as_encoded_bytes())
                                 )));
@@ -190,7 +187,7 @@ impl NowEnvironment {
                         let value = match value.into_string() {
                             Ok(value) => value,
                             Err(os_string) => {
-                                return Some(Err(color_eyre::eyre::eyre!(
+                                return Some(Err(eyre!(
                                     "Invalid value for {} envvar",
                                     String::from_utf8_lossy(os_string.as_encoded_bytes())
                                 )));
@@ -263,9 +260,7 @@ impl NowEnvironment {
             let mut stderr = std::io::stderr();
             stderr.write_all(&output.stderr)?;
             stderr.flush()?;
-            return Err(color_eyre::eyre::eyre!(
-                "Failed to parse workflow for variables"
-            ));
+            return Err(eyre!("Failed to parse workflow for variables"));
         }
 
         let workflow: NowWorkflow = serde_json::from_slice(&output.stdout)
@@ -305,12 +300,12 @@ impl NowEnvironment {
         if let Some(secret) = intersection.next() {
             let intersection_count = intersection.count();
             if intersection_count == 0 {
-                return Err(color_eyre::eyre::eyre!(
+                return Err(eyre!(
                     "Invalid workflow: secret '{}' cannot also be used as a regular variable",
                     String::from_utf8_lossy(secret.as_encoded_bytes())
                 ));
             }
-            return Err(color_eyre::eyre::eyre!(
+            return Err(eyre!(
                 "Invalid workflow: secret '{}' and {intersection_count} other(s) cannot also be used as regular variables",
                 String::from_utf8_lossy(secret.as_encoded_bytes())
             ));
@@ -363,7 +358,7 @@ impl NowEnvironment {
                 match value {
                     NowStepEnvVar::Plain(value) => {
                         if let Some(needle) = unset_var_regex.captures(value) {
-                            return Err(color_eyre::eyre::eyre!(
+                            return Err(eyre!(
                                 "Required environment variable '{}' is unset",
                                 needle.get(1).expect("is match").as_str()
                             ));
@@ -376,7 +371,7 @@ impl NowEnvironment {
                             self.secrets
                                 .get(&secret.secret_name)
                                 .ok_or_else(|| {
-                                    color_eyre::eyre::eyre!(
+                                    eyre!(
                                         "Secret environment variable '{}' is unset",
                                         &secret.secret_name
                                     )
@@ -388,10 +383,7 @@ impl NowEnvironment {
                     NowStepEnvVar::Download(download) => {
                         let download_path =
                             uploads.get(&download.download_name).ok_or_else(|| {
-                                color_eyre::eyre::eyre!(
-                                    "Missing download '{}'",
-                                    &download.download_name
-                                )
+                                eyre!("Missing download '{}'", &download.download_name)
                             })?;
                         map.insert(key.into(), download_path.into());
                     }
