@@ -167,6 +167,15 @@ Run one or more jobs
       <b>--abort</b>
           Immediately abort on the first job failure
 
+      <b>--termination-timeout</b> &lt;DURATION&gt;
+          Graceful termination timeout for steps when the job is aborted.
+          
+          When enabled, SIGTERM is first sent to each currently running step, then after the grace period, SIGKILL is sent to each still running step.
+          
+          A duration less than one second will signal instant termination.
+          
+          [default: 10s]
+
       <b>--timeout</b> &lt;DURATION&gt;
           Timeout for the entire workflow, eg. `1h`
 

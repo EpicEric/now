@@ -208,7 +208,9 @@ fn get_style_for_runner(is_remote: bool, builder: &str) -> owo_colors::Style {
             owo_colors::Style::new().purple(),
             owo_colors::Style::new().red(),
         ]
-        .choose(&mut rand::rngs::SmallRng::seed_from_u64(hasher.finish()))
+        .choose(&mut rand::rngs::Xoshiro256PlusPlus::seed_from_u64(
+            hasher.finish(),
+        ))
         .expect("not empty")
     } else {
         owo_colors::Style::new().blue()

@@ -206,7 +206,10 @@ pub(crate) enum Command {
 
         /// Graceful termination timeout for steps when the job is aborted.
         ///
-        /// A duration less than one second will signal instant termination to steps.
+        /// When enabled, SIGTERM is first sent to each currently running step,
+        /// then after the grace period, SIGKILL is sent to each still running step.
+        ///
+        /// A duration less than one second will signal instant termination.
         #[arg(long, value_name = "DURATION", default_value = "10s")]
         termination_timeout: humantime::Duration,
 
