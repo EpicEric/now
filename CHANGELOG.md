@@ -4,7 +4,8 @@
 
 ### Fixed
 
-- Fix signal passing for nested `now`
+- Fix nested signal passing
+- Fix signal handling in `now-step`
 
 ## 0.6.0 (2026-10-17)
 

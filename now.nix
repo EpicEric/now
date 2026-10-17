@@ -428,6 +428,7 @@ in
         "test-nix-config"
         "test-nixpkgs"
         "test-no-match"
+        "test-orchestrate-services"
         "test-overlay"
         "test-path-lockdown"
         "test-sandbox"
@@ -1367,6 +1368,89 @@ in
 
             if not ($output | str contains "Available options: a, b, c, x, y") {
               print $"(ansi red_bold)ERROR:(ansi reset) Expected suggestions in output"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-orchestrate-services = {
+      name = "Test `now-services.orchestrate`";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let dir = (mktemp --directory)
+            let log = ($dir | path join "output.log")
+
+            let driver = r#'
+              cd .now/tests/orchestrate-services
+              now run > "$1" 2>&1 &
+              pid=$!
+
+              # Wait for the step to be running
+              tries=0
+              until grep -q "Started main()" "$1" 2>/dev/null; do
+                tries=$((tries + 1))
+                if [ "$tries" -gt 1800 ]; then
+                  kill -KILL "$pid" 2>/dev/null
+                  exit 124
+                fi
+                sleep 0.1
+              done
+
+              kill -INT "$pid"
+
+              # Watchdog: fail instead of freezing if now hangs after SIGINT
+              ( sleep 10; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+              watchdog=$!
+              wait "$pid"
+              status=$?
+              kill "$watchdog" 2>/dev/null
+              exit "$status"
+            '#
+
+            let result = (^sh -c $driver sh $log | complete)
+            let output = (open $log --raw)
+            rm -rf $dir
+            print $output
+
+            if $result.exit_code == 124 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Step never started"
+              exit 1
+            }
+
+            if $result.exit_code == 137 {
+              print $"(ansi red_bold)ERROR:(ansi reset) now did not exit after SIGINT (killed by watchdog)"
+              exit 1
+            }
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Aborted workflow shouldn't have succeeded!"
+              exit 1
+            }
+
+            if ($output | str contains "Finished main()") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Aborted workflow reported 'Finished main()'"
+              exit 1
+            }
+
+            if not ($output | str contains "Caught signal: SIGTERM") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Step never ran its SIGTERM handler"
+              exit 1
+            }
+
+            if not ($output | str contains "SystemExit: 42") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Step didn't exit with custom status code"
+              exit 1
+            }
+
+            if not ($output | str contains "Runner aborted") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Runner didn't abort"
               exit 1
             }
 

@@ -133,7 +133,7 @@ fn terminateGroup(io: std.Io, child: *std.process.Child, timeout_secs: i64) !voi
     const pgid = child.id.?;
     if (timeout_secs > 0) {
         std.posix.kill(-pgid, std.posix.SIG.TERM) catch {};
-        try io.sleep(.fromSeconds(timeout_secs), .awake);
+        io.sleep(.fromSeconds(timeout_secs), .awake) catch {};
     }
     std.posix.kill(-pgid, std.posix.SIG.KILL) catch {};
 }
@@ -151,7 +151,7 @@ fn installSignalHandlers() !void {
     const act: std.posix.Sigaction = .{
         .handler = .{ .handler = onSignal },
         .mask = std.posix.sigemptyset(),
-        .flags = 0,
+        .flags = std.posix.SA.RESTART,
     };
     std.posix.sigaction(std.posix.SIG.TERM, &act, null);
     std.posix.sigaction(std.posix.SIG.INT, &act, null);
@@ -269,5 +269,10 @@ pub fn main(init: std.process.Init) !void {
     try task_group.concurrent(io, waitForChild, .{ &child, io, &result });
     try task_group.await(io);
 
-    std.process.exit(result.exited);
+    const code: u8 = switch (result) {
+        .exited => |c| c,
+        .signal => |sig| 128 +% @as(u8, @truncate(@intFromEnum(sig))),
+        else => 1,
+    };
+    std.process.exit(code);
 }
