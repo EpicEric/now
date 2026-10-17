@@ -10,8 +10,8 @@ Runners are the machines that execute your workflow jobs. A runner can be the lo
 
 Each job goes through two phases, potentially on different machines:
 
-1. **Building**: derivations (step scripts, sandbox wrappers, included packages) are built and cached. The system that builds is the **builder**.
-2. **Running**: the built derivations are executed as steps. The system that runs is the **runner**.
+1. **Building**: derivations (step scripts, sandbox wrappers, included packages) are built and cached.
+2. **Running**: the built derivations are executed as steps.
 
 A job selects a builder using `buildSystem` and `requiredSystemFeatures`, and a runner using `hostSystem` and `requiredSystemFeatures`. These are all set automatically based on the `pkgs` passed to the job definition and the `requiredSystemFeatures` variant argument.
 
@@ -23,7 +23,7 @@ Using separate builder and runner machines is useful, for example, in the follow
 
 ## Configuration
 
-Runners are discovered from the Nix builder settings. By default, now reads `nix config show` to find the `builders` setting, which follows the same format as Nix's [`builders`](https://nix.dev/manual/nix/latest/command-ref/conf-file#conf-builders) configuration:
+Runners are discovered from the Nix builder settings. By default, `now` reads `nix config show` to find the `builders` setting, which follows the same format as Nix's [`builders`](https://nix.dev/manual/nix/latest/command-ref/conf-file#conf-builders) configuration:
 
 ```
 ssh://user@host system-features max-jobs speed-factor features mandatory-features public-host-key
@@ -31,22 +31,22 @@ ssh://user@host system-features max-jobs speed-factor features mandatory-feature
 
 If the `builders` setting starts with `@`, it's treated as a path to a file containing builder specifications. If that file doesn't exist, no remote builders are configured.
 
-You can also pass builders explicitly via the `--builders` CLI flag, which accepts the same format and overrides the Nix configuration.
+You can also pass builders explicitly via the `--builders` CLI flag, which accepts the same format &ndash; separated with semicolons or newlines &ndash;, and overrides the Nix configuration.
 
 ### Parsing
 
 Each builder line is parsed as a space-separated tuple:
 
-| Field                        | Meaning                                                                                  |
-| ---------------------------- | ---------------------------------------------------------------------------------------- |
-| `ssh://user@host`            | SSH URI (prefixed with either `ssh://` or `ssh-ng://`)                                   |
-| `aarch64-linux,x86_64-linux` | Comma-separated list of supported build systems (`-` defaults to the local system)       |
-| `/path/to/identity`          | SSH identity file (`-` uses the current user's identity)                                 |
-| `1`                          | Maximum number of concurrent builds                                                      |
-| `1`                          | Speed factor (unused)                                                                    |
-| `kvm,benchmark`              | Comma-separated system features the builder advertises (`-` means none)                  |
-| `now`                        | Comma-separated mandatory features the builder requires jobs to request (`-` means none) |
-| `...`                        | Base64-encoded SSH host key                                                              |
+| Field                        | Meaning                                                                                       |
+| ---------------------------- | --------------------------------------------------------------------------------------------- |
+| `ssh://user@host`            | SSH URI (prefixed with either `ssh://` or `ssh-ng://`)                                        |
+| `aarch64-linux,x86_64-linux` | Comma-separated list of supported build systems (`-` defaults to the local system)            |
+| `/path/to/identity`          | SSH identity file (`-` uses the current user's identity)                                      |
+| `1`                          | Maximum number of concurrent builds                                                           |
+| `1`                          | Speed factor (unused)                                                                         |
+| `kvm,benchmark`              | Comma-separated system features that the builder advertises (`-` means none)                  |
+| `now`                        | Comma-separated mandatory features that the builder requires jobs to request (`-` means none) |
+| `...`                        | Base64-encoded SSH host key                                                                   |
 
 ### Local-only and remote-only modes
 
@@ -55,7 +55,7 @@ Each builder line is parsed as a space-separated tuple:
 
 ## Using runners
 
-When a job is ready to run, now automatically iterates over all available builders (local + remote) and selects the first available one that matches the job's requirements.
+When a job is ready to run, `now` automatically iterates over all available builders (local + remote) and selects the first available one that matches the job's requirements.
 
 The selection algorithm races all qualifying builders/runners for a job, and the first one who becomes available is used.
 
@@ -63,14 +63,14 @@ The selection algorithm races all qualifying builders/runners for a job, and the
 
 Builders and runners have two separate concurrency controls:
 
-- **Building** is concurrent: a machine can realize the derivations of multiple jobs at the same time, up to its limit. For remote builders, this is the `max-jobs` field of the builder specification; for the local builder, it's the `--cores` option (which defaults to the machine's number of physical cores).
-- **Running** is exclusive: a machine only executes the steps of one job at a time. When multiple jobs are ready on the same machine, they run one after another, or are scheduled to a different machine.
+- **Building is concurrent**: a machine can realize the derivations of multiple jobs at the same time, up to its limit. For remote builders, this is the `max-jobs` field of the builder specification; for the local builder, it's the `--cores` option (which defaults to the machine's number of physical cores).
+- **Running is exclusive**: a machine only executes the steps of one job at a time. When multiple jobs are ready on the same machine, they run one after another, or are scheduled to a different machine.
 
-For example, two independent jobs targeting the same remote builder realize their derivations in parallel (as long as the builder's `max-jobs` allows it), but their steps still run sequentially on that machine.
+For example, two independent jobs targeting the same remote builder realize their derivations in parallel (as long as the builder's `max-jobs` allows it), but their steps still run sequentially and separately on that machine.
 
 ### Builder selection
 
-A builder must satisfy:
+In order to be picked for building derivations, a builder must satisfy:
 
 - **`buildSystem`** must match the builder's system exactly (for local builders) or be in the builder's list of supported build systems (for remote builders).
 - **`requiredSystemFeatures`** must all be present in the builder's advertised `systemFeatures`.
@@ -78,7 +78,7 @@ A builder must satisfy:
 
 ### Runner selection
 
-A runner must satisfy:
+In order to be picked for running a job, a runner must satisfy:
 
 - **`hostSystem`** must match the builder's system exactly or be listed in the builder's `extra-platforms` (for local builders). For remote builders, it must match the remote's `hostSystem`.
 - **`requiredSystemFeatures`** must all be present in the runner's advertised `systemFeatures`.
@@ -88,7 +88,7 @@ A runner must satisfy:
 
 ### System features
 
-Jobs declare `requiredSystemFeatures` to ensure they land on a suitable machine. Remote builders advertise their features in the Nix builder configuration, and local builders read them from `system-features` in the Nix config.
+Jobs declare `requiredSystemFeatures` to ensure that they land on a suitable machine. Remote builders advertise their features in the Nix builder configuration, and local builders read them from `system-features` in the Nix config.
 
 ### Extra platforms
 
@@ -102,7 +102,7 @@ There are a couple of differences in how environment variables are handled by lo
 | -------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Which variables get passed | All variables in the current shell, as well as those defined in the step's `env`.                        | All variables in the remote SSH user's shell, as well as those defined in the step's `env`.                                                               |
 | Ambient env security       | The full local shell environment is visible to steps (`SSH_AUTH_SOCK`, cloud credentials, tokens, etc.). | The full remote SSH user's environment is visible to steps (`SSH_CONNECTION`, `SSH_CLIENT`, agent-forwarded `SSH_AUTH_SOCK`, remote user's tokens, etc.). |
-| `NOW_GCROOT_DIR`           | Set to the local Nix gcroot directory.                                                                   | Not set. Step scripts fall back to `mktemp -d` on the remote host.                                                                                        |
+| `NOW_GCROOT_DIR`           | Set to the local Nix gcroot directory (specified via `--gcroot-dir`).                                    | Not set. Step scripts fall back to `mktemp -d` on the remote host.                                                                                        |
 
 Still, there are a couple of behaviors that are the same regardless of the environment:
 
@@ -114,4 +114,4 @@ Still, there are a couple of behaviors that are the same regardless of the envir
 
 !!! note
 
-    Because local and remote runners inherit different ambient environments, a variable set in your local shell (e.g. `export AWS_ACCESS_KEY_ID=...`) will be available to local steps, but not to remote steps. If a step needs a variable regardless of the type of runner, declare it as a `runner.var` (non-sensitive) or `runner.secret` (sensitive).
+    Because local and remote runners inherit different ambient environments, a variable set in your local shell (e.g. `export AWS_ACCESS_KEY_ID=...`) will be available to local steps, but not to remote steps. If a step needs a variable regardless of the type of runner, declare it as a [`runner.var`](./runner.md#runnervar) (non-sensitive) or [`runner.secret`](./runner.md#runnersecret) (sensitive).

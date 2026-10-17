@@ -185,6 +185,144 @@ jobs:
     rm $tmp
     ```
 
+## Customizing pkgs
+
+=== "tack"
+
+    ```nix title="now.nix"
+    { lib, runner, ... }:
+    let
+      inputs = import ./.tack;
+
+      pkgs = import inputs.nixpkgs {
+        overlays = [ (import inputs.rust-overlay) ];
+      };
+
+      msrv = (lib.importTOML ./Cargo.toml).package.rust-version;
+    in
+    {
+      jobs = {
+        test.steps = [
+          {
+            env.RUST_LOG = "debug";
+            path = [
+              pkgs.cargo-nextest
+              pkgs.rust-bin.beta.latest.default
+            ];
+            run = ''
+              cargo nextest run --no-fail-fast
+            '';
+          }
+        ];
+
+        clippy.steps = [
+          {
+            path = [ pkgs.rust-bin.stable.${msrv}.default ];
+            run = ''
+              cargo clippy --all-targets --fix --allow-dirty --allow-staged && cargo fmt --all
+            '';
+          }
+        ];
+      };
+    }
+    ```
+
+=== "npins"
+
+    ```nix title="now.nix"
+    { lib, runner, ... }:
+    let
+      sources = import ./npins;
+
+      pkgs = import sources.nixpkgs {
+        overlays = [ (import sources.rust-overlay) ];
+      };
+
+      msrv = (lib.importTOML ./Cargo.toml).package.rust-version;
+    in
+    {
+      jobs = {
+        test.steps = [
+          {
+            env.RUST_LOG = "debug";
+            path = [
+              pkgs.cargo-nextest
+              pkgs.rust-bin.beta.latest.default
+            ];
+            run = ''
+              cargo nextest run --no-fail-fast
+            '';
+          }
+        ];
+
+        clippy.steps = [
+          {
+            path = [ pkgs.rust-bin.stable.${msrv}.default ];
+            run = ''
+              cargo clippy --all-targets --fix --allow-dirty --allow-staged && cargo fmt --all
+            '';
+          }
+        ];
+      };
+    }
+    ```
+
+=== "Nix flake"
+
+    ```nix title="flake.nix"
+    {
+      inputs = {
+        # ...
+        now.url = "git+https://codeberg.org/now-runner/now?ref=main";
+        rust-overlay.url = "github:oxalica/rust-overlay";
+      };
+
+      outputs =
+        {
+          nixpkgs,
+          now,
+          rust-overlay,
+          ...
+        }@inputs:
+        {
+          # ...
+
+          now =
+            { runner, ... }:
+            let
+              pkgs = import nixpkgs {
+                overlays = [ rust-overlay.overlays.default ];
+              };
+            in
+            {
+              jobs = {
+                test.steps = [
+                  {
+                    env.RUST_LOG = "debug";
+                    path = [
+                      pkgs.cargo-nextest
+                      pkgs.rust-bin.beta.latest.default
+                    ];
+                    run = ''
+                      cargo nextest run --no-fail-fast
+                    '';
+                  }
+                ];
+
+                clippy.steps = [
+                  {
+                    path = [ pkgs.rust-bin.stable.${msrv}.default ];
+                    run = ''
+                      cargo clippy --all-targets --fix --allow-dirty --allow-staged && cargo fmt --all
+                    '';
+                  }
+                ];
+              };
+            };
+        };
+    }
+    ```
+
 ## Cross-compilation
 
 ```nix title="now.nix"

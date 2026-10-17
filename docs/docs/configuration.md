@@ -40,9 +40,16 @@ You can pass a `default = [ "foo" "bar" ];` attribute to specify which default j
 }
 ```
 
-As a module, it can be specified as an attribute set, or a function that receives the [`runner` argument](#runner) returning an attrset.
+As a module, it can be specified as an attribute set, or a function that receives the [`runner` argument](./runner.md) returning an attrset.
 
 A full definition with additional options can be found in [the "Workflow" section of the "Options" page](./options.md#job).
+
+### Arguments
+
+If the workflow is declared as a function, the following optional arguments can be passed to it:
+
+- `lib`: An instance of `nixpkgs.lib`
+- `runner`: An instance of the [`runner` API](./runner.md)
 
 ### nixpkgs
 
@@ -61,7 +68,7 @@ The `nixpkgs` option determines which nixpkgs the workflow is built with. It def
 }
 ```
 
-When using a flake, the flake input can be passed directly (see [the quick start](./quick-start.md)):
+If you're using a flake, the input can be passed directly (see [the quick start](./quick-start.md)):
 
 ```nix
 {
@@ -73,240 +80,7 @@ When using a flake, the flake input can be passed directly (see [the quick start
 }
 ```
 
-Job functions receive a `pkgs` instance for the current system by default, but [`runner.matrix`](#runnermatrix) variants can override it on a per-variant basis.
-
-### runner
-
-`runner` is a special argument passed to your workflow that provides useful runtime options.
-
-#### runner.matrix
-
-`runner.matrix` lets you define a single job that expands into multiple parallel runs with different parameters. It takes a list of variant attribute sets, and a job defined as a function accepting those variants.
-
-Each variant can set:
-
-- `pkgs`: import nixpkgs for a different `system` to target a specific platform.
-- `requiredSystemFeatures`: list of system features that the remote must advertise.
-- Any extra attributes, which become function arguments in the job definition.
-
-```nix
-{ runner, ... }:
-{
-  jobs.my-matrix-job =
-    runner.matrix
-    [
-      { pkgs = import <nixpkgs> { system = "aarch64-linux"; }; }
-      { requiredSystemFeatures = [ "kvm" ]; }
-      { spam = "with eggs"; }
-    ]
-    ({ pkgs, spam ? null, ... }: {
-      name = "Matrix job (${if spam != null then spam else pkgs.stdenv.hostPlatform.system})";
-      env.SYSTEM = pkgs.stdenv.hostPlatform.system;
-      strategy.failFast = false;
-      steps = [
-        {
-          run = ''
-            echo "running on $SYSTEM"
-          '';
-        }
-      ];
-    });
-}
-```
-
-The `strategy` submodule controls how matrix runs coordinate:
-
-- `strategy.failFast` (default: `true`): whether a single failing run cancels the remaining jobs.
-
-#### runner.var
-
-`runner.var "NAME"` declares a runtime attribute that is read from the environment when `now run` is invoked. If the variable is not set, an error is raised. Because it returns a plain string, it can be used in string interpolation, but only inside `env` blocks.
-
-```nix
-{ runner, ... }: {
-  default = [ "example" ];
-  jobs.example = {
-    steps = [
-      {
-        env.MESSAGE = "${runner.var "MESSAGE"} (from the environment)";
-        run = ''
-          echo "$MESSAGE"
-        '';
-      }
-    ];
-  };
-}
-```
-
-Pass the value at runtime:
-
-```bash
-MESSAGE="Hello" now run
-```
-
-!!! warning
-
-    `runner.var` variables will be baked into derivations at build time, meaning that they will end up in the Nix store. Don't use these for sensitive data.
-
-!!! note
-
-    If you want an environment variable to be optional, use it directly in your script without going through `runner.var`:
-
-    ```nix
-    {
-      jobs.missing.steps = [
-        {
-          run = ''
-            if [ -n "$MAYBE_SET" ]; then
-              echo "Variable is: $MAYBE_SET"
-            else
-              echo "Variable is not set"
-            fi
-          '';
-        }
-      ];
-    }
-    ```
-
-    Both of these commands run successfully:
-
-    ```bash
-    MAYBE_SET="My text here" now run missing
-    now run missing
-    ```
-
-#### runner.secret
-
-`runner.secret "NAME"` declares a runtime secret. Unlike `runner.var`, it cannot be used in string interpolation; it must always be assigned to an environment variable. Secret values are anonymized in logs: any occurrence of the secret value in step or teardown output is replaced with `***` before being printed.
-
-```nix
-{ runner, ... }: {
-  default = "example";
-  jobs.example = {
-    steps = [
-      {
-        env = {
-          TOKEN = runner.secret "TOKEN";
-        };
-        run = ''
-          # The value of $TOKEN will be anonymized if printed
-          curl -H "Authorization: Bearer $TOKEN" https://api.example.com/data
-        '';
-      }
-    ];
-  };
-}
-```
-
-Pass the secret at runtime:
-
-```bash
-TOKEN="s3cr3t" now run
-```
-
-#### runner.download
-
-`runner.download "name"` references a derivation previously uploaded by `runner.steps.upload` in an earlier job. The download path resolves to the store path of the uploaded derivation on the runner that runs this step. This allows sharing build artifacts between steps or jobs, even across different machines.
-
-```nix
-{ runner, ... }: {
-  jobs = {
-    builder = {
-      steps = [
-        (runner.steps.upload {
-          name = "my-artifact";
-          deriv = pkgs.writeText "data.txt" "hello from builder";
-        })
-      ];
-    };
-    consumer = {
-      needs = [ "builder" ];
-      steps = [
-        {
-          env.DATA = runner.download "my-artifact";
-          run = "cat $DATA";
-        }
-      ];
-    };
-  };
-}
-```
-
-#### runner.steps
-
-`runner.steps` provides special step generators that encapsulate common patterns.
-
-##### runner.steps.tempdir
-
-`runner.steps.tempdir name` is a step that creates a temporary directory, sets the provided `name` environment variable with its path, and automatically removes it and its contents on teardown.
-
-```nix
-(runner.steps.tempdir "MY_TEMP_DIR")  # Equivalent to `export MY_TEMP_DIR=/tmp/tmp.XXXXXXXXXX`
-```
-
-##### runner.steps.upload
-
-`runner.steps.upload { name, deriv, ... }` creates a step that builds the given derivation and registers its output path under the provided name. The path can then be consumed by other jobs via `runner.download`. The upload mechanism works regardless of whether the consumer runs on the same machine or a different remote runner.
-
-```nix
-(runner.steps.upload {
-  name = "my-data";
-  deriv = pkgs.runCommand "data" {} ''
-    echo "hello" > $out
-  '';
-})
-```
-
-##### runner.steps.build
-
-`runner.steps.build { name ? "", deriv, ... }` creates a step that builds the given derivation and adds a GC root to prevent it from being garbage-collected. Unlike `upload`, it does not register the result for download by other jobs, and only verifies that the derivation builds successfully.
-
-```nix
-(runner.steps.build {
-  name = "some-name";
-  deriv = pkgs.hello;
-})
-```
-
-##### Extra options for build/upload steps
-
-Both `runner.steps.build` and `runner.steps.upload` accept a few optional attributes on top of `name` and `deriv`:
-
-- `nixConfig`: an attrset of Nix configuration options (in the same format as `nix.conf`), made available to `nix-store --realise` via the `NIX_CONFIG` environment variable. Useful for pointing the step at extra binary caches:
-
-    ```nix
-    (runner.steps.build {
-      deriv = pkgs.hello;
-      nixConfig = {
-        extra-substituters = [ "https://cache.eric.dev.br" ];
-        extra-trusted-public-keys = [ "cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=" ];
-      };
-    })
-    ```
-
-- `env`: additional environment variables for the step, merged with (and overriding) any `NIX_CONFIG` derived from `nixConfig`:
-
-    ```nix
-    (runner.steps.build {
-      deriv = pkgs.hello;
-      env.SOME_VAR = "value";
-    })
-    ```
-
-- `sandbox`: overrides for the step's [sandbox configuration](#sandboxing). `writableNixStore` and `networkAccess` default to `true` (required to build/upload at all) and can't usefully be turned off, but everything else (`enable`, `useHome`, `writableDirectory`) can be set as needed:
-
-    ```nix
-    (runner.steps.upload {
-      name = "my-data";
-      deriv = pkgs.runCommand "data" {} ''
-        echo "hello" > $out
-      '';
-      sandbox = {
-        enable = true;
-        useHome = true;
-      };
-    })
-    ```
+Job functions receive a `pkgs` instance for the current system by default, but [`runner.matrix`](./runner.md#runnermatrix) variants can override it on a per-variant basis.
 
 ## Jobs
 
@@ -339,6 +113,14 @@ The main option of a job is the `steps` list, which specifies the sequence of st
 
 A full definition with additional options can be found in [the "Job" section of the "Options" page](./options.md#job).
 
+### Arguments
+
+If the job is declared as a function, the following optional arguments can be passed to it:
+
+- `lib`: An instance of `nixpkgs.lib`
+- `pkgs`: The instance of `nixpkgs` for the running system
+- Any extra arguments passed via [`runner.matrix`](#matrix)
+
 ### Checkout
 
 The `checkout` option controls how the working directory is set up on the runner before steps execute. This is especially relevant for remote runners, where the project directory must be transferred over the network.
@@ -352,8 +134,6 @@ Available strategies:
 | `"none"`      | Create an empty temporary directory.                                    | Create an empty remote temporary directory.                              |
 | `"all"`       | Use the current directory as-is.                                        | Copy all files (including ignored ones) to a remote temporary directory. |
 | `"clone-all"` | Copy all files (including ignored ones) to a local temporary directory. | Copy all files (including ignored ones) to a remote temporary directory. |
-
-The `"all"` and `"clone-all"` variants include files that would normally be excluded by `.gitignore`. This is useful when your steps depend on generated files that are excluded from version control.
 
 ```nix
 {
@@ -375,6 +155,8 @@ The `"all"` and `"clone-all"` variants include files that would normally be excl
   };
 }
 ```
+
+The `"all"` and `"clone-all"` variants include files that would normally be excluded by `.gitignore`. This is useful when your steps depend on generated files that are excluded from version control.
 
 ### Conditional jobs
 
@@ -407,13 +189,13 @@ Jobs can declare other jobs as prerequisites via the `needs` option, which takes
   jobs = {
     lint = {
       steps = [
-        { run = "cargo clippy"; }
+        { run = "npm run lint"; }
       ];
     };
     test = {
       needs = [ "lint" ];
       steps = [
-        { run = "cargo test"; }
+        { run = "npm test"; }
       ];
     };
     deploy = {
@@ -455,7 +237,7 @@ To limit a whole `now run` invocation instead of a single job, use the `--timeou
 
 ### Matrix
 
-The `jobs` attribute can contain a single job definition or, when using `runner.matrix`, a list of job variants. Each variant runs independently and may target different platforms or system features. See [`runner.matrix`](#runnermatrix) for details.
+The `jobs` attribute can contain a single job definition or, when using `runner.matrix`, a list of job variants. Each variant runs independently and may target different platforms or system features. See [`runner.matrix`](./runner.md#runnermatrix) for details.
 
 ## Steps
 
@@ -467,7 +249,7 @@ A full definition with additional options can be found in [the "Step" section of
 
 ### Conditional steps
 
-Individual steps can be conditionally included with `if`. `null` values are removed from the step list entirely:
+Individual steps can be conditionally included with `if` conditionals. `null` values are removed from the step list entirely:
 
 ```nix
 {

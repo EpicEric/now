@@ -70,7 +70,7 @@ icon: lucide/circle-pile
 
 !!! note
 
-    This documentation is auto-generated.
+    This documentation is auto-generated from the service definitions.
 
 ### garage
 

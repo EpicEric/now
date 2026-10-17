@@ -382,7 +382,7 @@ in
 
             !!! note
 
-                This documentation is auto-generated.
+                This documentation is auto-generated from the service definitions.
 
             $(cat $DOCS_NOW_SERVICES)
             EOF
