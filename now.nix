@@ -413,6 +413,7 @@ in
         "test-flake"
         "test-gcroot-dir"
         "test-glob"
+        "test-graceful-termination"
         "test-init"
         "test-invalid-env"
         "test-invalid-output-var"
@@ -889,6 +890,88 @@ in
                 print $"ERROR: now run failed for pattern '($pattern)'"
                 exit 1
               }
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-graceful-termination = {
+      name = "Test graceful termination";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let dir = (mktemp --directory)
+            let log = ($dir | path join "output.log")
+
+            let driver = r#'
+              now run --workflow .now/tests/graceful-termination.nix > "$1" 2>&1 &
+              pid=$!
+
+              # Wait for the step to be running
+              tries=0
+              until grep -q "step: started" "$1" 2>/dev/null; do
+                tries=$((tries + 1))
+                if [ "$tries" -gt 1800 ]; then
+                  kill -KILL "$pid" 2>/dev/null
+                  exit 124
+                fi
+                sleep 0.1
+              done
+
+              kill -INT "$pid"
+
+              # Watchdog: fail instead of freezing if now hangs after SIGINT
+              ( sleep 10; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+              watchdog=$!
+              wait "$pid"
+              status=$?
+              kill "$watchdog" 2>/dev/null
+              exit "$status"
+            '#
+
+            let result = (^sh -c $driver sh $log | complete)
+            let output = (open $log --raw)
+            rm -rf $dir
+            print $output
+
+            if $result.exit_code == 124 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Step never started"
+              exit 1
+            }
+
+            if $result.exit_code == 137 {
+              print $"(ansi red_bold)ERROR:(ansi reset) now did not exit after SIGINT (killed by watchdog)"
+              exit 1
+            }
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Aborted workflow shouldn't have succeeded!"
+              exit 1
+            }
+
+            if ($output | str contains "Done.") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Aborted workflow reported 'Done.'"
+              exit 1
+            }
+
+            if ($output | str contains "teardown: marker=missing") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Step never ran its SIGTERM handler"
+              exit 1
+            }
+
+            if ($output | str contains "teardown: marker=cleaning") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Teardown started while the step was still cleaning up"
+              exit 1
+            }
+
+            if not ($output | str contains "teardown: marker=finished") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Teardown did not run after abort"
+              exit 1
             }
 
             print $"(ansi green)Test passed.(ansi reset)"

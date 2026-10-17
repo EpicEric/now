@@ -282,6 +282,7 @@ impl NowEnvironment {
         let workflow_task = executor.spawn(async {
             let mut futures = FuturesUnordered::<Pin<Box<dyn Future<Output = JobResult>>>>::new();
             let mut result = Ok(());
+            let mut aborted = false;
 
             let mut current_nodes: HashSet<NodeIndex<u32>> = HashSet::new();
             for node in tree.nodes_iter() {
@@ -370,7 +371,7 @@ impl NowEnvironment {
                                 skip_dependent_nodes(&runner, &mut tree, &mut nodes, node_index);
                             }
                             Err(JobError::RunnerAborted) => {
-                                debug_assert!(result.is_err());
+                                aborted = true;
                             }
                             Err(JobError::JobAborted(job)) => unreachable!("Job {job} was aborted without root cause"),
                             Err(error) => {
@@ -396,6 +397,9 @@ impl NowEnvironment {
                             }
                         }
                         if result.is_ok() {
+                            if aborted {
+                                return Err(JobError::RunnerAborted.into());
+                            }
                             info!(runner, is_remote = false, "Done.");
                         }
                         return result
@@ -426,6 +430,7 @@ impl NowEnvironment {
         let vars_json = serde_json::to_string(&serde_json::to_string(&self.vars)?)?;
         let eval_id = serde_json::to_string(eval_id())?;
         let with_local_step = option_env!("NOW_WITH_LOCAL_STEP").is_some_and(parse_bool_from_bytes);
+        let termination_timeout = self.termination_timeout.as_secs();
 
         let nix_command = format!(
             "(import {nix_workflow_path} {{ \
@@ -433,6 +438,7 @@ impl NowEnvironment {
             }}) {{ \
                 workflow = {workflow_path}; \
                 vars = builtins.fromJSON {vars_json}; \
+                terminationTimeout = {termination_timeout}; \
                 evalId = {eval_id}; \
             }}"
         );

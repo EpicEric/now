@@ -12,5 +12,8 @@
     jobSandbox = {
       type = types.either types.bool types.attrs;
     };
+    terminationTimeout = {
+      type = types.int;
+    };
   };
 }

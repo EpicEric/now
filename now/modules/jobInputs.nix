@@ -6,5 +6,8 @@
     jobKey = {
       type = types.string;
     };
+    terminationTimeout = {
+      type = types.int;
+    };
   };
 }

@@ -196,6 +196,7 @@ in
         jobPathLockdown
         jobSandbox
         placeholderName
+        terminationTimeout
         ;
 
       sandboxArgs =
@@ -253,10 +254,12 @@ in
             inherit nowSandbox;
             nowScript = script (readPath options.run);
           };
-          flags =
-            optionals (options ? "__nowUpload_${evalId}" || options ? outputVar) [ "--preserve-stdout" ]
-            ++ [ "${sandboxDrv}" ]
-            ++ secretNames;
+          flags = [
+            "${toString terminationTimeout}"
+          ]
+          ++ optionals (options ? "__nowUpload_${evalId}" || options ? outputVar) [ "--preserve-stdout" ]
+          ++ [ "${sandboxDrv}" ]
+          ++ secretNames;
         in
         (pkgs.runCommandLocal "now-step" { nativeBuildInputs = [ pkgs.makeBinaryWrapper ]; } ''
           makeBinaryWrapper ${getExe pkgs.now-step} $out/bin/now-step \
@@ -271,7 +274,11 @@ in
               inherit nowSandbox;
               nowScript = script (readPath options.teardown);
             };
-            flags = [ "${sandboxDrv}" ] ++ secretNames;
+            flags = [
+              "${toString terminationTimeout}"
+            ]
+            ++ [ "${sandboxDrv}" ]
+            ++ secretNames;
           in
           (pkgs.runCommandLocal "now-step" { nativeBuildInputs = [ pkgs.makeBinaryWrapper ]; } ''
             makeBinaryWrapper ${getExe pkgs.now-step} $out/bin/now-step \

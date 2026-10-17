@@ -14,6 +14,7 @@
 - Allow passing a script file to `run`/`teardown`
 - Add `--logging` option
 - List jobs that were aborted when `strategy.failFast = true`
+- Add `--termination-timeout` option for graceful termination
 
 ### Fixed
 
@@ -22,6 +23,7 @@
 - Proper matrix job cancellation with `strategy.failFast = true`
 - Fix `--timeout` behavior
 - Consolidate logs for `now`-specific steps
+- Fix lingering remote steps
 
 ### Changed
 

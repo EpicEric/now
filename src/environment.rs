@@ -22,6 +22,7 @@ use std::{
     path::{Path, PathBuf},
     process::Stdio,
     sync::{Mutex, OnceLock},
+    time::Duration,
 };
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
@@ -86,6 +87,7 @@ pub(crate) struct NowEnvironment {
     pub(crate) tracing: Option<TracingMode>,
     pub(crate) secrets: HashMap<String, SecretString>,
     pub(crate) vars: HashMap<String, String>,
+    pub(crate) termination_timeout: Duration,
     pub(crate) jobs: BTreeMap<String, String>,
     pub(crate) local_env: HashMap<OsString, OsString>,
     pub(crate) gcroot_dir: PathBuf,
@@ -107,8 +109,16 @@ impl NowEnvironment {
         tracing: Option<TracingMode>,
         env_file: Option<PathBuf>,
         gcroot_dir: Option<PathBuf>,
+        termination_timeout: Option<Duration>,
     ) -> impl Future<Output = color_eyre::Result<Self>> {
-        Self::create(workflow, ctrl_c, tracing, env_file, gcroot_dir)
+        Self::create(
+            workflow,
+            ctrl_c,
+            tracing,
+            env_file,
+            gcroot_dir,
+            termination_timeout,
+        )
     }
 
     #[instrument(skip(ctrl_c))]
@@ -118,6 +128,7 @@ impl NowEnvironment {
         tracing: Option<TracingMode>,
         env_file: Option<PathBuf>,
         gcroot_dir: Option<PathBuf>,
+        termination_timeout: Option<Duration>,
     ) -> color_eyre::Result<NowEnvironment> {
         let mut env_vars: HashMap<OsString, OsString> = HashMap::new();
         if let Some(env_file) = env_file {
@@ -211,6 +222,7 @@ impl NowEnvironment {
                     tracing,
                     secrets,
                     vars,
+                    termination_timeout: termination_timeout.unwrap_or(Duration::from_secs(10)),
                     jobs: parsed_workflow.jobs,
                     local_env: env_vars,
                     gcroot_dir,

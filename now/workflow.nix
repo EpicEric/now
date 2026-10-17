@@ -48,6 +48,7 @@ in
 {
   workflow,
   evalId,
+  terminationTimeout ? 10,
   lib' ? import <nixpkgs/lib>,
   vars ? { },
   var ?
@@ -100,7 +101,7 @@ evalModule {
           inherit pkgs;
         };
         "/workflow/workflowInputs" = {
-          inherit overlay;
+          inherit overlay terminationTimeout;
         };
       };
     }).modules.workflow;

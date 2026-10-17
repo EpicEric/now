@@ -21,6 +21,7 @@ use std::{
     path::PathBuf,
     pin::Pin,
     process::Stdio,
+    time::Duration,
 };
 
 use ahash::{HashMap, HashMapExt, HashSet};
@@ -33,6 +34,7 @@ use futures::{
 use petgraph::matrix_graph::NodeIndex;
 use serde::Serialize;
 use smol::{
+    Timer,
     channel::Receiver,
     io::{AsyncBufReadExt, BufReader},
     process::{Child, Command},
@@ -312,6 +314,8 @@ impl NowEnvironment {
                     teardown_stack.push((step.name.clone(), teardown, step.env.clone()));
                 }
 
+                let env = self.generate_env_vars_for_step(&step.env, &output_vars)?;
+
                 let mut child = if dry_run {
                     dummy_command()?
                 } else {
@@ -338,55 +342,75 @@ impl NowEnvironment {
                     }
                 };
 
-                let stdin_task = async {
-                    let env = self.generate_env_vars_for_step(&step.env, &output_vars)?;
-                    for (key, value) in env {
-                        stdin.write_all(&key.into_encoded_bytes()).await?;
-                        stdin.write_all(b"=").await?;
-                        stdin.write_all(&value.into_encoded_bytes()).await?;
+                let stop_fut = async {
+                    let stdin_task = async {
+                        for (key, value) in env {
+                            stdin.write_all(&key.into_encoded_bytes()).await?;
+                            stdin.write_all(b"=").await?;
+                            stdin.write_all(&value.into_encoded_bytes()).await?;
+                            stdin.write_all(b"\0").await?;
+                        }
                         stdin.write_all(b"\0").await?;
-                    }
+                        stdin.flush().await?;
+                        Ok(())
+                    };
+
+                    let step_fut = async {
+                        let (exit_status, stdin_result): (_, color_eyre::Result<()>) =
+                            smol::future::zip(child.status(), stdin_task).await;
+                        stdin_result?;
+                        let exit_status = exit_status.map_err(|error| eyre!(error))?;
+                        if !exit_status.success() {
+                            warn!(
+                                "$duper.exit_code" = duper::serde::ser::to_string_compact(
+                                    &ExitCode(exit_status.code())
+                                )
+                                .expect("valid Duper")
+                            );
+                            return Err(
+                                eyre!("Step '{}' failed ({})", &step.name, exit_status).into()
+                            );
+                        }
+                        Ok(())
+                    };
+
+                    let abort_fut = async {
+                        smol::future::or(
+                            async {
+                                let _ = receiver.recv().await;
+                                Err(JobError::RunnerAborted)
+                            },
+                            async {
+                                if let Some(abort) = abort {
+                                    let _ = abort.recv().await;
+                                    Err(JobError::JobAborted(job.name.clone()))
+                                } else {
+                                    smol::future::pending::<Result<(), JobError>>().await
+                                }
+                            },
+                        )
+                        .await
+                    };
+
+                    let step_result = smol::future::or(step_fut, abort_fut).await;
                     drop(stdin);
-                    Ok(())
-                };
-
-                let step_fut = async {
-                    let (exit_status, ((), stdin_task)): (_, (_, color_eyre::Result<()>)) =
-                        smol::future::zip(child.status(), smol::future::zip(log_task, stdin_task))
-                            .await;
-                    stdin_task?;
-                    let exit_status = exit_status.map_err(|error| eyre!(error))?;
-                    if !exit_status.success() {
-                        warn!(
-                            "$duper.exit_code" =
-                                duper::serde::ser::to_string_compact(&ExitCode(exit_status.code()))
-                                    .expect("valid Duper")
-                        );
-                        return Err(eyre!("Step '{}' failed ({})", &step.name, exit_status).into());
+                    if step_result.is_err() {
+                        smol::future::or(
+                            async {
+                                let _ = child.status().await;
+                            },
+                            async {
+                                Timer::after(Duration::from_secs(15)).await;
+                            },
+                        )
+                        .await;
+                        let _ = child.kill();
                     }
-                    Ok(())
+                    let _ = child.kill();
+                    step_result
                 };
 
-                let abort_fut = async {
-                    smol::future::or(
-                        async {
-                            let _ = receiver.recv().await;
-                            Err(JobError::RunnerAborted)
-                        },
-                        async {
-                            if let Some(abort) = abort {
-                                let _ = abort.recv().await;
-                                Err(JobError::JobAborted(job.name.clone()))
-                            } else {
-                                smol::future::pending::<Result<(), JobError>>().await
-                            }
-                        },
-                    )
-                    .await
-                };
-
-                let step_result = smol::future::or(step_fut, abort_fut).await;
-                let _ = child.kill();
+                let (step_result, ()) = smol::future::zip(stop_fut, log_task).await;
                 step_result?;
 
                 if let Some(output_var) = step.output_var.as_ref() {
@@ -435,7 +459,7 @@ impl NowEnvironment {
 
         let mut result: Result<(), JobError> = smol::future::or(steps_fut, async {
             if let Some(timeout) = job.timeout {
-                smol::Timer::after(timeout).await;
+                Timer::after(timeout).await;
                 Err(eyre!(
                     "Job '{}' timed out after {}",
                     job.name,

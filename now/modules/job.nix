@@ -14,6 +14,7 @@ let
       jobEnv,
       jobSandbox,
       jobPathLockdown,
+      terminationTimeout,
       step,
     }:
     if step == null then
@@ -33,6 +34,7 @@ let
                   jobPathLockdown
                   jobSandbox
                   placeholderName
+                  terminationTimeout
                   ;
               };
             };
@@ -150,6 +152,7 @@ in
       inherit (inputs.jobInputs)
         jobKey
         requiredSystemFeatures
+        terminationTimeout
         ;
     in
     options
@@ -170,6 +173,7 @@ in
             inherit
               pkgs
               step
+              terminationTimeout
               ;
             placeholderName = "${jobKey}-${toString i}";
             jobEnv = options.env or { };

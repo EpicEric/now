@@ -125,6 +125,20 @@ fn writeToStderrInner(mutex: *std.Io.Mutex, io: std.Io, reader: *std.Io.Reader, 
     }
 }
 
+fn terminateGroup(io: std.Io, child: *std.process.Child, timeout_secs: i64) !void {
+    const pgid = child.id.?;
+    if (timeout_secs > 0) {
+        std.posix.kill(-pgid, std.posix.SIG.TERM) catch {};
+        try io.sleep(.fromSeconds(timeout_secs), .awake);
+    }
+    std.posix.kill(-pgid, std.posix.SIG.KILL) catch {};
+}
+
+fn watchLifeline(io: std.Io, reader: *std.Io.Reader, child: *std.process.Child, timeout_secs: i64) !void {
+    _ = reader.discardRemaining() catch {};
+    try terminateGroup(io, child, timeout_secs);
+}
+
 pub fn main(init: std.process.Init) !void {
     const allocator: std.mem.Allocator = init.arena.allocator();
 
@@ -134,6 +148,7 @@ pub fn main(init: std.process.Init) !void {
     var arg_iterator = try init.minimal.args.iterateAllocator(allocator);
     defer arg_iterator.deinit();
     _ = arg_iterator.next().?; // Discard program name
+    const timeout_secs = try std.fmt.parseInt(i64, arg_iterator.next().?, 10);
     const derivation_or_flag = arg_iterator.next().?;
     var derivation: [:0]const u8 = undefined;
     const preserve_stdout = std.mem.eql(u8, derivation_or_flag, "--preserve-stdout");
@@ -157,19 +172,21 @@ pub fn main(init: std.process.Init) !void {
     defer io_impl.deinit();
     const io = io_impl.io();
 
-    {
-        const stdin_buf = try allocator.alloc(u8, 128 * 1024);
-        defer allocator.free(stdin_buf);
-        var stdin: std.Io.File.Reader = .init(.stdin(), io, stdin_buf);
-        const stdin_reader = &stdin.interface;
+    var lifeline = false;
+    const stdin_buf = try allocator.alloc(u8, 128 * 1024);
+    defer allocator.free(stdin_buf);
+    var stdin: std.Io.File.Reader = .init(.stdin(), io, stdin_buf);
+    const stdin_reader = &stdin.interface;
 
-        while (try stdin_reader.takeDelimiter(0)) |entry| {
-            if (entry.len == 0) continue;
-            const sep = std.mem.findScalar(u8, entry, '=') orelse
-                return error.MalformedEnvEntry;
-            if (sep == 0) return error.EmptyEnvKey;
-            try child_env.put(entry[0..sep], entry[sep + 1 ..]);
+    while (try stdin_reader.takeDelimiter(0)) |entry| {
+        if (entry.len == 0) {
+            lifeline = true;
+            break;
         }
+        const sep = std.mem.findScalar(u8, entry, '=') orelse
+            return error.MalformedEnvEntry;
+        if (sep == 0) return error.EmptyEnvKey;
+        try child_env.put(entry[0..sep], entry[sep + 1 ..]);
     }
 
     var secret_collection = try now_step.SecretCollection.init(allocator, &child_env, secret_names.items);
@@ -181,11 +198,18 @@ pub fn main(init: std.process.Init) !void {
     var child = try std.process.spawn(io, .{
         .argv = &.{derivation},
         .environ_map = &child_env,
+        .pgid = 0,
         .stdin = .ignore,
         .stdout = .pipe,
         .stderr = .pipe,
     });
     errdefer killChild(io, &child);
+
+    // If stdin gets dropped, terminate the process gracefully
+    if (lifeline) {
+        const t = try std.Thread.spawn(.{}, watchLifeline, .{ io, stdin_reader, &child, timeout_secs });
+        t.detach();
+    }
 
     const child_stdout_buffer = try allocator.alloc(u8, 128 * 1024);
     defer allocator.free(child_stdout_buffer);

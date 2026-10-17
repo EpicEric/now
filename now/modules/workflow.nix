@@ -12,6 +12,7 @@ let
       jobKey,
       pkgs,
       overlay,
+      terminationTimeout,
     }:
     let
       pkgs' = pkgs;
@@ -29,6 +30,7 @@ let
             pkgs
             specialArgs
             requiredSystemFeatures
+            terminationTimeout
             ;
         };
     in
@@ -52,6 +54,7 @@ let
       pkgs,
       requiredSystemFeatures,
       specialArgs,
+      terminationTimeout,
     }:
     evalModule {
       inherit (pkgs) lib;
@@ -59,7 +62,7 @@ let
         ((import ./. adios) {
           options = {
             "/job/jobInputs" = {
-              inherit jobKey requiredSystemFeatures;
+              inherit jobKey requiredSystemFeatures terminationTimeout;
             };
             "/job/nixpkgs" = {
               inherit pkgs;
@@ -131,7 +134,7 @@ in
           jobKey: job':
           mapMaybeJobList {
             inherit (inputs.nixpkgs) pkgs;
-            inherit (inputs.workflowInputs) overlay;
+            inherit (inputs.workflowInputs) overlay terminationTimeout;
             inherit job' jobKey;
           }
         ) options.jobs

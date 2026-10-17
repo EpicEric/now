@@ -204,6 +204,12 @@ pub(crate) enum Command {
         #[arg(long)]
         abort: bool,
 
+        /// Graceful termination timeout for steps when the job is aborted.
+        ///
+        /// A duration less than one second will signal instant termination to steps.
+        #[arg(long, value_name = "DURATION", default_value = "10s")]
+        termination_timeout: humantime::Duration,
+
         /// Timeout for the entire workflow, eg. `1h`.
         #[arg(long, value_name = "DURATION")]
         timeout: Option<humantime::Duration>,

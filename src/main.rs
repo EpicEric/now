@@ -266,6 +266,7 @@ fn main() -> color_eyre::Result<()> {
             env_file,
             gcroot_dir,
             abort,
+            termination_timeout,
             timeout,
             keep_alive,
             cwdir,
@@ -335,6 +336,7 @@ fn main() -> color_eyre::Result<()> {
                     .maybe_tracing(tracing)
                     .maybe_env_file(env_file)
                     .maybe_gcroot_dir(gcroot_dir)
+                    .termination_timeout(termination_timeout.into())
                     .build()
                     .await?;
                 environment
