@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Fix signal passing for nested `now`
+
 ## 0.6.0 (2026-10-17)
 
 ### ⚠️ Breaking changes

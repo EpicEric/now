@@ -18,6 +18,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const now_step = @import("now_step");
 
+var terminating = std.atomic.Value(bool).init(false);
+var signalled = std.atomic.Value(bool).init(false);
+
 fn killChild(io: std.Io, child: *std.process.Child) void {
     child.kill(io);
     _ = child.wait(io) catch {};
@@ -126,6 +129,7 @@ fn writeToStderrInner(mutex: *std.Io.Mutex, io: std.Io, reader: *std.Io.Reader, 
 }
 
 fn terminateGroup(io: std.Io, child: *std.process.Child, timeout_secs: i64) !void {
+    if (terminating.swap(true, .acq_rel)) return;
     const pgid = child.id.?;
     if (timeout_secs > 0) {
         std.posix.kill(-pgid, std.posix.SIG.TERM) catch {};
@@ -139,7 +143,28 @@ fn watchLifeline(io: std.Io, reader: *std.Io.Reader, child: *std.process.Child, 
     try terminateGroup(io, child, timeout_secs);
 }
 
+fn onSignal(_: std.posix.SIG) callconv(.c) void {
+    signalled.store(true, .release);
+}
+
+fn installSignalHandlers() !void {
+    const act: std.posix.Sigaction = .{
+        .handler = .{ .handler = onSignal },
+        .mask = std.posix.sigemptyset(),
+        .flags = 0,
+    };
+    std.posix.sigaction(std.posix.SIG.TERM, &act, null);
+    std.posix.sigaction(std.posix.SIG.INT, &act, null);
+    std.posix.sigaction(std.posix.SIG.HUP, &act, null);
+}
+
+fn watchSignals(io: std.Io, child: *std.process.Child, timeout_secs: i64) !void {
+    while (!signalled.load(.acquire)) try io.sleep(.fromMilliseconds(50), .awake);
+    try terminateGroup(io, child, timeout_secs);
+}
+
 pub fn main(init: std.process.Init) !void {
+    try installSignalHandlers();
     const allocator: std.mem.Allocator = init.arena.allocator();
 
     var secret_names: std.ArrayList([]const u8) = .empty;
@@ -210,6 +235,8 @@ pub fn main(init: std.process.Init) !void {
         const t = try std.Thread.spawn(.{}, watchLifeline, .{ io, stdin_reader, &child, timeout_secs });
         t.detach();
     }
+    const t = try std.Thread.spawn(.{}, watchSignals, .{ io, &child, timeout_secs });
+    t.detach();
 
     const child_stdout_buffer = try allocator.alloc(u8, 128 * 1024);
     defer allocator.free(child_stdout_buffer);
