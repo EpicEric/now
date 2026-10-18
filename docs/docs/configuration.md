@@ -82,6 +82,33 @@ If you're using a flake, the input can be passed directly (see [the quick start]
 
 Job functions receive a `pkgs` instance for the current system by default, but [`runner.matrix`](./runner.md#runnermatrix) variants can override it on a per-variant basis.
 
+### Shebang support
+
+At the top of your workflow file, you can specify `now` as a shebang (remember to `chmod +x` the file):
+
+```nix
+#!/usr/bin/env -S now
+{
+  jobs = {
+    # ...
+  };
+}
+```
+
+With `nix env shell` as a shebang interpreter, you can even distribute your workflow without users having to directly install `now`:
+
+```nix
+#! /usr/bin/env nix
+#! nix shell git+https://codeberg.org/now-runner/now --command now
+{
+  jobs = {
+    # ...
+  };
+}
+```
+
+Then, call it like you would any `now` command (for example, `./now.nix run some-job` or `./now.nix list`).
+
 ## Jobs
 
 A job is a set of tasks built and run on a single local or remote runner, made from any number of sequential steps.

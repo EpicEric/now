@@ -1,12 +1,13 @@
+#!/usr/bin/env -S now
 { runner, lib, ... }: {
-  # name = "My workflow";
+  name = "My workflow";
   default = [ "default" ];
   jobs = {
     default = { pkgs, ... }: {
-      # name = "My job";
+      name = "My job";
       steps = [
         {
-          # name = "My step";
+          name = "My step";
           run = ''
             python3 -c 'print("Hello from now!")'
           '';

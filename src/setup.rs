@@ -17,9 +17,11 @@
 use std::{
     ffi::{OsStr, OsString},
     os::unix::ffi::OsStrExt,
+    path::PathBuf,
 };
 
 use clap::{CommandFactory, Parser};
+use color_eyre::eyre::eyre;
 
 use crate::{command::Command, eyre::install_tracing_hook, utils::parse_bool_from_bytes};
 
@@ -55,16 +57,132 @@ fn force_ansi_colors_on_ci_runners(env_vars: &ahash::HashMap<OsString, OsString>
     }
 }
 
+static LONG_ABOUT: &str = "now - Nix-based distributed command runner.
+
+\x1b[1;4mExamples:\x1b[0m
+  \x1b[2m# Initialize a basic workflow in ./now.nix\x1b[0m
+  now init
+
+  \x1b[2m# Load envvars from a dotenv file and run the default job(s)\x1b[0m
+  now run --env-file .env
+
+  \x1b[2m# Run the \"deploy\" job (and all dependencies) from the specified workflow,\x1b[0m
+  \x1b[2m# and specify a remote builder for the run\x1b[0m
+  now run deploy \\
+    --builders \"ssh://mac aarch64-darwin\" \\
+    --workflow .now/remote.nix
+
+  \x1b[2m# Abort immediately on the first failing job,\x1b[0m
+  \x1b[2m# and run all jobs on the local machine\x1b[0m
+  now run --abort --local-only";
+
+#[derive(Parser)]
+#[command(name = "now", version, about, long_about = LONG_ABOUT)]
+struct Args {
+    #[arg(hide = true)]
+    workflow: Option<PathBuf>,
+    #[command(subcommand)]
+    command: Command,
+}
+
 pub(crate) fn setup() -> color_eyre::Result<Command> {
-    clap_complete::CompleteEnv::with_factory(Command::command).complete();
-    let command = Command::parse();
-    if let Command::Run { tracing, .. } = &command
-        && tracing.is_some()
-    {
-        install_tracing_hook()?;
-    } else {
-        color_eyre::install()?;
-    }
+    clap_complete::CompleteEnv::with_factory(Args::command).complete();
+    let args = Args::parse();
+    let command = match args.command {
+        Command::Init { workflow } => {
+            if args.workflow.is_some() && workflow.is_some() {
+                return Err(eyre!("Conflicting workflow options"));
+            }
+            Command::Init {
+                workflow: args.workflow.or(workflow),
+            }
+        }
+        Command::List {
+            workflow,
+            flake,
+            env_file,
+            cwdir,
+            tree,
+        } => {
+            if args.workflow.is_some() && (workflow.is_some() || flake.is_some()) {
+                return Err(eyre!("Conflicting workflow options"));
+            }
+            Command::List {
+                workflow: args.workflow.or(workflow),
+                flake,
+                env_file,
+                cwdir,
+                tree,
+            }
+        }
+        Command::Eval {
+            workflow,
+            flake,
+            env_file,
+            cwdir,
+        } => {
+            if args.workflow.is_some() && (workflow.is_some() || flake.is_some()) {
+                return Err(eyre!("Conflicting workflow options"));
+            }
+            Command::Eval {
+                workflow: args.workflow.or(workflow),
+                flake,
+                env_file,
+                cwdir,
+            }
+        }
+        Command::Run {
+            jobs,
+            workflow,
+            flake,
+            dry_run,
+            all_jobs,
+            env_file,
+            gcroot_dir,
+            abort,
+            termination_timeout,
+            timeout,
+            keep_alive,
+            cwdir,
+            builders,
+            cores,
+            local_only,
+            remote_only,
+            skip,
+            logging,
+            tracing,
+        } => {
+            if args.workflow.is_some() && (workflow.is_some() || flake.is_some()) {
+                return Err(eyre!("Conflicting workflow options"));
+            }
+            if tracing.is_some() {
+                install_tracing_hook()?;
+            } else {
+                color_eyre::install()?;
+            }
+            Command::Run {
+                jobs,
+                workflow: args.workflow.or(workflow),
+                flake,
+                dry_run,
+                all_jobs,
+                env_file,
+                gcroot_dir,
+                abort,
+                termination_timeout,
+                timeout,
+                keep_alive,
+                cwdir,
+                builders,
+                cores,
+                local_only,
+                remote_only,
+                skip,
+                logging,
+                tracing,
+            }
+        }
+    };
 
     let env_vars: ahash::HashMap<_, _> = std::env::vars_os().collect();
     force_ansi_colors_on_ci_runners(&env_vars);

@@ -16,6 +16,7 @@
 
 use std::{
     convert::Into,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
 };
 
@@ -172,6 +173,9 @@ fn main() -> color_eyre::Result<()> {
                 std::fs::create_dir_all(parent)?;
             }
             std::fs::write(&path, include_bytes!("init.nix"))?;
+            let mut perms = std::fs::metadata(&path)?.permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&path, perms)?;
             println!(
                 "'{}' has been initialized with a basic workflow",
                 path.to_string_lossy(),

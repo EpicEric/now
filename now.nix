@@ -1,3 +1,5 @@
+#! /usr/bin/env nix
+#! nix shell . --command now
 { runner, ... }:
 let
   inputs = import ./.tack;
@@ -990,7 +992,7 @@ in
           shell = pkgs.nushell;
           run = ''
             now init
-            let result = (now run | complete)
+            let result = (./now.nix run | complete)
             let output = $result.stdout + $result.stderr
             print $output
 

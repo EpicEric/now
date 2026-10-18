@@ -48,27 +48,7 @@ pub(crate) enum LoggingLevel {
     Full,
 }
 
-static LONG_ABOUT: &str = "now - Nix-based distributed command runner.
-
-\x1b[1;4mExamples:\x1b[0m
-  \x1b[2m# Initialize a basic workflow in ./now.nix\x1b[0m
-  now init
-
-  \x1b[2m# Load envvars from a dotenv file and run the default job(s)\x1b[0m
-  now run --env-file .env
-
-  \x1b[2m# Run the \"deploy\" job (and all dependencies) from the specified workflow,\x1b[0m
-  \x1b[2m# and specify a remote builder for the run\x1b[0m
-  now run deploy \\
-    --builders \"ssh://mac aarch64-darwin\" \\
-    --workflow .now/remote.nix
-
-  \x1b[2m# Abort immediately on the first failing job,\x1b[0m
-  \x1b[2m# and run all jobs on the local machine\x1b[0m
-  now run --abort --local-only";
-
 #[derive(Parser)]
-#[command(name = "now", version, about, long_about = LONG_ABOUT)]
 pub(crate) enum Command {
     /// Initialize a basic workflow.
     Init {

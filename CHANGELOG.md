@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Shebang support
+
 ## 0.6.1 (2026-10-18)
 
 ### Fixed
