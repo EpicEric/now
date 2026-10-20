@@ -21,7 +21,7 @@ Still a work-in-progress. Expect breaking changes between minor versions.
 
 - Write workflows, jobs, and steps in Nix for full flexibility
 - Distributed execution across local and remote SSH builders
-- Declare job dependency graphs, or how concurrent get distributed with job matrices
+- Declare job dependency graphs, or how concurrent jobs get distributed with job matrices
 - Granular control with sandboxing and checkout strategies
 - Manage environment secrets and variables
 - Share artifacts between jobs via the Nix store
@@ -32,5 +32,5 @@ Still a work-in-progress. Expect breaking changes between minor versions.
 now is tested with itself. At the root of this repo, run:
 
 ```bash
-BUILDERS='ssh://localhost - - 1 1 now now -' nix run . -- run test
+BUILDERS='ssh://localhost - - 1 1 now now -' ./now.nix run test
 ```
