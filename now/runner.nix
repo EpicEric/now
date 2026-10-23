@@ -16,7 +16,7 @@
 
 {
   evalId,
-  overlay,
+  mkOverlay,
   var,
 }:
 
@@ -91,7 +91,11 @@ in
     variants: job:
     map (variant: {
       inherit job;
-      pkgs = if variant ? pkgs then variant.pkgs.extend overlay else pkgs;
+      pkgs =
+        if variant ? pkgs then
+          variant.pkgs.extend (mkOverlay variant.pkgs.stdenv.hostPlatform.system)
+        else
+          pkgs;
       specialArgs = removeAttrs variant [
         "pkgs"
         "requiredSystemFeatures"

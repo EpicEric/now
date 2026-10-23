@@ -22,10 +22,10 @@
 let
   inputs = import ../.tack;
 
-  overlay =
-    _: prev:
+  mkOverlay =
+    system': _: prev:
     let
-      pkgs = import inputs.nixpkgs { inherit system; };
+      pkgs = import inputs.nixpkgs { system = system'; };
       local-now-step = pkgs.callPackage ../now-step/package.nix { };
     in
     {
@@ -82,13 +82,15 @@ let
       );
   };
 
-  runnerFn = import ./runner.nix { inherit evalId overlay var; };
+  runnerFn = import ./runner.nix {
+    inherit evalId var mkOverlay;
+  };
 
   workflow' = if builtins.isPath workflow then import workflow else workflow;
 
   pkgs = import (workflow'.nixpkgs or <nixpkgs>) {
     inherit system;
-    overlays = [ overlay ];
+    overlays = [ (mkOverlay system) ];
   };
 in
 
@@ -101,7 +103,7 @@ evalModule {
           inherit pkgs;
         };
         "/workflow/workflowInputs" = {
-          inherit overlay terminationTimeout;
+          inherit terminationTimeout mkOverlay;
         };
       };
     }).modules.workflow;

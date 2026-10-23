@@ -1,6 +1,6 @@
 { types, ... }: {
   options = {
-    overlay = {
+    mkOverlay = {
       type = types.function;
     };
     terminationTimeout = {

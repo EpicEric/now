@@ -11,7 +11,7 @@ let
       job',
       jobKey,
       pkgs,
-      overlay,
+      mkOverlay,
       terminationTimeout,
     }:
     let
@@ -39,7 +39,11 @@ let
         element:
         normalize {
           inherit (element) job;
-          pkgs = if element ? pkgs then element.pkgs.extend overlay else pkgs;
+          pkgs =
+            if element ? pkgs then
+              element.pkgs.extend (mkOverlay element.pkgs.stdenv.hostPlatform.system)
+            else
+              pkgs;
           specialArgs = element.specialArgs or { };
           requiredSystemFeatures = element.requiredSystemFeatures or [ ];
         }
@@ -134,7 +138,7 @@ in
           jobKey: job':
           mapMaybeJobList {
             inherit (inputs.nixpkgs) pkgs;
-            inherit (inputs.workflowInputs) overlay terminationTimeout;
+            inherit (inputs.workflowInputs) mkOverlay terminationTimeout;
             inherit job' jobKey;
           }
         ) options.jobs
