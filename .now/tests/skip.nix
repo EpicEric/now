@@ -2,6 +2,7 @@
 let
   thisSystem = builtins.currentSystem;
   unavailableSystem = if thisSystem == "aarch64-darwin" then "x86_64-linux" else "aarch64-darwin";
+  inputs = import ../../.tack;
 in
 {
   jobs = {
@@ -12,7 +13,7 @@ in
       runner.matrix
         [
           {
-            pkgs = import <nixpkgs> {
+            pkgs = import inputs.nixpkgs {
               system = unavailableSystem;
               crossSystem.config = thisSystem;
             };
@@ -44,7 +45,7 @@ in
       runner.matrix
         [
           {
-            pkgs = import <nixpkgs> {
+            pkgs = import inputs.nixpkgs {
               system = thisSystem;
               crossSystem.config = unavailableSystem;
             };
