@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Improve logging on error conditions and remote runners.
+- Instrument futures with spans correctly.
+
 ## 0.6.2 (2026-10-19)
 
 ### Added

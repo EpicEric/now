@@ -40,7 +40,7 @@ use smol::{
     process::{Child, Command},
     stream::StreamExt,
 };
-use tracing::{info, instrument, warn};
+use tracing::{Instrument, info, instrument, warn};
 
 use crate::{
     builder::local::{BuilderGuard, LocalBuilder, RunnerGuard},
@@ -117,13 +117,6 @@ impl NowEnvironment {
                 "(dry run) Not building derivations for job '{}'...",
                 &job.name
             );
-        } else {
-            info!(
-                runner = local_builder.hostname,
-                is_remote = false,
-                "Building derivations for job '{}'...",
-                &job.name
-            );
         }
 
         let (steps, derivations) = {
@@ -150,43 +143,53 @@ impl NowEnvironment {
                     if job_is_aborted(receiver, abort) {
                         return Err(JobError::RunnerAborted);
                     }
+                    if dry_run {
+                        info!(
+                            runner = builder.get_name(),
+                            is_remote = builder.is_remote(),
+                            "(dry run) Not building derivations for job '{}'...",
+                            &job.name
+                        );
+                    } else {
+                        info!(
+                            runner = builder.get_name(),
+                            is_remote = builder.is_remote(),
+                            "Building derivations for job '{}'...",
+                            &job.name
+                        );
+                    }
 
                     let teardown = if let Some(teardown_drv) = step.teardown_drv.as_ref() {
-                        let _span = tracing::info_span!(
+                        async {
+                            if dry_run {
+                                Ok::<_, JobError>(Some(PathBuf::from("/dummy")))
+                            } else {
+                                builder
+                                    .copy_derivations(
+                                        &job.name,
+                                        std::slice::from_ref(teardown_drv),
+                                        receiver,
+                                    )
+                                    .await?;
+                                let teardown =
+                                    builder.realize_derivation(teardown_drv, receiver).await?;
+                                builder.fetch_derivation(&teardown, receiver).await?;
+                                Ok(Some(teardown))
+                            }
+                        }
+                        .instrument(tracing::info_span!(
                             "step-teardown-realize",
                             job = job.name,
                             step = step.name,
                             r#type = "step-teardown-realize",
-                        )
-                        .entered();
-                        if dry_run {
-                            Some(PathBuf::from("/dummy"))
-                        } else {
-                            builder
-                                .copy_derivations(
-                                    &job.name,
-                                    std::slice::from_ref(teardown_drv),
-                                    receiver,
-                                )
-                                .await?;
-                            let teardown =
-                                builder.realize_derivation(teardown_drv, receiver).await?;
-                            builder.fetch_derivation(&teardown, receiver).await?;
-                            Some(teardown)
-                        }
+                        ))
+                        .await?
                     } else {
                         None
                     };
-                    let run = {
-                        let _span = tracing::info_span!(
-                            "step-run-realize",
-                            job = job.name,
-                            step = step.name,
-                            r#type = "step-run-realize",
-                        )
-                        .entered();
+                    let run = async {
                         if dry_run {
-                            PathBuf::from("/dummy")
+                            Ok::<_, JobError>(PathBuf::from("/dummy"))
                         } else {
                             builder
                                 .copy_derivations(
@@ -197,9 +200,16 @@ impl NowEnvironment {
                                 .await?;
                             let run = builder.realize_derivation(&step.run_drv, receiver).await?;
                             builder.fetch_derivation(&run, receiver).await?;
-                            run
+                            Ok(run)
                         }
-                    };
+                    }
+                    .instrument(tracing::info_span!(
+                        "step-run-realize",
+                        job = job.name,
+                        step = step.name,
+                        r#type = "step-run-realize",
+                    ))
+                    .await?;
                     Ok((step, run, teardown))
                 })
                 .collect();
@@ -283,176 +293,219 @@ impl NowEnvironment {
             }
 
             for (step, run, teardown) in steps {
-                let _span = tracing::info_span!(
+                let span = tracing::info_span!(
                     "step-run",
                     job = job.name,
                     step = step.name,
                     r#type = "step-run",
-                )
-                .entered();
-                let mut downloads: Vec<PathBuf> = Vec::new();
-                {
-                    let uploads = self.uploads.lock().expect("not poisoned");
-                    for env in step.env.values() {
-                        if let NowStepEnvVar::Download(download) = env {
-                            if let Some(path) = uploads.get(&download.download_name) {
-                                downloads.push(path.clone());
-                            } else {
-                                return Err(JobError::Other(eyre!(
-                                    "No upload named '{}'",
-                                    &download.download_name
-                                )));
+                );
+                async {
+                    let mut downloads: Vec<PathBuf> = Vec::new();
+                    {
+                        let uploads = self.uploads.lock().expect("not poisoned");
+                        for env in step.env.values() {
+                            if let NowStepEnvVar::Download(download) = env {
+                                if let Some(path) = uploads.get(&download.download_name) {
+                                    downloads.push(path.clone());
+                                } else {
+                                    return Err(JobError::Other(eyre!(
+                                        "No upload named '{}'",
+                                        &download.download_name
+                                    )));
+                                }
                             }
                         }
                     }
-                }
-                if !dry_run && !downloads.is_empty() {
-                    runner.download(&downloads, receiver).await?;
-                }
-
-                if let Some(teardown) = teardown {
-                    teardown_stack.push((step.name.clone(), teardown, step.env.clone()));
-                }
-
-                let env = self.generate_env_vars_for_step(&step.env, &output_vars)?;
-
-                let mut child = if dry_run {
-                    dummy_command()?
-                } else {
-                    runner.run_derivation(&cwdir, run)?
-                };
-                let mut stdin = child.stdin.take().expect("stdin is piped");
-                let mut stdout = child.stdout.take().expect("stdout is piped");
-                let stderr = child.stderr.take().expect("stderr is piped");
-
-                let log_task = async {
-                    let mut lines = BufReader::new(stderr).lines();
-                    while let Some(line) = lines.next().await {
-                        if let Ok(line) = line {
-                            info!(
-                                runner = runner_name,
-                                is_remote,
-                                step = step.name,
-                                "{}",
-                                line
-                            );
-                        } else {
-                            break;
-                        }
+                    if !dry_run && !downloads.is_empty() {
+                        runner.download(&downloads, receiver).await?;
                     }
-                };
 
-                let stop_fut = async {
-                    let stdin_task = async {
-                        for (key, value) in env {
-                            stdin.write_all(&key.into_encoded_bytes()).await?;
-                            stdin.write_all(b"=").await?;
-                            stdin.write_all(&value.into_encoded_bytes()).await?;
-                            stdin.write_all(b"\0").await?;
-                        }
-                        stdin.write_all(b"\0").await?;
-                        stdin.flush().await?;
-                        Ok(())
+                    if let Some(teardown) = teardown {
+                        teardown_stack.push((step.name.clone(), teardown, step.env.clone()));
+                    }
+
+                    let env = self.generate_env_vars_for_step(&step.env, &output_vars)?;
+
+                    let mut child = if dry_run {
+                        dummy_command()?
+                    } else {
+                        runner.run_derivation(&cwdir, run)?
                     };
+                    let mut stdin = child.stdin.take().expect("stdin is piped");
+                    let mut stdout = child.stdout.take().expect("stdout is piped");
+                    let stderr = child.stderr.take().expect("stderr is piped");
 
-                    let step_fut = async {
-                        let (exit_status, stdin_result): (_, color_eyre::Result<()>) =
-                            smol::future::zip(child.status(), stdin_task).await;
-                        stdin_result?;
-                        let exit_status = exit_status.map_err(|error| eyre!(error))?;
-                        if !exit_status.success() {
-                            warn!(
-                                "$duper.exit_code" = duper::serde::ser::to_string_compact(
-                                    &ExitCode(exit_status.code())
-                                )
-                                .expect("valid Duper")
-                            );
-                            return Err(
-                                eyre!("Step '{}' failed ({})", &step.name, exit_status).into()
-                            );
-                        }
-                        Ok(())
-                    };
-
-                    let abort_fut = async {
-                        smol::future::or(
-                            async {
-                                let _ = receiver.recv().await;
-                                Err(JobError::RunnerAborted)
-                            },
-                            async {
-                                if let Some(abort) = abort {
-                                    let _ = abort.recv().await;
-                                    Err(JobError::JobAborted(job.name.clone()))
-                                } else {
-                                    smol::future::pending::<Result<(), JobError>>().await
+                    let log_task = async {
+                        let mut reader = BufReader::new(stderr);
+                        let mut buf = Vec::new();
+                        loop {
+                            buf.clear();
+                            match reader.read_until(b'\n', &mut buf).await {
+                                Ok(0) | Err(_) => break,
+                                Ok(_) => {
+                                    let line = String::from_utf8_lossy(&buf);
+                                    let line = line.trim_end_matches(['\r', '\n']);
+                                    info!(
+                                        runner = runner_name,
+                                        is_remote,
+                                        step = step.name,
+                                        "{}",
+                                        line
+                                    );
                                 }
-                            },
-                        )
-                        .await
+                            }
+                        }
                     };
 
-                    let step_result = smol::future::or(step_fut, abort_fut).await;
-                    drop(stdin);
-                    if step_result.is_err() {
-                        smol::future::or(
-                            async {
-                                let _ = child.status().await;
-                            },
-                            async {
-                                Timer::after(Duration::from_secs(15)).await;
-                            },
-                        )
-                        .await;
+                    let stop_fut = async {
+                        let stdin_task = async {
+                            for (key, value) in env {
+                                stdin.write_all(&key.into_encoded_bytes()).await?;
+                                stdin.write_all(b"=").await?;
+                                stdin.write_all(&value.into_encoded_bytes()).await?;
+                                stdin.write_all(b"\0").await?;
+                            }
+                            stdin.write_all(b"\0").await?;
+                            stdin.flush().await?;
+                            Ok(())
+                        };
+
+                        let step_fut = async {
+                            let (exit_status, stdin_result): (_, color_eyre::Result<()>) =
+                                smol::future::zip(child.status(), stdin_task).await;
+                            let exit_status = exit_status.map_err(|error| eyre!(error))?;
+                            if !exit_status.success() {
+                                warn!(
+                                    "$duper.exit_code" = duper::serde::ser::to_string_compact(
+                                        &ExitCode(exit_status.code())
+                                    )
+                                    .expect("valid Duper"),
+                                    runner = runner_name,
+                                    is_remote,
+                                    step = step.name,
+                                    "Step '{}' failed on {} ({})",
+                                    &step.name,
+                                    runner_name,
+                                    exit_status
+                                );
+                                let report = eyre!(
+                                    "Step '{}' failed on {} ({})",
+                                    &step.name,
+                                    runner_name,
+                                    exit_status
+                                );
+                                return Err(match stdin_result {
+                                    Ok(()) => report,
+                                    Err(error) => report.note(format!(
+                                        "Failed to send the step environment over stdin: {error}"
+                                    )),
+                                }
+                                .into());
+                            }
+                            stdin_result?;
+                            Ok(())
+                        };
+
+                        let abort_fut = async {
+                            smol::future::or(
+                                async {
+                                    let _ = receiver.recv().await;
+                                    Err(JobError::RunnerAborted)
+                                },
+                                async {
+                                    if let Some(abort) = abort {
+                                        let _ = abort.recv().await;
+                                        Err(JobError::JobAborted(job.name.clone()))
+                                    } else {
+                                        smol::future::pending::<Result<(), JobError>>().await
+                                    }
+                                },
+                            )
+                            .await
+                        };
+
+                        let step_result = smol::future::or(step_fut, abort_fut).await;
+                        drop(stdin);
+                        if step_result.is_err() {
+                            smol::future::or(
+                                async {
+                                    let _ = child.status().await;
+                                },
+                                async {
+                                    Timer::after(Duration::from_secs(15)).await;
+                                },
+                            )
+                            .await;
+                            let _ = child.kill();
+
+                            let mut buf = Vec::new();
+                            if stdout.read_to_end(&mut buf).await.is_ok() {
+                                for line in buf.split(|byte| *byte == b'\n') {
+                                    let line = String::from_utf8_lossy(line);
+                                    let line = line.trim_end_matches('\r');
+                                    if !line.is_empty() {
+                                        warn!(
+                                            runner = runner_name,
+                                            is_remote,
+                                            step = step.name,
+                                            "stdout: {}",
+                                            line
+                                        );
+                                    }
+                                }
+                            }
+                        }
                         let _ = child.kill();
-                    }
-                    let _ = child.kill();
-                    step_result
-                };
+                        step_result
+                    };
 
-                let (step_result, ()) = smol::future::zip(stop_fut, log_task).await;
-                step_result?;
+                    let (step_result, ()) = smol::future::zip(stop_fut, log_task).await;
+                    step_result?;
 
-                if let Some(output_var) = step.output_var.as_ref() {
-                    let mut buf = Vec::new();
-                    stdout
-                        .read_to_end(&mut buf)
-                        .await
-                        .map_err(|error| eyre!(error))?;
-                    info!(
-                        runner = runner_name,
-                        is_remote,
-                        step = step.name,
-                        "now: Set '{}'",
-                        output_var,
-                    );
-                    output_vars.insert(
-                        output_var.into(),
-                        OsStr::from_bytes(buf.trim_ascii()).into(),
-                    );
-                } else if let Some(upload_key) = step.upload_key.as_ref() {
-                    let mut buf = Vec::new();
-                    stdout
-                        .read_to_end(&mut buf)
-                        .await
-                        .map_err(|error| eyre!(error))?;
-                    let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
-                    if !dry_run {
-                        runner.fetch_derivation(&upload_path, receiver).await?;
+                    if let Some(output_var) = step.output_var.as_ref() {
+                        let mut buf = Vec::new();
+                        stdout
+                            .read_to_end(&mut buf)
+                            .await
+                            .map_err(|error| eyre!(error))?;
+                        info!(
+                            runner = runner_name,
+                            is_remote,
+                            step = step.name,
+                            "now: Set '{}'",
+                            output_var,
+                        );
+                        output_vars.insert(
+                            output_var.into(),
+                            OsStr::from_bytes(buf.trim_ascii()).into(),
+                        );
+                    } else if let Some(upload_key) = step.upload_key.as_ref() {
+                        let mut buf = Vec::new();
+                        stdout
+                            .read_to_end(&mut buf)
+                            .await
+                            .map_err(|error| eyre!(error))?;
+                        let upload_path = PathBuf::from(OsStr::from_bytes(buf.trim_ascii()));
+                        if !dry_run {
+                            runner.fetch_derivation(&upload_path, receiver).await?;
+                        }
+                        info!(
+                            runner = runner_name,
+                            is_remote,
+                            step = step.name,
+                            "now: Uploaded '{}' ({})",
+                            upload_key,
+                            upload_path.to_string_lossy()
+                        );
+                        self.uploads
+                            .lock()
+                            .expect("not poisoned")
+                            .insert(upload_key.clone(), upload_path);
                     }
-                    info!(
-                        runner = runner_name,
-                        is_remote,
-                        step = step.name,
-                        "now: Uploaded '{}' ({})",
-                        upload_key,
-                        upload_path.to_string_lossy()
-                    );
-                    self.uploads
-                        .lock()
-                        .expect("not poisoned")
-                        .insert(upload_key.clone(), upload_path);
+                    Ok(())
                 }
+                .instrument(span)
+                .await?;
             }
             Ok(())
         };
@@ -473,120 +526,132 @@ impl NowEnvironment {
         .await;
 
         for (step_name, teardown, step_env) in teardown_stack.into_iter().rev() {
-            let _span = tracing::info_span!(
+            let span = tracing::info_span!(
                 "step-teardown",
                 job = job.name,
                 step = step_name,
                 r#type = "step-teardown",
-            )
-            .entered();
-
-            let env_vars = match self.generate_env_vars_for_step(&step_env, &output_vars) {
-                Ok(env_vars) => env_vars,
-                Err(error) => {
-                    warn!(
-                        runner = runner_name,
-                        is_remote,
-                        step = step_name,
-                        teardown = true,
-                        "Teardown failed ({}); continuing",
-                        error
-                    );
-                    result = result.and_then(|()| {
-                        Err(eyre!("Teardown for step '{}' failed ({})", step_name, error,).into())
-                    });
-                    continue;
-                }
-            };
-            let mut child = if dry_run {
-                dummy_command()?
-            } else {
-                runner.run_derivation(&cwdir, teardown)?
-            };
-            let mut stdin = child.stdin.take().expect("stdin is piped");
-            let stderr = child.stderr.take().expect("stderr is piped");
-
-            let log_task = async {
-                let mut lines = BufReader::new(stderr).lines();
-                while let Some(line) = lines.next().await {
-                    if let Ok(line) = line {
-                        info!(
+            );
+            let teardown_result = async {
+                let env_vars = match self.generate_env_vars_for_step(&step_env, &output_vars) {
+                    Ok(env_vars) => env_vars,
+                    Err(error) => {
+                        warn!(
                             runner = runner_name,
                             is_remote,
                             step = step_name,
-                            "{}",
-                            line
+                            teardown = true,
+                            "Teardown failed ({}); continuing",
+                            error
                         );
-                    } else {
-                        break;
+                        return Err(
+                            eyre!("Teardown for step '{}' failed ({})", step_name, error).into(),
+                        );
                     }
-                }
-            };
+                };
+                let mut child = if dry_run {
+                    dummy_command()?
+                } else {
+                    runner.run_derivation(&cwdir, teardown)?
+                };
+                let mut stdin = child.stdin.take().expect("stdin is piped");
+                let stderr = child.stderr.take().expect("stderr is piped");
 
-            let stdin_task = async {
-                for (key, value) in env_vars {
-                    stdin
-                        .write_all(&format_bytes!(
-                            b"{}={}\0",
-                            &key.into_encoded_bytes(),
-                            &value.into_encoded_bytes()
-                        ))
-                        .await?;
-                }
-                drop(stdin);
-                Ok(())
-            };
+                let log_task = async {
+                    let mut reader = BufReader::new(stderr);
+                    let mut buf = Vec::new();
+                    loop {
+                        buf.clear();
+                        match reader.read_until(b'\n', &mut buf).await {
+                            Ok(0) | Err(_) => break,
+                            Ok(_) => {
+                                let line = String::from_utf8_lossy(&buf);
+                                let line = line.trim_end_matches(['\r', '\n']);
+                                info!(
+                                    runner = runner_name,
+                                    is_remote,
+                                    step = step_name,
+                                    "{}",
+                                    line
+                                );
+                            }
+                        }
+                    }
+                };
 
-            let (exit_status, ((), stdin_task)): (_, (_, color_eyre::Result<()>)) =
-                smol::future::zip(child.status(), smol::future::zip(log_task, stdin_task)).await;
+                let stdin_task = async {
+                    for (key, value) in env_vars {
+                        stdin
+                            .write_all(&format_bytes!(
+                                b"{}={}\0",
+                                &key.into_encoded_bytes(),
+                                &value.into_encoded_bytes()
+                            ))
+                            .await?;
+                    }
+                    drop(stdin);
+                    Ok(())
+                };
 
-            if let Err(error) = stdin_task {
-                warn!(
-                    runner = runner_name,
-                    is_remote,
-                    step = step_name,
-                    teardown = true,
-                    "Teardown task failed ({}); continuing",
-                    error
-                );
-                result = result.and_then(|()| {
-                    Err(eyre!("Teardown task for step '{}' failed ({})", step_name, error,).into())
-                });
-                continue;
-            }
+                let (exit_status, ((), stdin_task)): (_, (_, color_eyre::Result<()>)) =
+                    smol::future::zip(child.status(), smol::future::zip(log_task, stdin_task))
+                        .await;
 
-            let exit_status = match exit_status {
-                Ok(exit_status) => exit_status,
-                Err(error) => {
+                if let Err(error) = stdin_task {
                     warn!(
                         runner = runner_name,
                         is_remote,
                         step = step_name,
                         teardown = true,
-                        "Teardown failed ({}); continuing",
+                        "Teardown task failed ({}); continuing",
                         error
                     );
-                    result = result.and_then(|()| {
-                        Err(eyre!("Teardown for step '{}' failed ({})", step_name, error,).into())
-                    });
-                    continue;
+                    return Err(
+                        eyre!("Teardown task for step '{}' failed ({})", step_name, error).into(),
+                    );
                 }
-            };
-            if !exit_status.success() {
-                warn!(
-                    "$duper.exit_code" =
-                        duper::serde::ser::to_string_compact(&ExitCode(exit_status.code()))
-                            .expect("valid Duper"),
-                    runner = runner_name,
-                    is_remote,
-                    step = step_name,
-                    teardown = true,
-                    "Teardown failed ({}); continuing",
-                    exit_status
-                );
-                result = result.and_then(|()| {
-                    Err(eyre!("Teardown for step '{}' failed ({})", step_name, exit_status).into())
-                });
+
+                let exit_status = match exit_status {
+                    Ok(exit_status) => exit_status,
+                    Err(error) => {
+                        warn!(
+                            runner = runner_name,
+                            is_remote,
+                            step = step_name,
+                            teardown = true,
+                            "Teardown failed ({}); continuing",
+                            error
+                        );
+                        return Err(
+                            eyre!("Teardown for step '{}' failed ({})", step_name, error).into(),
+                        );
+                    }
+                };
+                if !exit_status.success() {
+                    warn!(
+                        "$duper.exit_code" =
+                            duper::serde::ser::to_string_compact(&ExitCode(exit_status.code()))
+                                .expect("valid Duper"),
+                        runner = runner_name,
+                        is_remote,
+                        step = step_name,
+                        teardown = true,
+                        "Teardown failed ({}); continuing",
+                        exit_status
+                    );
+                    return Err(eyre!(
+                        "Teardown for step '{}' failed ({})",
+                        step_name,
+                        exit_status
+                    )
+                    .into());
+                }
+                Ok(())
+            }
+            .instrument(span)
+            .await;
+            if let Err(error) = teardown_result {
+                result = result.and(Err(error));
             }
         }
 

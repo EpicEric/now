@@ -24,39 +24,189 @@ now run distributed-job --builders 'ssh://remote'
 
 ## Using in GitHub Actions
 
-```yaml title=".github/workflows/ci.yml"
-on:
-  push:
-    branches: ["main"]
+=== "No orchestration"
 
-jobs:
-  now:
-    name: Run CI through now
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            system: x86_64-linux
-          - runner: ubuntu-24.04-arm
-            system: aarch64-linux
-          - runner: macos-26
-            system: aarch64-darwin
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Install Nix
-        uses: NixOS/nix-installer-action@62c1943b776c509394b550f3f983adc14e9212d6 # v1.0.0
-        with:
-          add-channel: "true"
-      - name: Code coverage
-        env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        run: |
-          nix run git+https://codeberg.org/now-runner/now -- run ci
-```
+    ```yaml title=".github/workflows/ci.yml"
+    on:
+      push:
+        branches: ["main"]
+
+    jobs:
+      now:
+        name: Run CI through now
+        strategy:
+          fail-fast: false
+          matrix:
+            include:
+              - runner: ubuntu-24.04
+                system: x86_64-linux
+              - runner: ubuntu-24.04-arm
+                system: aarch64-linux
+              - runner: macos-26
+                system: aarch64-darwin
+        runs-on: ${{ matrix.runner }}
+        steps:
+          - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            with:
+              persist-credentials: false
+
+          - name: Install Nix
+            uses: NixOS/nix-installer-action@62c1943b776c509394b550f3f983adc14e9212d6 # v1.0.0
+            with:
+              add-channel: "true"
+              extra-conf: |
+                extra-substituters = https://cache.eric.dev.br
+                extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=
+
+          - name: Install now
+            run: nix profile install git+https://codeberg.org/now-runner/now
+
+          - name: Code coverage
+            env:
+              CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+            run: |
+              now run ci
+    ```
+
+=== "Orchestration with Tailscale SSH"
+
+    Follow these steps first:
+
+    1. In Tailscale, add the `ci` tag with the `autogroup:admin` as the owner.
+    2. Create an [OAuth client](https://tailscale.com/docs/features/oauth-clients#setting-up-an-oauth-client) with the "Auth Keys" scope for `tag:ci` and store it as the `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET` secrets.
+    3. Add an access control policy so that the local runner node can SSH into the others as the `runner` user:
+
+        ```json
+        {
+          "action": "accept",
+          "src": ["tag:ci"],
+          "dst": ["tag:ci"],
+          "users": ["runner"],
+        }
+        ```
+
+        This rule goes in the `ssh` section of the policy. The `accept` action is required, as the `check` action asks for periodic browser authentication that CI can't provide.
+
+    ```yaml title=".github/workflows/now.yaml"
+    on: workflow_dispatch
+
+    permissions:
+      contents: read
+      actions: read
+
+    jobs:
+      worker:
+        name: Remote runner (${{ matrix.system }})
+        strategy:
+          fail-fast: false
+          matrix:
+            include:
+              - system: aarch64-linux
+                runner: ubuntu-24.04-arm
+              - system: aarch64-darwin
+                runner: macos-26
+        runs-on: ${{ matrix.runner }}
+        timeout-minutes: 120
+        steps:
+          - name: Install Nix
+            uses: NixOS/nix-installer-action@62c1943b776c509394b550f3f983adc14e9212d6 # v1.0.0
+            with:
+              add-channel: "true"
+              extra-conf: |
+                trusted-users = root runner
+                extra-substituters = https://cache.eric.dev.br
+                extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=
+
+          - uses: tailscale/github-action@99a8333667fff04fdd6cffb46dfd409f8329a7bf # v4.3.0
+            with:
+              oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+              oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+              tags: tag:ci
+              hostname: now-${{ github.run_id }}-${{ matrix.system }}
+              args: --ssh
+              use-cache: "true"
+
+          - name: Restore system DNS (macOS)
+            if: runner.os == 'macOS'
+            run: sudo networksetup -setdnsservers Ethernet Empty
+
+          # Tailscale SSH doesn't source login profiles, and its default PATH includes /usr/local/bin.
+          - name: Expose Nix on PATH for Tailscale SSH
+            run: |
+              sudo mkdir -p /usr/local/bin
+              sudo ln -sf /nix/var/nix/profiles/default/bin/* /usr/local/bin/
+
+          - name: Stay alive until the orchestrator finishes
+            env:
+              GH_TOKEN: ${{ github.token }}
+            run: |
+              while true; do
+                status=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" \
+                  --paginate \
+                  --jq '.jobs[] | select(.name == "Local runner") | .status')
+                if [ "$status" = completed ]; then
+                  echo "Orchestrator finished, tearing down."
+                  exit 0
+                fi
+                sleep 10
+              done
+
+      orchestrator:
+        name: Local runner
+        runs-on: ubuntu-latest
+        timeout-minutes: 120
+        steps:
+          - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            with:
+              persist-credentials: false
+
+          - name: Install Nix
+            uses: NixOS/nix-installer-action@62c1943b776c509394b550f3f983adc14e9212d6 # v1.0.0
+            with:
+              add-channel: "true"
+              extra-conf: |
+                extra-substituters = https://cache.eric.dev.br
+                extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+FRG3tB9QtpE=
+
+          - uses: tailscale/github-action@99a8333667fff04fdd6cffb46dfd409f8329a7bf # v4.3.0
+            with:
+              oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+              oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+              tags: tag:ci
+              hostname: now-${{ github.run_id }}-orchestrator
+
+          - name: Install now
+            run: nix profile install git+https://codeberg.org/now-runner/now
+
+          - name: Configure SSH
+            run: |
+              sudo tee /etc/ssh/ssh_config.d/50-now.conf >/dev/null <<EOF
+              Host now-*
+                User runner
+                StrictHostKeyChecking no
+                UserKnownHostsFile /dev/null
+                LogLevel ERROR
+              EOF
+
+          - name: Wait for workers
+            run: |
+              for system in aarch64-linux aarch64-darwin; do
+                host="now-${{ github.run_id }}-$system"
+                echo "Waiting for $host..."
+                for i in $(seq 180); do
+                  if ssh -o BatchMode=yes -o ConnectTimeout=5 "runner@$host" true; then break; fi
+                  [ "$i" = 180 ] && { echo "$host never came up"; exit 1; }
+                  sleep 5
+                done
+              done
+
+          - name: Run now
+            run: |
+              RUN=${{ github.run_id }}
+              BUILDERS="ssh-ng://runner@now-$RUN-aarch64-linux aarch64-linux - 4 1 ; ssh-ng://runner@now-$RUN-aarch64-darwin aarch64-darwin - 4 1"
+
+              now run ci --builders "$BUILDERS"
+    ```
 
 ## Installing jobs as a pre-commit hook
 
