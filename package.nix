@@ -79,6 +79,6 @@ rustPlatform.buildRustPackage {
     homepage = "https://now.dev.br";
     license = lib.licenses.agpl3Plus;
     mainProgram = "now";
-    platforms = lib.platforms.unix;
+    platforms = lib.platforms.linux ++ lib.platforms.darwin;
   };
 }

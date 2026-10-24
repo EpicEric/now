@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Use `ssh-ng://` instead of `ssh://`
+- Shorten remote runner names in logs
+
 ## 0.6.3 (2026-10-23)
 
 ### Fixed

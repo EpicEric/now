@@ -157,9 +157,9 @@ impl RemoteBuilder {
                 None => ssh_uri,
             };
             let ssh_uri = if let Some(plain_uri) = ssh_uri.strip_prefix("ssh-ng://") {
-                format!("ssh://{plain_uri}")
-            } else if ssh_uri.starts_with("ssh://") {
-                ssh_uri.to_string()
+                plain_uri.to_string()
+            } else if let Some(plain_uri) = ssh_uri.strip_prefix("ssh://") {
+                plain_uri.to_string()
             } else {
                 continue;
             };
@@ -371,11 +371,7 @@ impl NowBuilder for RemoteBuilder {
                     .args(["-arz", "--files-from=-", "."])
                     .arg(OsString::from_vec(format_bytes!(
                         b"{}:{}",
-                        self.ssh_options
-                            .uri
-                            .strip_prefix("ssh://")
-                            .unwrap_or(&self.ssh_options.uri)
-                            .as_bytes(),
+                        self.ssh_options.uri.as_bytes(),
                         tempdir.as_os_str().as_encoded_bytes()
                     )))
                     .stdin(Stdio::piped())
@@ -433,11 +429,7 @@ impl NowBuilder for RemoteBuilder {
                     .args(["-arz", "."])
                     .arg(OsString::from_vec(format_bytes!(
                         b"{}:{}",
-                        self.ssh_options
-                            .uri
-                            .strip_prefix("ssh://")
-                            .unwrap_or(&self.ssh_options.uri)
-                            .as_bytes(),
+                        self.ssh_options.uri.as_bytes(),
                         tempdir.as_os_str().as_encoded_bytes()
                     )))
                     .stdin(Stdio::null())
@@ -477,7 +469,7 @@ impl NowBuilder for RemoteBuilder {
             "--to",
         ]);
         command
-            .arg(&self.ssh_options.uri)
+            .arg(format!("ssh-ng://{}", &self.ssh_options.uri))
             .args(derivations)
             .env("NIX_SSHOPTS", ssh_opts)
             .stdin(Stdio::null())
@@ -562,7 +554,7 @@ impl NowBuilder for RemoteBuilder {
                 "copy",
                 "--to",
             ])
-            .arg(&self.ssh_options.uri)
+            .arg(format!("ssh-ng://{}", &self.ssh_options.uri))
             .args(downloads)
             .env("NIX_SSHOPTS", ssh_opts)
             .stdin(Stdio::null())
@@ -619,7 +611,7 @@ impl NowBuilder for RemoteBuilder {
                 "--no-check-sigs",
                 "--from",
             ])
-            .arg(&self.ssh_options.uri)
+            .arg(format!("ssh-ng://{}", &self.ssh_options.uri))
             .arg(derivation)
             .env("NIX_SSHOPTS", ssh_opts)
             .stdin(Stdio::null())
