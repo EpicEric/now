@@ -1,12 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.6.3 (2026-10-23)
 
 ### Fixed
 
-- Improve logging on error conditions and remote runners.
-- Instrument futures with spans correctly.
-- Fix cross-compilation in the overlay.
+- Improve logging on error conditions and remote runners
+- Instrument futures with spans correctly
+- Fix cross-compilation in the overlay
 
 ## 0.6.2 (2026-10-19)
 
