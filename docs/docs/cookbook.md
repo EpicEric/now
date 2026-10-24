@@ -72,7 +72,7 @@ now run distributed-job --builders 'ssh://remote'
 
     Follow these steps first:
 
-    1. In Tailscale, add the `ci` tag with the `autogroup:admin` as the owner.
+    1. In Tailscale, add the `ci` tag with `autogroup:admin` as the owner.
     2. Create an [OAuth client](https://tailscale.com/docs/features/oauth-clients#setting-up-an-oauth-client) with the "Auth Keys" scope for `tag:ci` and store it as the `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET` secrets.
     3. Add an access control policy so that the local runner node can SSH into the others as the `runner` user:
 

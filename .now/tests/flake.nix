@@ -53,5 +53,21 @@
           ];
         };
       };
+
+      "quoted entrypoint" = {
+        inherit nixpkgs;
+        jobs.quoted = {
+          steps = [ { run = "echo 'quoted entrypoint ran'"; } ];
+        };
+      };
+
+      nested = {
+        "sub attr" = {
+          inherit nixpkgs;
+          jobs.nested = {
+            steps = [ { run = "echo 'nested ran'"; } ];
+          };
+        };
+      };
     };
 }

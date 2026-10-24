@@ -404,6 +404,7 @@ in
       needs = [
         "test-abort"
         "test-checkout"
+        "test-checkout-remote"
         "test-conditionals"
         "test-cycle"
         "test-dotenv"
@@ -413,6 +414,7 @@ in
         "test-fail-fast"
         "test-fhs"
         "test-flake"
+        "test-flake-attr"
         "test-gcroot-dir"
         "test-glob"
         "test-graceful-termination"
@@ -429,16 +431,20 @@ in
         "test-missing-var"
         "test-nix-config"
         "test-nixpkgs"
+        "test-no-default-jobs"
+        "test-no-jobs"
         "test-no-match"
         "test-orchestrate-services"
         "test-overlay"
         "test-path-lockdown"
         "test-sandbox"
         "test-script"
+        "test-secret-redaction"
         "test-secret-reuse"
         "test-shell-args"
         "test-skip"
         "test-tempdir"
+        "test-unknown-needs"
         "test-upload"
         "test-var-script"
         "test-vars"
@@ -517,6 +523,42 @@ in
             }
 
             print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-checkout-remote = {
+      name = "Test remote checkout";
+      steps = [
+        {
+          path = [
+            pkgs.git
+            now
+          ];
+          shell = pkgs.nushell;
+          run = ''
+            if BUILDERS in $env {
+              let tempdir = (mktemp -p ($env.TMPDIR? | default "/tmp") -d)
+              git init -b main $tempdir
+              'Foo contents' | save ($tempdir | path join foo)
+              'Bar contents' | save ($tempdir | path join bar)
+              'bar' | save ($tempdir | path join .gitignore)
+
+              now run --cwdir $tempdir --builders $env.BUILDERS --all-jobs --workflow .now/tests/checkout.nix
+              rm -rf $tempdir
+              if $env.LAST_EXIT_CODE != 0 {
+                print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+                exit 1
+              }
+
+              print $"(ansi green)Test passed.(ansi reset)"
+            } else {
+              print $"(ansi yellow_bold)WARNING:(ansi reset) BUILDERS is unset; skipping"
+              print ""
+              print $"(ansi d)=== hint: to run this, pass an envvar like:(ansi reset)"
+              print $"(ansi d)===   BUILDERS='ssh://localhost - - 1 1 now now -'(ansi reset)"
+            }
           '';
         }
       ];
@@ -837,6 +879,67 @@ in
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
               exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-flake-attr = {
+      name = "Test flake attribute parsing";
+      steps = [
+        {
+          name = "test-flake-attr-valid";
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let result = (now run --flake '.now/tests#"quoted entrypoint"' quoted | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Quoted attribute failed"
+              exit 1
+            }
+
+            if not ($output | str contains "quoted entrypoint ran") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected job output in result"
+              exit 1
+            }
+
+            let result = (now run --flake '.now/tests#nested."sub attr"' nested | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Nested quoted attribute failed"
+              exit 1
+            }
+
+            if not ($output | str contains "nested ran") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected job output in result"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+        {
+          name = "test-flake-attr-invalid";
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            for attr in [ '"unclosed' 'bad!attr' 'a..b' '"a\qb"' ] {
+              let result = (now run --flake ".now/tests#($attr)" | complete)
+              let output = $result.stdout + $result.stderr
+              print $output
+
+              if $result.exit_code == 0 {
+                print $"(ansi red_bold)ERROR:(ansi reset) Attribute '($attr)' should have been rejected"
+                exit 1
+              }
             }
 
             print $"(ansi green)Test passed.(ansi reset)"
@@ -1347,6 +1450,73 @@ in
       ];
     };
 
+    test-no-default-jobs = {
+      name = "Test missing default jobs";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            # Selecting a job explicitly should still work
+            now run a --workflow .now/tests/no-default.nix
+            if $env.LAST_EXIT_CODE != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Explicit job selection failed"
+              exit 1
+            }
+
+            # Without a job argument, the missing default should be reported
+            let result = (now run --workflow .now/tests/no-default.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "No default jobs in workflow") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected missing default error in output"
+              exit 1
+            }
+
+            if not ($output | str contains "Available options: a") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected available jobs in output"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-no-jobs = {
+      name = "Test workflow without jobs";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let result = (now run --workflow .now/tests/no-jobs.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "No jobs in workflow") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected empty workflow error in output"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
     test-no-match = {
       name = "Test no matching job";
       steps = [
@@ -1548,6 +1718,44 @@ in
       ];
     };
 
+    test-secret-redaction = {
+      name = "Test secret redaction";
+      steps = [
+        {
+          env.MY_SECRET = "redacted-secret-value";
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let result = (now run --workflow .now/tests/secret-redaction.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code != 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            if ($output | str contains "redacted-secret-value") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Secret leaked into output"
+              exit 1
+            }
+
+            if not ($output | str contains "plain: ***") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected redacted secret in output"
+              exit 1
+            }
+
+            if not ($output | str contains "embedded: prefix-***-suffix") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected embedded secret to be redacted"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
     test-secret-reuse = {
       name = "Test invalid secret reuse";
       steps = [
@@ -1632,6 +1840,38 @@ in
             now run --workflow .now/tests/tempdir.nix
             if $env.LAST_EXIT_CODE != 0 {
               print $"(ansi red_bold)ERROR:(ansi reset) Test failed"
+              exit 1
+            }
+
+            print $"(ansi green)Test passed.(ansi reset)"
+          '';
+        }
+      ];
+    };
+
+    test-unknown-needs = {
+      name = "Test unknown needs";
+      steps = [
+        {
+          path = [ now ];
+          shell = pkgs.nushell;
+          run = ''
+            let result = (now run --workflow .now/tests/unknown-needs.nix | complete)
+            let output = $result.stdout + $result.stderr
+            print $output
+
+            if $result.exit_code == 0 {
+              print $"(ansi red_bold)ERROR:(ansi reset) Test shouldn't have succeeded!"
+              exit 1
+            }
+
+            if not ($output | str contains "Unknown node does-not-exist") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Expected unknown node error in output"
+              exit 1
+            }
+
+            if ($output | str contains "This shouldn't run") {
+              print $"(ansi red_bold)ERROR:(ansi reset) Step should not have run"
               exit 1
             }
 
