@@ -19,7 +19,7 @@
           run = ''
             echo "Sleeping for 5 seconds..."
             sleep 5
-            echo "This shouldn't be printed at all!"
+            echo "This should only be printed if there's no timeout."
           '';
         }
       ];

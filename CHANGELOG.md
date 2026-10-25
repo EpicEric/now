@@ -6,6 +6,7 @@
 
 - Use `ssh-ng://` instead of `ssh://`
 - Shorten remote runner names in logs
+- Improve `now init` template generation
 
 ## 0.6.3 (2026-10-23)
 

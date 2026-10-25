@@ -56,6 +56,7 @@ tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tracing_duper = "0.2.2"
 uutils_term_grid = "0.8.0"
+which = "8.0.6"
 
 [build-dependencies]
 flate2 = "1.1.9"

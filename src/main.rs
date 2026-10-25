@@ -39,6 +39,7 @@ mod command;
 mod environment;
 mod eyre;
 mod graph;
+mod init;
 mod job;
 mod project;
 mod secret;
@@ -172,7 +173,18 @@ fn main() -> color_eyre::Result<()> {
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            std::fs::write(&path, include_bytes!("init.nix"))?;
+            std::fs::write(
+                &path,
+                format!(
+                    "{}{}",
+                    if which::which("now").is_ok() {
+                        init::SHEBANG_NOW_IN_PATH
+                    } else {
+                        init::SHEBANG_NOW_NOT_IN_PATH
+                    },
+                    init::INIT_TEMPLATE
+                ),
+            )?;
             let mut perms = std::fs::metadata(&path)?.permissions();
             perms.set_mode(0o755);
             std::fs::set_permissions(&path, perms)?;
