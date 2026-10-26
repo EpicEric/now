@@ -179,7 +179,8 @@ impl LocalBuilder {
 
         match self.run_mode {
             NowRunMode::All | NowRunMode::LocalOnly => {
-                if job.build_system == self.system
+                if (job.build_system == self.system
+                    || self.extra_platforms.contains(&job.build_system))
                     && job
                         .required_system_features
                         .iter()

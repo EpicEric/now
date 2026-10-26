@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Handle local runner's `extra-platforms` for builder discovery
+
 ### Changed
 
 - Use `ssh-ng://` instead of `ssh://`

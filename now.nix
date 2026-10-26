@@ -1,12 +1,29 @@
 #! /usr/bin/env nix
 #! nix shell . --command now
+#
+# now: Nix-based distributed command runner
+# Copyright (C) 2026 Eric Rodrigues Pires
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU Affero General Public License as published by the Free
+# Software Foundation, either version 3 of the License, or (at your option)
+# any later version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU Affero General Public License for
+# more details.
+#
+# You should have received a copy of the GNU Affero General Public License along
+# with this program. If not, see <https://www.gnu.org/licenses/>.
+
 { runner, ... }:
 let
   inputs = import ./.tack;
   pkgs = import inputs.nixpkgs { };
   now = import ./. { inherit pkgs; };
 
-  tests = import ./.now/tests.nix { inherit now pkgs; };
+  nowTests = import ./now.tests.nix { inherit now pkgs; };
 
   mkOptionDocumentation =
     level: module:
@@ -73,7 +90,7 @@ let
       )
     );
 in
-pkgs.lib.recursiveUpdate tests {
+pkgs.lib.recursiveUpdate nowTests {
   jobs = {
 
     # ============================================================
@@ -403,7 +420,7 @@ pkgs.lib.recursiveUpdate tests {
 
     test = {
       name = "Finalize tests";
-      needs = builtins.attrNames tests.jobs;
+      needs = builtins.attrNames nowTests.jobs;
       steps = [
         {
           shell = pkgs.nushell;

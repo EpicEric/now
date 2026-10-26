@@ -24,7 +24,7 @@ extra-trusted-public-keys = cache.eric.dev.br-1:szEyq5LCjxDCUHYSRaSFU5HdHmR7QlT+
 === "tack"
 
     ```bash
-    tack add now git+https://codeberg.org/now-runner/now.git --fetch
+    tack add now 'git+https://codeberg.org/now-runner/now.git?shallow=1' --fetch
     ```
 
     ```nix title="configuration.nix"

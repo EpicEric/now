@@ -1,7 +1,7 @@
 { runner, ... }:
 let
   thisSystem = builtins.currentSystem;
-  unavailableSystem = if thisSystem == "aarch64-darwin" then "x86_64-linux" else "aarch64-darwin";
+  unavailableSystem = if thisSystem == "riscv64-linux" then "powerpc64le-linux" else "riscv64-linux";
   inputs = import ../../.tack;
 in
 {

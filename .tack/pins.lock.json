@@ -3,17 +3,15 @@
     "type": "github",
     "owner": "llakala",
     "repo": "lladios",
-    "rev": "ad44a296b00f5eae1ab8ca51d87d79cb20e19def",
-    "narHash": "sha256-SfwDKg5ByyqyiqWMlZedKt/qQSaj+jjkY1W5BC58qgg=",
-    "lastModified": 1792097632
+    "rev": "8ee54755018cf81ad783c4f16aba62754c1d292b",
+    "narHash": "sha256-IV5G9jsEyYUhlx0K35ETQ7OvWWCl7sXxJI+E9kUIYdk=",
+    "lastModified": 1792419797
   },
   "nixpkgs": {
-    "type": "github",
-    "owner": "NixOS",
-    "repo": "nixpkgs",
-    "rev": "8edc0c72e3a38faf5434e40d1f19431125fe4b30",
-    "narHash": "sha256-tqM7xDEsaeK1p6VvRygeZ9LkQRpUUkbRT02BHv6hnTM=",
-    "lastModified": 1791487292
+    "type": "tarball",
+    "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1100901.d3b13ad75cc4/nixexprs.tar.zst",
+    "rev": "d3b13ad75cc492690728f9307e443dec9ef9a20e",
+    "narHash": "sha256-lrp+A0ZwQN3V0tSZP6vVFIX/16FFOzr19mSup8XD80w="
   },
   "now-services": {
     "type": "git",

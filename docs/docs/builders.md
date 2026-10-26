@@ -72,7 +72,7 @@ For example, two independent jobs targeting the same remote builder realize thei
 
 In order to be picked for building derivations, a builder must satisfy:
 
-- **`buildSystem`** must match the builder's system exactly (for local builders) or be in the builder's list of supported build systems (for remote builders).
+- **`buildSystem`** must match the builder's system exactly or be listed in the builder's `extra-platforms` (for local builders). For remote builders, it must be in the builder's list of supported build systems.
 - **`requiredSystemFeatures`** must all be present in the builder's advertised `systemFeatures`.
 - Additionally for remote builders: the builder's `requiredFeatures` (mandatory features) must all be present in the job's `requiredSystemFeatures`.
 
@@ -92,7 +92,7 @@ Jobs declare `requiredSystemFeatures` to ensure that they land on a suitable mac
 
 ### Extra platforms
 
-Local runners can also run jobs for platforms listed in `extra-platforms` in the Nix configuration (e.g., via QEMU binfmt emulation). This allows an `x86_64-linux` machine to run `aarch64-linux` jobs without a remote builder.
+Local builders and runners can also build and run jobs for platforms listed in `extra-platforms` in the Nix configuration (e.g., via QEMU binfmt emulation). This allows an `x86_64-linux` machine to build and run `aarch64-linux` jobs without a remote builder.
 
 ## Environment variables
 
