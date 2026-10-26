@@ -27,6 +27,7 @@ use std::{
 
 use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use color_eyre::eyre::{Context, eyre};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use smol::{channel::Receiver, process::Command};
 use tracing::instrument;
@@ -35,8 +36,8 @@ use crate::{
     command::TracingMode,
     project::ProjectSource,
     secret::SecretString,
-    utils::{parse_bool_from_bytes, wait_for_output, write_output_to_stderr},
-    workflow::{NowJob, NowJobContainer, NowStepEnvVar, NowWorkflow, WorkflowSource},
+    utils::{wait_for_output, write_output_to_stderr},
+    workflow::{NowStepEnvVar, WorkflowSource},
 };
 
 pub(crate) static EVAL_ID: OnceLock<String> = OnceLock::new();
@@ -94,10 +95,35 @@ pub(crate) struct NowEnvironment {
     pub(crate) uploads: Mutex<HashMap<String, PathBuf>>,
 }
 
-struct ParsedWorkflow {
+struct ParsedMetadata {
     vars: HashSet<OsString>,
     secrets: HashSet<OsString>,
     jobs: BTreeMap<String, String>,
+}
+
+#[derive(Deserialize)]
+struct WorkflowMetadata {
+    jobs: BTreeMap<String, MetadataJobContainer>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum MetadataJobContainer {
+    Single(MetadataJob),
+    Multiple(Vec<MetadataJob>),
+}
+
+#[derive(Deserialize)]
+struct MetadataJob {
+    name: String,
+    #[serde(default)]
+    steps: Vec<MetadataStep>,
+}
+
+#[derive(Deserialize)]
+struct MetadataStep {
+    #[serde(default)]
+    env: HashMap<String, NowStepEnvVar>,
 }
 
 #[bon::bon]
@@ -150,10 +176,10 @@ impl NowEnvironment {
             async {
                 let nix_project_source = smol::unblock(ProjectSource::new).await?;
 
-                let parsed_workflow =
-                    Self::parse_workflow(workflow, nix_project_source.as_ref()).await?;
+                let parsed_metadata =
+                    Self::parse_metadata(workflow, nix_project_source.as_ref()).await?;
 
-                let secrets: color_eyre::Result<HashMap<String, SecretString>> = parsed_workflow
+                let secrets: color_eyre::Result<HashMap<String, SecretString>> = parsed_metadata
                     .secrets
                     .into_iter()
                     .filter_map(|secret| {
@@ -181,7 +207,7 @@ impl NowEnvironment {
                     .collect();
                 let secrets = secrets?;
 
-                let vars: color_eyre::Result<HashMap<String, String>> = parsed_workflow
+                let vars: color_eyre::Result<HashMap<String, String>> = parsed_metadata
                     .vars
                     .into_iter()
                     .filter_map(|var| {
@@ -223,7 +249,7 @@ impl NowEnvironment {
                     secrets,
                     vars,
                     termination_timeout: termination_timeout.unwrap_or(Duration::from_secs(10)),
-                    jobs: parsed_workflow.jobs,
+                    jobs: parsed_metadata.jobs,
                     local_env: env_vars,
                     gcroot_dir,
                     uploads: Mutex::default(),
@@ -234,27 +260,25 @@ impl NowEnvironment {
     }
 
     #[instrument]
-    async fn parse_workflow(
+    async fn parse_metadata(
         workflow: &WorkflowSource,
         nix_project_source: &Path,
-    ) -> color_eyre::Result<ParsedWorkflow> {
+    ) -> color_eyre::Result<ParsedMetadata> {
         let workflow_path = workflow.nix_expression()?;
 
-        let nix_env = nix_project_source.join("now/env.nix");
-        let nix_env_canonical = smol::fs::canonicalize(&nix_env).await?;
-        let nix_env_str = nix_env_canonical
+        let nix_metadata = nix_project_source.join("now/metadata.nix");
+        let nix_metadata_canonical = smol::fs::canonicalize(&nix_metadata).await?;
+        let nix_metadata_str = nix_metadata_canonical
             .to_str()
             .expect("project source path should be UTF-8");
-        let nix_env_path = format!("(/. + {})", serde_json::to_string(&nix_env_str)?);
+        let nix_metadata_path = format!("(/. + {})", serde_json::to_string(&nix_metadata_str)?);
 
         let eval_id_json = serde_json::to_string(eval_id())?;
-        let with_local_step = option_env!("NOW_WITH_LOCAL_STEP").is_some_and(parse_bool_from_bytes);
 
         let nix_command = format!(
-            "import {nix_env_path} {{ }} {{ \
+            "import {nix_metadata_path} {{ }} {{ \
                 workflow = {workflow_path}; \
                 evalId = {eval_id_json}; \
-                withLocalStep = {with_local_step}; \
             }}"
         );
 
@@ -272,11 +296,11 @@ impl NowEnvironment {
             let mut stderr = std::io::stderr();
             stderr.write_all(&output.stderr)?;
             stderr.flush()?;
-            return Err(eyre!("Failed to parse workflow for variables"));
+            return Err(eyre!("Failed to parse workflow metadata"));
         }
 
-        let workflow: NowWorkflow = serde_json::from_slice(&output.stdout)
-            .wrap_err_with(|| "Failed to deserialize workflow")?;
+        let workflow: WorkflowMetadata = serde_json::from_slice(&output.stdout)
+            .wrap_err_with(|| "Failed to deserialize workflow metadata")?;
 
         let mut secrets: HashSet<OsString> = HashSet::new();
 
@@ -287,7 +311,7 @@ impl NowEnvironment {
             .map(|needle| OsString::from_vec(needle.get(1).expect("is match").as_bytes().to_vec()))
             .collect();
 
-        let mut job_fn = |job: &NowJob| {
+        let mut job_fn = |job: &MetadataJob| {
             for step in &job.steps {
                 for env_value in step.env.values() {
                     if let NowStepEnvVar::Secret(secret) = env_value {
@@ -299,8 +323,8 @@ impl NowEnvironment {
 
         for job in workflow.jobs.values() {
             match job {
-                NowJobContainer::Single(job) => (job_fn)(job),
-                NowJobContainer::Multiple(job_vec) => {
+                MetadataJobContainer::Single(job) => (job_fn)(job),
+                MetadataJobContainer::Multiple(job_vec) => {
                     for job in job_vec {
                         (job_fn)(job);
                     }
@@ -328,8 +352,8 @@ impl NowEnvironment {
             .iter()
             .map(|(key, value)| {
                 let value: String = match value {
-                    NowJobContainer::Single(job) => job.name.clone(),
-                    NowJobContainer::Multiple(job_vec) => {
+                    MetadataJobContainer::Single(job) => job.name.clone(),
+                    MetadataJobContainer::Multiple(job_vec) => {
                         let job_names: BTreeSet<String> =
                             job_vec.iter().map(|job| job.name.clone()).collect();
                         let mut joined_name = String::new();
@@ -346,7 +370,7 @@ impl NowEnvironment {
             })
             .collect();
 
-        Ok(ParsedWorkflow {
+        Ok(ParsedMetadata {
             vars,
             secrets,
             jobs,

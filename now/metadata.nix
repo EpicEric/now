@@ -21,10 +21,22 @@
 {
   workflow,
   evalId,
-  withLocalStep ? false,
 }:
 
-import ./workflow.nix { inherit system withLocalStep; } {
-  inherit workflow evalId;
-  var = name: "@@__nowVar_${evalId}_${name}@@";
+let
+  result = import ./workflow.nix { inherit system; } {
+    inherit workflow evalId;
+    var = name: "@@__nowVar_${evalId}_${name}@@";
+  };
+
+  jobMetadata = job: {
+    name = job.name;
+    steps = map (step: { inherit (step) env; }) job.steps;
+  };
+
+  containerMetadata =
+    container: if builtins.isList container then map jobMetadata container else jobMetadata container;
+in
+{
+  jobs = builtins.mapAttrs (_: containerMetadata) result.jobs;
 }
