@@ -25,31 +25,51 @@ use tar::Archive;
 
 use crate::utils::get_random_string;
 
-static PROJECT_ARCHIVE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/project.tar.gz"));
+const PROJECT_ARCHIVE: &[u8] = {
+    if option_env!("NOW_PROJECT_SOURCE").is_some() {
+        b""
+    } else {
+        include_bytes!(concat!(env!("OUT_DIR"), "/project.tar.gz"))
+    }
+};
 
 #[derive(Debug, Clone)]
-pub(crate) struct ProjectSource(PathBuf);
+pub(crate) struct ProjectSource {
+    directory: PathBuf,
+    in_nix_store: bool,
+}
 
 impl AsRef<Path> for ProjectSource {
     fn as_ref(&self) -> &Path {
-        &self.0
+        &self.directory
     }
 }
 
 impl Drop for ProjectSource {
     fn drop(&mut self) {
-        let _ = remove_dir_all(&self.0);
+        if !self.in_nix_store {
+            let _ = remove_dir_all(&self.directory);
+        }
     }
 }
 
 impl ProjectSource {
     pub(crate) fn new() -> color_eyre::Result<Self> {
-        let project_source =
-            ProjectSource(temp_dir().join(format!("now-{}", get_random_string(10))));
+        if let Some(project_source) = option_env!("NOW_PROJECT_SOURCE") {
+            return Ok(ProjectSource {
+                directory: PathBuf::from(project_source),
+                in_nix_store: true,
+            });
+        }
+
+        let project_source = ProjectSource {
+            directory: temp_dir().join(format!("now-{}", get_random_string(10))),
+            in_nix_store: false,
+        };
 
         let tar = GzDecoder::new(PROJECT_ARCHIVE);
         let mut archive = Archive::new(tar);
-        archive.unpack(&project_source.0)?;
+        archive.unpack(&project_source.directory)?;
 
         Ok(project_source)
     }

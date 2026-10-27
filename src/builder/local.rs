@@ -45,6 +45,19 @@ use crate::{
     workflow::{NowCheckout, NowJob, NowRunMode},
 };
 
+pub(crate) struct BuilderGuard<'a> {
+    pub(crate) guard: SemaphoreGuard<'a>,
+    pub(crate) lock: RwLockReadGuard<'a, ()>,
+    pub(crate) receiver: &'a Receiver<()>,
+    pub(crate) builder: &'a dyn NowBuilder,
+}
+
+pub(crate) struct RunnerGuard<'a> {
+    pub(crate) lock: RwLockWriteGuard<'a, ()>,
+    pub(crate) receiver: &'a Receiver<()>,
+    pub(crate) builder: &'a dyn NowBuilder,
+}
+
 pub(crate) struct LocalBuilder {
     pub(crate) cancellation: channel::Sender<()>,
     pub(crate) receiver: channel::Receiver<()>,
@@ -58,19 +71,6 @@ pub(crate) struct LocalBuilder {
     pub(crate) remote_builders: Vec<RemoteBuilder>,
     pub(crate) run_mode: NowRunMode,
     pub(crate) gcroot_dir: PathBuf,
-}
-
-pub(crate) struct BuilderGuard<'a> {
-    pub(crate) guard: SemaphoreGuard<'a>,
-    pub(crate) lock: RwLockReadGuard<'a, ()>,
-    pub(crate) receiver: &'a Receiver<()>,
-    pub(crate) builder: &'a dyn NowBuilder,
-}
-
-pub(crate) struct RunnerGuard<'a> {
-    pub(crate) lock: RwLockWriteGuard<'a, ()>,
-    pub(crate) receiver: &'a Receiver<()>,
-    pub(crate) builder: &'a dyn NowBuilder,
 }
 
 impl LocalBuilder {
@@ -108,7 +108,7 @@ impl LocalBuilder {
                 RemoteBuilder::get_remote_builders(
                     &config,
                     builders,
-                    environment.nix_project_source.as_ref(),
+                    &environment.work_dir,
                     keep_alive,
                 )
                 .await?
@@ -118,7 +118,7 @@ impl LocalBuilder {
                 let remote_builders = RemoteBuilder::get_remote_builders(
                     &config,
                     builders,
-                    environment.nix_project_source.as_ref(),
+                    &environment.work_dir,
                     keep_alive,
                 )
                 .await?;

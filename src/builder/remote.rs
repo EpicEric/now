@@ -28,6 +28,7 @@ use color_eyre::eyre::{OptionExt, eyre};
 use format_bytes::format_bytes;
 use smol::{
     channel,
+    fs::{DirBuilder, unix::DirBuilderExt},
     io::{AsyncReadExt, AsyncWriteExt},
     lock::{
         RwLock, Semaphore,
@@ -126,7 +127,7 @@ impl RemoteBuilder {
     pub(crate) async fn get_remote_builders(
         config: &NixConfig,
         builders: Option<String>,
-        project_source: &Path,
+        work_dir: &Path,
         keep_alive: Option<Duration>,
     ) -> color_eyre::Result<Vec<Self>> {
         let builders = if let Some(builders) = builders {
@@ -215,8 +216,11 @@ impl RemoteBuilder {
                 HashSet::new()
             };
 
-            let remote_path = project_source.join(format!("remotes/ssh-{}", get_random_string(10)));
-            smol::fs::create_dir_all(&remote_path).await?;
+            let remote_path = work_dir.join(format!("remotes/ssh-{}", get_random_string(10)));
+            let mut dir_builder = DirBuilder::new();
+            dir_builder.recursive(true);
+            dir_builder.mode(0o700);
+            dir_builder.create(&remote_path).await?;
 
             let known_hosts = if let Some(known_hosts_key) = iter.next()
                 && known_hosts_key != "-"

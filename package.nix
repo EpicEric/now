@@ -47,7 +47,18 @@ rustPlatform.buildRustPackage {
   strictDeps = true;
   __structuredAttrs = true;
 
-  NOW_WITH_LOCAL_STEP = lib.optionalString withLocalStep "true";
+  env = {
+    NOW_PROJECT_SOURCE =
+      (lib.fileset.toSource {
+        root = ./.;
+        fileset = lib.fileset.intersection (lib.fileset.unions [
+          ./.tack
+          ./now
+          ./now-step
+        ]) (lib.fileset.gitTracked ./.);
+      }).outPath;
+    NOW_WITH_LOCAL_STEP = lib.optionalString withLocalStep "true";
+  };
 
   nativeBuildInputs = [
     installShellFiles

@@ -5,6 +5,7 @@
 ### Fixed
 
 - Handle local runner's `extra-platforms` for builder discovery
+- Secure temporary directories from other users
 
 ### Changed
 
@@ -12,6 +13,7 @@
 - Shorten remote runner names in logs
 - Improve `now init` template generation
 - Improve pre-eval parsing speed
+- Prefer using store path over embedding the project source
 
 ## 0.6.3 (2026-10-23)
 

@@ -320,7 +320,7 @@ fn job_completer() -> Vec<CompletionCandidate> {
 
         Ok(environment
             .jobs
-            .into_iter()
+            .iter()
             .filter_map(|(job, help)| {
                 if current_job.is_none_or(|current_job| job.starts_with(current_job))
                     && !jobs.contains(&job)

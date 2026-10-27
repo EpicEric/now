@@ -16,6 +16,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    env::temp_dir,
     ffi::OsString,
     io::Write,
     os::unix::ffi::OsStringExt,
@@ -29,14 +30,18 @@ use ahash::{HashMap, HashMapExt, HashSet, HashSetExt};
 use color_eyre::eyre::{Context, eyre};
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use smol::{channel::Receiver, process::Command};
+use smol::{
+    channel::Receiver,
+    fs::{DirBuilder, create_dir_all, unix::DirBuilderExt},
+    process::Command,
+};
 use tracing::instrument;
 
 use crate::{
     command::TracingMode,
     project::ProjectSource,
     secret::SecretString,
-    utils::{wait_for_output, write_output_to_stderr},
+    utils::{get_random_string, wait_for_output, write_output_to_stderr},
     workflow::{NowStepEnvVar, WorkflowSource},
 };
 
@@ -92,7 +97,14 @@ pub(crate) struct NowEnvironment {
     pub(crate) jobs: BTreeMap<String, String>,
     pub(crate) local_env: HashMap<OsString, OsString>,
     pub(crate) gcroot_dir: PathBuf,
+    pub(crate) work_dir: PathBuf,
     pub(crate) uploads: Mutex<HashMap<String, PathBuf>>,
+}
+
+impl Drop for NowEnvironment {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.work_dir);
+    }
 }
 
 struct ParsedMetadata {
@@ -235,12 +247,18 @@ impl NowEnvironment {
                     .collect();
                 let vars = vars?;
 
+                let work_dir = temp_dir().join(format!("now-{}", get_random_string(10)));
+                let mut dir_builder = DirBuilder::new();
+                dir_builder.recursive(true);
+                dir_builder.mode(0o700);
+                dir_builder.create(&work_dir).await?;
+
                 let gcroot_dir = match gcroot_dir {
                     Some(dir) => {
-                        smol::fs::create_dir_all(&dir).await?;
+                        create_dir_all(&dir).await?;
                         dir.canonicalize()?
                     }
-                    None => nix_project_source.as_ref().to_path_buf(),
+                    None => work_dir.clone(),
                 };
 
                 Ok(Self {
@@ -252,6 +270,7 @@ impl NowEnvironment {
                     jobs: parsed_metadata.jobs,
                     local_env: env_vars,
                     gcroot_dir,
+                    work_dir,
                     uploads: Mutex::default(),
                 })
             },
