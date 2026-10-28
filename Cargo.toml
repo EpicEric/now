@@ -18,47 +18,47 @@ path = "src/main.rs"
 
 [dependencies]
 ahash = "0.8.12"
-async-trait = "0.1.91"
+async-trait = "0.1.92"
 base64 = "0.23.1"
-bon = "3.10.2"
-clap = { version = "4.6.1", features = ["derive", "unstable-ext"] }
-clap_complete = { version = "4.6.8", features = ["unstable-dynamic"] }
+bon = "3.10.3"
+clap = { version = "4.6.7", features = ["derive", "unstable-ext"] }
+clap_complete = { version = "4.6.11", features = ["unstable-dynamic"] }
 color-eyre = "0.6.5"
 ctrlc = { version = "3.5.2", features = ["termination"] }
 dotenvy = "0.15.7"
 duper = { version = "0.6.3", features = ["serde"] }
-flate2 = "1.1.9"
+flate2 = "1.1.10"
 flub = "0.1.0"
-format-bytes = "0.3.0"
-futures = "0.3.33"
+format-bytes = "0.4.0"
+futures = "0.3.34"
 glob = "0.3.4"
 hex = "0.4.3"
 humantime = "2.4.0"
-ignore = "0.4.30"
-jiff = { version = "0.2.35", features = ["serde"] }
-owo-colors = { version = "4.3.0", features = ["supports-colors"] }
-papaya = "0.2.4"
+ignore = "0.4.34"
+jiff = { version = "0.2.38", features = ["serde"] }
+owo-colors = { version = "4.4.0", features = ["supports-colors"] }
+papaya = "0.2.5"
 petgraph = { version = "0.8.3", features = ["serde-1"] }
-rand = "0.10.2"
+rand = "0.10.3"
 regex = "1.13.1"
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
-sha2 = "0.10.9"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
 shlex = "2.0.1"
 smol = "2.0.2"
 strsim = "0.11.1"
 supports-color = "3.0.2"
-sysinfo = "0.39.6"
+sysinfo = "0.40.0"
 tar = "0.4.46"
 terminal_size = "0.4.4"
 tracing = "0.1.44"
 tracing-error = "0.2.1"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 tracing_duper = "0.2.2"
-uutils_term_grid = "0.8.0"
+uutils_term_grid = "0.8.1"
 which = "8.0.6"
 
 [build-dependencies]
-flate2 = "1.1.9"
-ignore = "0.4.30"
+flate2 = "1.1.10"
+ignore = "0.4.34"
 tar = "0.4.46"

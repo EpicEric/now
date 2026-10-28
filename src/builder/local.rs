@@ -140,7 +140,7 @@ impl LocalBuilder {
 
         let hostname = smol::unblock(sysinfo::System::host_name)
             .await
-            .unwrap_or_else(|| "localhost".into());
+            .unwrap_or_else(|_| "localhost".into());
 
         let mut env = environment.local_env.clone();
         env.insert(

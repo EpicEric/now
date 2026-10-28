@@ -14,6 +14,7 @@
 - Improve `now init` template generation
 - Improve pre-eval parsing speed
 - Prefer using store path over embedding the project source
+- Update dependencies
 
 ## 0.6.3 (2026-10-23)
 

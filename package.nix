@@ -25,7 +25,7 @@
   stdenv,
   withLocalStep ? true,
 }:
-rustPlatform.buildRustPackage {
+rustPlatform.buildRustPackage (finalAttrs: {
   pname = "now";
   version = (lib.importTOML ./Cargo.toml).package.version;
 
@@ -48,15 +48,10 @@ rustPlatform.buildRustPackage {
   __structuredAttrs = true;
 
   env = {
-    NOW_PROJECT_SOURCE =
-      (lib.fileset.toSource {
-        root = ./.;
-        fileset = lib.fileset.intersection (lib.fileset.unions [
-          ./.tack
-          ./now
-          ./now-step
-        ]) (lib.fileset.gitTracked ./.);
-      }).outPath;
+    # This should be set when building `now` with Nix
+    NOW_PROJECT_SOURCE = finalAttrs.src.outPath;
+    # This should only be set for non-release builds, eg. when
+    # tracking the main branch, but never for nixpkgs
     NOW_WITH_LOCAL_STEP = lib.optionalString withLocalStep "true";
   };
 
@@ -92,4 +87,4 @@ rustPlatform.buildRustPackage {
     mainProgram = "now";
     platforms = lib.platforms.linux ++ lib.platforms.darwin;
   };
-}
+})
