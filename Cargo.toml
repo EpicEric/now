@@ -1,6 +1,6 @@
 [package]
 name = "now-runner"
-version = "0.6.3"
+version = "0.6.4"
 edition = "2024"
 rust-version = "1.95.0"
 description = "Nix-based distributed command runner"
