@@ -34,21 +34,23 @@ const PROJECT_ARCHIVE: &[u8] = {
 };
 
 #[derive(Debug, Clone)]
-pub(crate) struct ProjectSource {
-    directory: PathBuf,
-    in_nix_store: bool,
+pub(crate) enum ProjectSource {
+    NixStore(PathBuf),
+    ExtractedArchive(PathBuf),
 }
 
 impl AsRef<Path> for ProjectSource {
     fn as_ref(&self) -> &Path {
-        &self.directory
+        match self {
+            ProjectSource::NixStore(path) | ProjectSource::ExtractedArchive(path) => path,
+        }
     }
 }
 
 impl Drop for ProjectSource {
     fn drop(&mut self) {
-        if !self.in_nix_store {
-            let _ = remove_dir_all(&self.directory);
+        if let ProjectSource::ExtractedArchive(path) = self {
+            let _ = remove_dir_all(path);
         }
     }
 }
@@ -56,21 +58,15 @@ impl Drop for ProjectSource {
 impl ProjectSource {
     pub(crate) fn new() -> color_eyre::Result<Self> {
         if let Some(project_source) = option_env!("NOW_PROJECT_SOURCE") {
-            return Ok(ProjectSource {
-                directory: PathBuf::from(project_source),
-                in_nix_store: true,
-            });
+            return Ok(ProjectSource::NixStore(PathBuf::from(project_source)));
         }
 
-        let project_source = ProjectSource {
-            directory: temp_dir().join(format!("now-{}", get_random_string(10))),
-            in_nix_store: false,
-        };
+        let directory = temp_dir().join(format!("now-{}", get_random_string(10)));
 
         let tar = GzDecoder::new(PROJECT_ARCHIVE);
         let mut archive = Archive::new(tar);
-        archive.unpack(&project_source.directory)?;
+        archive.unpack(&directory)?;
 
-        Ok(project_source)
+        Ok(ProjectSource::ExtractedArchive(directory))
     }
 }

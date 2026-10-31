@@ -276,7 +276,7 @@ impl NowEnvironment {
                             is_remote, "Failed to remove temporary directory: {:?}", &error
                         );
                     }
-                    return Err(error.into());
+                    return Err(error);
                 }
             }
         };
@@ -658,10 +658,7 @@ impl NowEnvironment {
         let result = result.and(if dry_run {
             Ok(())
         } else {
-            runner
-                .undo_checkout(job.checkout, &cwdir)
-                .await
-                .map_err(Into::into)
+            runner.undo_checkout(job.checkout, &cwdir).await
         });
 
         if result.is_ok() {

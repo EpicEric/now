@@ -14,7 +14,7 @@ in
         [
           {
             pkgs = import inputs.nixpkgs {
-              system = unavailableSystem;
+              localSystem.system = unavailableSystem;
               crossSystem.config = thisSystem;
             };
           }
@@ -46,7 +46,7 @@ in
         [
           {
             pkgs = import inputs.nixpkgs {
-              system = thisSystem;
+              localSystem.system = thisSystem;
               crossSystem.config = unavailableSystem;
             };
           }

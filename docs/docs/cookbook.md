@@ -50,6 +50,8 @@ now run distributed-job --builders 'ssh://remote'
             with:
               persist-credentials: false
 
+          - uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7 # v10
+
           - name: Install Nix
             uses: NixOS/nix-installer-action@62c1943b776c509394b550f3f983adc14e9212d6 # v1.0.0
             with:
@@ -108,6 +110,8 @@ now run distributed-job --builders 'ssh://remote'
         runs-on: ${{ matrix.runner }}
         timeout-minutes: 120
         steps:
+          - uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7 # v10
+        
           - name: Install Nix
             uses: NixOS/nix-installer-action@62c1943b776c509394b550f3f983adc14e9212d6 # v1.0.0
             with:
@@ -160,6 +164,8 @@ now run distributed-job --builders 'ssh://remote'
             with:
               persist-credentials: false
 
+          - uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7 # v10
+
           - name: Install Nix
             uses: NixOS/nix-installer-action@62c1943b776c509394b550f3f983adc14e9212d6 # v1.0.0
             with:
@@ -207,6 +213,309 @@ now run distributed-job --builders 'ssh://remote'
 
               now run ci --builders "$BUILDERS"
     ```
+
+## Customizing pkgs
+
+=== "tack"
+
+    ```nix title="now.nix"
+    { lib, runner, ... }:
+    let
+      inputs = import ./.tack;
+
+      pkgs = import inputs.nixpkgs {
+        overlays = [ (import inputs.rust-overlay) ];
+      };
+
+      msrv = (lib.importTOML ./Cargo.toml).package.rust-version;
+    in
+    {
+      jobs = {
+        test = {
+          name = "Run tests on nightly";
+          steps = [
+            {
+              env.RUST_LOG = "debug";
+              path = [
+                pkgs.cargo-nextest
+                pkgs.rust-bin.beta.latest.default
+              ];
+              run = ''
+                cargo nextest run --no-fail-fast
+              '';
+            }
+          ];
+        };
+
+        clippy = {
+          name = "Check linting on MSRV";
+          steps = [
+            {
+              path = [ pkgs.rust-bin.stable.${msrv}.default ];
+              run = ''
+                cargo clippy --all-targets --fix --allow-dirty --allow-staged && cargo fmt --all
+              '';
+            }
+          ];
+        };
+      };
+    }
+    ```
+
+=== "npins"
+
+    ```nix title="now.nix"
+    { lib, runner, ... }:
+    let
+      sources = import ./npins;
+
+      pkgs = import sources.nixpkgs {
+        overlays = [ (import sources.rust-overlay) ];
+      };
+
+      msrv = (lib.importTOML ./Cargo.toml).package.rust-version;
+    in
+    {
+      jobs = {
+                test = {
+          name = "Run tests on nightly";
+          steps = [
+            {
+              env.RUST_LOG = "debug";
+              path = [
+                pkgs.cargo-nextest
+                pkgs.rust-bin.beta.latest.default
+              ];
+              run = ''
+                cargo nextest run --no-fail-fast
+              '';
+            }
+          ];
+        };
+
+        clippy = {
+          name = "Check linting on MSRV";
+          steps = [
+            {
+              path = [ pkgs.rust-bin.stable.${msrv}.default ];
+              run = ''
+                cargo clippy --all-targets --fix --allow-dirty --allow-staged && cargo fmt --all
+              '';
+            }
+          ];
+        };
+      };
+    }
+    ```
+
+=== "Nix flake"
+
+    ```nix title="flake.nix"
+    {
+      inputs = {
+        # ...
+        now.url = "git+https://codeberg.org/now-runner/now?ref=main";
+        rust-overlay.url = "github:oxalica/rust-overlay";
+      };
+
+      outputs =
+        {
+          nixpkgs,
+          now,
+          rust-overlay,
+          ...
+        }@inputs:
+        {
+          # ...
+
+          now =
+            { runner, ... }:
+            let
+              pkgs = import nixpkgs {
+                overlays = [ rust-overlay.overlays.default ];
+              };
+            in
+            {
+              jobs = {
+                test = {
+                  name = "Run tests on nightly";
+                  steps = [
+                    {
+                      env.RUST_LOG = "debug";
+                      path = [
+                        pkgs.cargo-nextest
+                        pkgs.rust-bin.beta.latest.default
+                      ];
+                      run = ''
+                        cargo nextest run --no-fail-fast
+                      '';
+                    }
+                  ];
+                };
+        
+                clippy = {
+                  name = "Check linting on MSRV";
+                  steps = [
+                    {
+                      path = [ pkgs.rust-bin.stable.${msrv}.default ];
+                      run = ''
+                        cargo clippy --all-targets --fix --allow-dirty --allow-staged && cargo fmt --all
+                      '';
+                    }
+                  ];
+                };
+              };
+            };
+        };
+    }
+    ```
+
+## Cross-compilation
+
+```nix title="now.nix"
+{ runner, ... }:
+{
+  jobs.cross =
+    runner.matrix
+    [
+      {
+        pkgs = import <nixpkgs> {
+          crossSystem.config = "aarch64-linux";
+        };
+      }
+    ]
+    (
+      { pkgs, ... }: {
+        steps = [
+          {
+            path = [ pkgs.nix-info pkgs.nix ];
+            run = "nix-info";
+          }
+        ];
+      }
+    );
+}
+```
+
+Steps are cross-compiled to, and run on, `aarch64-linux` runners (which are specified with the `--builders` flag).
+
+To specify the build system instead, use `import <nixpkgs> { localSystem.system = "..."; }`. Both options can be combined.
+
+## Watching for changes
+
+One way is to combine `watch`/`watchexec`/`fswatch` and bash's `trap`, for example:
+
+```nix title="now.nix"
+let
+  # Build `now` itself, so the steps below can run it (see the quick start
+  # for alternative installation methods)
+  now = import (builtins.fetchGit {
+    url = "https://codeberg.org/now-runner/now";
+  }) { };
+in
+{
+  jobs = {
+    generate-nix-docs = {
+      # ...
+    };
+    generate-cli-docs = {
+      # ...
+    };
+
+    serve-docs = { pkgs, ... }: {
+      steps = [
+        {
+          path = [
+            now
+            pkgs.watchexec
+            pkgs.zensical
+          ];
+          run = ''
+            trap 'kill 0' EXIT
+            watchexec -w now.nix -w now/types.nix -r now run generate-nix-docs &
+            watchexec -w now.nix -w src -r now run generate-cli-docs &
+            zensical serve -f docs/zensical.toml
+          '';
+        }
+      ];
+    };
+  };
+}
+```
+
+## Re-usable workflows and steps
+
+```nix title="now.nix"
+{ runner, lib, ... }:
+  # Workflows are attrsets that can be merged
+  lib.recursiveUpdate
+    (import ./.now/foo.nix)
+    {
+      jobs.my-job =
+        { pkgs, ... }:
+        let
+          # Assuming `extraSteps = { step1 = args: ...; step2 = args: ...; };`
+          extraSteps = import (
+            pkgs.fetchFromCodeberg {
+              owner = "now-runner";
+              repo = "now-services";
+              hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+            }
+          );
+        in
+        {
+          steps = [
+            (extraSteps.step1 {
+              # ...
+            })
+            (extraSteps.step2 {
+              # ...
+            })
+          ];
+        };
+    }
+```
+
+## Running steps in an FHS-compatible environment
+
+```nix title="now.nix"
+{
+  default = "fhs";
+
+  jobs.fhs =
+    { pkgs, ... }:
+    let
+      fhsEnv =
+        pkgs.buildFHSEnv {
+          name = "fhs-bash";
+          targetPkgs = pkgs: [
+            pkgs.gtk3
+            pkgs.openssl
+            pkgs.stdenv.cc.cc.lib
+            pkgs.zlib
+          ];
+          runScript = "bash";
+          # Required to find the entrypoint of the FHS environment
+          meta.mainProgram = "fhs-bash";
+        };
+    in
+    {
+      steps = [
+        {
+          shell = fhsEnv;
+          path = [
+            pkgs.wget
+          ];
+          run = ''
+            wget -o proprietary-binary https://example.com/downloads/latest-linux-amd64
+            chmod +x proprietary-binary
+            ./proprietary-binary
+          '';
+        }
+      ];
+    };
+}
+```
 
 ## Installing jobs as a pre-commit hook
 
@@ -334,288 +643,3 @@ now run distributed-job --builders 'ssh://remote'
     now run -w $tmp
     rm $tmp
     ```
-
-## Customizing pkgs
-
-=== "tack"
-
-    ```nix title="now.nix"
-    { lib, runner, ... }:
-    let
-      inputs = import ./.tack;
-
-      pkgs = import inputs.nixpkgs {
-        overlays = [ (import inputs.rust-overlay) ];
-      };
-
-      msrv = (lib.importTOML ./Cargo.toml).package.rust-version;
-    in
-    {
-      jobs = {
-        test.steps = [
-          {
-            env.RUST_LOG = "debug";
-            path = [
-              pkgs.cargo-nextest
-              pkgs.rust-bin.beta.latest.default
-            ];
-            run = ''
-              cargo nextest run --no-fail-fast
-            '';
-          }
-        ];
-
-        clippy.steps = [
-          {
-            path = [ pkgs.rust-bin.stable.${msrv}.default ];
-            run = ''
-              cargo clippy --all-targets --fix --allow-dirty --allow-staged && cargo fmt --all
-            '';
-          }
-        ];
-      };
-    }
-    ```
-
-=== "npins"
-
-    ```nix title="now.nix"
-    { lib, runner, ... }:
-    let
-      sources = import ./npins;
-
-      pkgs = import sources.nixpkgs {
-        overlays = [ (import sources.rust-overlay) ];
-      };
-
-      msrv = (lib.importTOML ./Cargo.toml).package.rust-version;
-    in
-    {
-      jobs = {
-        test.steps = [
-          {
-            env.RUST_LOG = "debug";
-            path = [
-              pkgs.cargo-nextest
-              pkgs.rust-bin.beta.latest.default
-            ];
-            run = ''
-              cargo nextest run --no-fail-fast
-            '';
-          }
-        ];
-
-        clippy.steps = [
-          {
-            path = [ pkgs.rust-bin.stable.${msrv}.default ];
-            run = ''
-              cargo clippy --all-targets --fix --allow-dirty --allow-staged && cargo fmt --all
-            '';
-          }
-        ];
-      };
-    }
-    ```
-
-=== "Nix flake"
-
-    ```nix title="flake.nix"
-    {
-      inputs = {
-        # ...
-        now.url = "git+https://codeberg.org/now-runner/now?ref=main";
-        rust-overlay.url = "github:oxalica/rust-overlay";
-      };
-
-      outputs =
-        {
-          nixpkgs,
-          now,
-          rust-overlay,
-          ...
-        }@inputs:
-        {
-          # ...
-
-          now =
-            { runner, ... }:
-            let
-              pkgs = import nixpkgs {
-                overlays = [ rust-overlay.overlays.default ];
-              };
-            in
-            {
-              jobs = {
-                test.steps = [
-                  {
-                    env.RUST_LOG = "debug";
-                    path = [
-                      pkgs.cargo-nextest
-                      pkgs.rust-bin.beta.latest.default
-                    ];
-                    run = ''
-                      cargo nextest run --no-fail-fast
-                    '';
-                  }
-                ];
-
-                clippy.steps = [
-                  {
-                    path = [ pkgs.rust-bin.stable.${msrv}.default ];
-                    run = ''
-                      cargo clippy --all-targets --fix --allow-dirty --allow-staged && cargo fmt --all
-                    '';
-                  }
-                ];
-              };
-            };
-        };
-    }
-    ```
-
-## Cross-compilation
-
-```nix title="now.nix"
-{ runner, ... }:
-{
-  jobs.cross =
-    runner.matrix
-    [
-      {
-        pkgs = import <nixpkgs> {
-          hostSystem = "aarch64-linux";
-        };
-      }
-    ]
-    (
-      { pkgs, ... }: {
-        steps = [
-          {
-            path = [ pkgs.nix-info pkgs.nix ];
-            run = "nix-info";
-          }
-        ];
-      }
-    );
-}
-```
-
-Steps are cross-compiled to, and run on, `aarch64-linux` runners (which are specified with the `--builders` flag).
-
-To also specify the build system's architecture, use `import <nixpkgs> { buildSystem = "..."; }`.
-
-## Watching for changes
-
-One way is to combine `watch`/`watchexec`/`fswatch` and bash's `trap`, for example:
-
-```nix title="now.nix"
-let
-  # Build `now` itself, so the steps below can run it (see the quick start
-  # for alternative installation methods)
-  now = import (builtins.fetchGit {
-    url = "https://codeberg.org/now-runner/now";
-  }) { };
-in
-{
-  jobs = {
-    generate-nix-docs = {
-      # ...
-    };
-    generate-cli-docs = {
-      # ...
-    };
-
-    serve-docs = { pkgs, ... }: {
-      steps = [
-        {
-          path = [
-            now
-            pkgs.watchexec
-            pkgs.zensical
-          ];
-          run = ''
-            trap 'kill 0' EXIT
-            watchexec -w now.nix -w now/types.nix -r now run generate-nix-docs &
-            watchexec -w now.nix -w src -r now run generate-cli-docs &
-            zensical serve -f docs/zensical.toml
-          '';
-        }
-      ];
-    };
-  };
-}
-```
-
-## Re-usable workflows and steps
-
-```nix title="now.nix"
-{ runner, lib, ... }:
-  # Workflows are attrsets that can be merged
-  lib.recursiveUpdate
-    (import ./.now/foo.nix)
-    {
-      jobs.my-job =
-        { pkgs, ... }:
-        let
-          # Assuming `extraSteps = { step1 = args: ...; step2 = args: ...; };`
-          extraSteps = import (
-            pkgs.fetchFromCodeberg {
-              owner = "now-runner";
-              repo = "now-services";
-              hash = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-            }
-          );
-        in
-        {
-          steps = [
-            (extraSteps.step1 {
-              # ...
-            })
-            (extraSteps.step2 {
-              # ...
-            })
-          ];
-        };
-    }
-```
-
-## Running steps in an FHS-compatible environment
-
-```nix title="now.nix"
-{
-  default = "fhs";
-
-  jobs.fhs =
-    { pkgs, ... }:
-    let
-      fhsEnv =
-        pkgs.buildFHSEnv {
-          name = "fhs-bash";
-          targetPkgs = pkgs: [
-            pkgs.gtk3
-            pkgs.openssl
-            pkgs.stdenv.cc.cc.lib
-            pkgs.zlib
-          ];
-          runScript = "bash";
-          # Required to find the entrypoint of the FHS environment
-          meta.mainProgram = "fhs-bash";
-        };
-    in
-    {
-      steps = [
-        {
-          shell = fhsEnv;
-          path = [
-            pkgs.wget
-          ];
-          run = ''
-            wget -o proprietary-binary https://example.com/downloads/latest-linux-amd64
-            chmod +x proprietary-binary
-            ./proprietary-binary
-          '';
-        }
-      ];
-    };
-}
-```

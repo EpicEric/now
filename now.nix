@@ -90,8 +90,8 @@ let
       )
     );
 in
-pkgs.lib.recursiveUpdate nowTests {
-  jobs = {
+{
+  jobs = nowTests.jobs // {
 
     # ============================================================
     #                              Docs

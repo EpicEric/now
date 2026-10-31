@@ -388,14 +388,13 @@ impl NowEnvironment {
                             }
                         }
                     } else {
-                        if let Some(timeout) = timeout {
-                            if timed_out_receiver.is_closed() {
+                        if let Some(timeout) = timeout
+                            && timed_out_receiver.is_closed() {
                                 return Err(eyre!(
                                     "Workflow timed out after {}",
                                     humantime::Duration::from(timeout)
                                 ));
                             }
-                        }
                         if result.is_ok() {
                             if aborted {
                                 return Err(JobError::RunnerAborted.into());

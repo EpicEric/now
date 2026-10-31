@@ -45,15 +45,12 @@ fn force_ansi_colors_on_ci_runners(env_vars: &ahash::HashMap<OsString, OsString>
     if env_vars
         .get(OsStr::from_bytes(b"CI"))
         .is_some_and(|value| parse_bool_from_bytes(value.as_encoded_bytes()))
-    {
-        if env_vars
+        && env_vars
             .get(OsStr::from_bytes(b"TANGLED_PIPELINE_ID"))
             .is_some_and(|value| !value.is_empty())
-        {
-            // Safety: called before any threads are spawned.
-            unsafe { std::env::set_var("FORCE_COLOR", "1") };
-            return;
-        }
+    {
+        // Safety: called before any threads are spawned.
+        unsafe { std::env::set_var("FORCE_COLOR", "1") };
     }
 }
 
