@@ -136,11 +136,13 @@ impl NowWorkflowGraph {
 
         if let Some(target_jobs) = jobs {
             let mut job_nodes: HashSet<NodeIndex<u32>> = HashSet::new();
+            let mut match_options = glob::MatchOptions::new();
+            match_options.require_literal_separator = true;
             for job_glob in target_jobs {
                 let glob = glob::Pattern::new(&job_glob)?;
                 let mut matching_jobs = vec![];
                 for (job_id, value) in &self.graph_nodes {
-                    if glob.matches(job_id) {
+                    if glob.matches_with(job_id, match_options) {
                         matching_jobs.push(*value);
                     }
                 }

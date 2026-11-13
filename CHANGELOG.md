@@ -6,6 +6,7 @@
 
 - Handle local runner's `extra-platforms` for builder discovery
 - Secure temporary directories from other users
+- Require literal separators in globs
 
 ### Changed
 

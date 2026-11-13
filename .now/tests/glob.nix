@@ -56,9 +56,8 @@
     "c/fo" = {
       steps = [ { run = "echo 'c/fo'; exit 1"; } ];
     };
-    # <https://github.com/rust-lang/glob/issues/190>
-    # "c/f/o" = {
-    #   steps = [ { run = "echo 'c/f/o'; exit 1"; } ];
-    # };
+    "c/f/o" = {
+      steps = [ { run = "echo 'c/f/o'; exit 1"; } ];
+    };
   };
 }
